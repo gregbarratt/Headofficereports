@@ -68,6 +68,10 @@ export async function getDashboardStatus(token) {
   return apiRequest("/api/dashboard/status", { token });
 }
 
+export async function getBookings(token) {
+  return apiRequest("/api/bookings", { token });
+}
+
 export async function getUploadTypes(token) {
   return apiRequest("/api/uploads/types", { token });
 }

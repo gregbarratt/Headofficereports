@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 4 adds the Upload Centre on top of the secure Super Admin system:
+Phase 5 adds the Master Booking import and booking list:
 
 - FastAPI backend
 - React frontend
@@ -17,6 +17,8 @@ Phase 4 adds the Upload Centre on top of the secure Super Admin system:
 - Protected dashboard access
 - Controlled CSV/XLSX uploads
 - Upload batch history
+- Master Booking Report import
+- Booking list view
 - Render deployment skeleton
 - Health check endpoints
 
@@ -99,6 +101,7 @@ Backend endpoints:
 - `GET /api/uploads/types`
 - `GET /api/uploads`
 - `POST /api/uploads`
+- `GET /api/bookings`
 
 Public health checks remain available:
 
@@ -115,6 +118,8 @@ Before logging in locally, set:
 ## Upload Centre
 
 Phase 4 validates and tracks upload batches. It does not yet import booking or payment rows into the finance tables.
+
+Phase 5 imports Master Booking Report rows into the `bookings` table. Other upload types are still validated and tracked only until their later phases.
 
 Available upload types:
 
@@ -140,3 +145,27 @@ Every upload creates an `upload_batches` record with:
 - rejected rows
 - status
 - error summary, where needed
+
+## Master Booking Import
+
+Mapped trusted framework fields:
+
+- Status
+- Last Name
+- Destination
+- Elements
+- Booking Reference
+- Departure Date
+- Returned Date
+- Date Booked
+- Due Date
+- Outstanding, comparison only
+- Outstanding (Supplier), comparison only
+- Total Cost, stored as gross booking value
+- Nett, stored as expected supplier nett
+
+Excluded master report values are stored only as non-trusted audit fields:
+
+- Total Received
+- Paid (supp.)
+- Profit (projected)

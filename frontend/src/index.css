@@ -385,6 +385,16 @@ th {
   background: #d1e7dd;
 }
 
+.status-imported {
+  color: #0f5132;
+  background: #d1e7dd;
+}
+
+.status-imported_with_errors {
+  color: #664d03;
+  background: #fff3cd;
+}
+
 .status-failed {
   color: #842029;
   background: #f8d7da;

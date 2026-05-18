@@ -4,6 +4,7 @@ import {
   FileSpreadsheet,
   LockKeyhole,
   LogOut,
+  Plane,
   ShieldCheck,
   Upload,
 } from "lucide-react";
@@ -12,6 +13,7 @@ import { useEffect, useState } from "react";
 import {
   clearStoredToken,
   getApiHealth,
+  getBookings,
   getCurrentUser,
   getDashboardStatus,
   getStoredToken,
@@ -26,7 +28,7 @@ import {
 const navItems = [
   { label: "Dashboard", enabled: true },
   { label: "Upload Centre", enabled: true },
-  { label: "Bookings", enabled: false },
+  { label: "Bookings", enabled: true },
   { label: "Supplier Payments", enabled: false },
   { label: "Customer Payments", enabled: false },
   { label: "Trust Reconciliation", enabled: false },
@@ -121,6 +123,23 @@ function formatDateTime(value) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function formatMoney(value) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+  }).format(Number(value));
 }
 
 function UploadCentre({ token }) {
@@ -244,6 +263,74 @@ function UploadCentre({ token }) {
             ) : (
               <tr>
                 <td colSpan="8">No upload batches yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function BookingsPage({ token }) {
+  const [bookings, setBookings] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getBookings(token)
+      .then((data) => {
+        setBookings(data.bookings);
+        setTotal(data.total);
+      })
+      .catch((loadError) => setError(loadError.message || "Bookings could not load."));
+  }, [token]);
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Bookings</h2>
+          <p>{total} booking records</p>
+        </div>
+        <Plane size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Status</th>
+              <th>Last Name</th>
+              <th>Destination</th>
+              <th>Departure</th>
+              <th>Return</th>
+              <th>Gross Value</th>
+              <th>Supplier Nett</th>
+              <th>ATOL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bookings.length ? (
+              bookings.map((booking) => (
+                <tr key={booking.id}>
+                  <td>{booking.booking_ref}</td>
+                  <td>{booking.normalised_status || "-"}</td>
+                  <td>{booking.customer_last_name || "-"}</td>
+                  <td>{booking.destination || "-"}</td>
+                  <td>{formatDate(booking.departure_date)}</td>
+                  <td>{formatDate(booking.return_date)}</td>
+                  <td>{formatMoney(booking.gross_booking_value)}</td>
+                  <td>{formatMoney(booking.expected_supplier_nett)}</td>
+                  <td>{booking.atol_review_status || "-"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="9">No bookings imported yet.</td>
               </tr>
             )}
           </tbody>
@@ -382,6 +469,8 @@ export default function App() {
 
         {activeView === "Upload Centre" ? (
           <UploadCentre token={token} />
+        ) : activeView === "Bookings" ? (
+          <BookingsPage token={token} />
         ) : (
           <>
             <div className="status-grid">

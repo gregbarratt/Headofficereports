@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.reporting import UploadBatch
 from app.models.user import User
 from app.schemas.upload import UploadBatchRead, UploadTypeRead
+from app.services.master_booking_import import import_master_booking_report
 from app.services.uploads import (
     build_stored_filename,
     clean_filename,
@@ -84,21 +85,41 @@ async def create_upload_batch(
     batch.error_summary = validation.error_summary
     batch.completed_at = datetime.now(UTC)
 
-    if validation.passed:
+    if not validation.passed:
+        batch.status = "failed"
+    else:
         stored_filename = build_stored_filename(batch.id, original_filename)
         save_upload_file(content, stored_filename)
         batch.stored_filename = stored_filename
-        batch.status = "validated"
-    else:
-        batch.status = "failed"
+
+        if upload_type == "master_booking":
+            import_result = import_master_booking_report(
+                db=db,
+                upload_batch=batch,
+                filename=original_filename,
+                content=content,
+                actor_user_id=current_user.id,
+            )
+            batch.row_count = import_result.row_count
+            batch.accepted_rows = import_result.accepted_rows
+            batch.rejected_rows = import_result.rejected_rows
+            batch.error_summary = import_result.error_summary
+            if import_result.accepted_rows == 0 and import_result.rejected_rows > 0:
+                batch.status = "failed"
+            elif import_result.rejected_rows > 0:
+                batch.status = "imported_with_errors"
+            else:
+                batch.status = "imported"
+        else:
+            batch.status = "validated"
 
     db.commit()
     db.refresh(batch)
 
-    if not validation.passed:
+    if batch.status == "failed":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=validation.error_summary,
+            detail=batch.error_summary or "Upload failed validation.",
         )
 
     return to_upload_batch_read(batch)
