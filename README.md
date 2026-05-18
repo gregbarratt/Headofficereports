@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 2 adds the database foundation on top of the Phase 1 app:
+Phase 3 adds Super Admin authentication on top of the database foundation:
 
 - FastAPI backend
 - React frontend
@@ -13,6 +13,8 @@ Phase 2 adds the database foundation on top of the Phase 1 app:
 - Alembic database migrations
 - Core reporting and reconciliation tables
 - First Super Admin creation command
+- Super Admin-only login
+- Protected dashboard access
 - Render deployment skeleton
 - Health check endpoints
 
@@ -82,3 +84,25 @@ python -m app.db.create_initial_admin
 ```
 
 The password is stored as a secure hash. The plain password is never stored in the database.
+
+## Authentication
+
+The system has Super Admin login only.
+
+Backend endpoints:
+
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
+
+Public health checks remain available:
+
+- `GET /health`
+- `GET /api/health`
+
+Before logging in locally, set:
+
+- `DATABASE_URL`
+- `JWT_SECRET_KEY`
+- `INITIAL_SUPER_ADMIN_EMAIL`
+- `INITIAL_SUPER_ADMIN_PASSWORD`
