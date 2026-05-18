@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.reporting import UploadBatch
 from app.models.user import User
 from app.schemas.upload import UploadBatchRead, UploadTypeRead
+from app.services.customer_payment_import import import_customer_payment_report
 from app.services.master_booking_import import import_master_booking_report
 from app.services.supplier_payment_import import import_supplier_payment_report
 from app.services.uploads import (
@@ -103,6 +104,14 @@ async def create_upload_batch(
             )
         elif upload_type == "supplier_payment":
             import_result = import_supplier_payment_report(
+                db=db,
+                upload_batch=batch,
+                filename=original_filename,
+                content=content,
+                actor_user_id=current_user.id,
+            )
+        elif upload_type == "customer_payment":
+            import_result = import_customer_payment_report(
                 db=db,
                 upload_batch=batch,
                 filename=original_filename,

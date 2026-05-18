@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 6 adds the Supplier Payment import and supplier reconciliation:
+Phase 7 adds the SINGs/Singhs Customer Payment import:
 
 - FastAPI backend
 - React frontend
@@ -22,6 +22,9 @@ Phase 6 adds the Supplier Payment import and supplier reconciliation:
 - Supplier Payment Report import
 - Supplier payment row list
 - Booking-level supplier reconciliation
+- SINGs/Singhs Customer Payment import
+- Customer payment row list
+- Actual fee storage and estimated fee fallback
 - Render deployment skeleton
 - Health check endpoints
 
@@ -105,6 +108,7 @@ Backend endpoints:
 - `GET /api/uploads`
 - `POST /api/uploads`
 - `GET /api/bookings`
+- `GET /api/customer-payments`
 - `GET /api/supplier-payments`
 
 Public health checks remain available:
@@ -126,6 +130,8 @@ Phase 4 validates and tracks upload batches.
 Phase 5 imports Master Booking Report rows into the `bookings` table.
 
 Phase 6 imports Supplier Payment Report rows into the `supplier_payments` table and reconciles them against each booking's expected supplier nett value.
+
+Phase 7 imports SINGs/Singhs Customer Payment Data rows into the `customer_payments` table.
 
 Available upload types:
 
@@ -208,3 +214,48 @@ booking reference + supplier + payment supplier + transaction date + payment met
 ```
 
 For booking `OTC-01436`, the supplier side should reconcile when the imported supplier payment rows are `300.00` and `3394.16` against expected supplier nett `3694.16`.
+
+## Customer Payment Import
+
+SINGs/Singhs data is the trusted customer receipt source.
+
+Mapped fields where present:
+
+- transaction_id
+- booking_reference or invoice_reference
+- customer_name
+- payment_date
+- settlement_date
+- gross_amount
+- fee_amount
+- net_settled_amount
+- payment_method
+- card_type
+- card_brand
+- transaction_status
+- refund_indicator
+- chargeback_indicator
+- merchant_account
+- settlement_batch_reference
+
+Important rule:
+
+```text
+If SINGs/Singhs supplies the actual fee, the system stores and uses that fee.
+If the actual fee is missing, the system estimates the fee only if a matching payment method rule exists.
+```
+
+Customer payment matching:
+
+- First by Booking Reference.
+- Then by Invoice Reference if it matches a booking reference.
+- If neither is available, the system can make a lower-confidence match using customer name and amount.
+- Unmatched rows are still imported and clearly marked.
+
+The Customer Payments page shows:
+
+- gross customer payments
+- actual and estimated fees
+- net settled amount
+- booking match confidence
+- unmatched payment count

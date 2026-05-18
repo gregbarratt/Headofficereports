@@ -1,5 +1,6 @@
 import {
   Activity,
+  CreditCard,
   Database,
   FileSpreadsheet,
   LockKeyhole,
@@ -16,6 +17,7 @@ import {
   getApiHealth,
   getBookings,
   getCurrentUser,
+  getCustomerPayments,
   getDashboardStatus,
   getSupplierPayments,
   getStoredToken,
@@ -32,7 +34,7 @@ const navItems = [
   { label: "Upload Centre", enabled: true },
   { label: "Bookings", enabled: true },
   { label: "Supplier Payments", enabled: true },
-  { label: "Customer Payments", enabled: false },
+  { label: "Customer Payments", enabled: true },
   { label: "Trust Reconciliation", enabled: false },
   { label: "Weekly Reports", enabled: false },
   { label: "Settings", enabled: false },
@@ -478,6 +480,117 @@ function SupplierPaymentsPage({ token }) {
   );
 }
 
+function CustomerPaymentsPage({ token }) {
+  const [payments, setPayments] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getCustomerPayments(token)
+      .then((data) => {
+        setPayments(data.payments);
+        setSummary(data.summary);
+      })
+      .catch((loadError) => setError(loadError.message || "Customer payments could not load."));
+  }, [token]);
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Customer Payments</h2>
+          <p>SINGs/Singhs customer receipt data is the trusted customer payment source.</p>
+        </div>
+        <CreditCard size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip">
+        <div>
+          <span>Rows</span>
+          <strong>{summary?.total_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Gross customer payments</span>
+          <strong>{formatMoney(summary?.gross_total)}</strong>
+        </div>
+        <div>
+          <span>Total fees</span>
+          <strong>{formatMoney(summary?.fee_total)}</strong>
+        </div>
+        <div>
+          <span>Net settled</span>
+          <strong>{formatMoney(summary?.net_settled_total)}</strong>
+        </div>
+        <div>
+          <span>Estimated fees</span>
+          <strong>{formatMoney(summary?.estimated_fee_total)}</strong>
+        </div>
+        <div>
+          <span>Unmatched</span>
+          <strong>{summary?.unmatched_count ?? 0}</strong>
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Payment Date</th>
+              <th>Settlement</th>
+              <th>Booking Ref</th>
+              <th>Invoice Ref</th>
+              <th>Customer</th>
+              <th>Gross</th>
+              <th>Fee</th>
+              <th>Net Settled</th>
+              <th>Method</th>
+              <th>Card</th>
+              <th>Status</th>
+              <th>Fee Source</th>
+              <th>Match</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payments.length ? (
+              payments.map((payment) => (
+                <tr key={payment.id}>
+                  <td>{formatDate(payment.payment_date)}</td>
+                  <td>{formatDate(payment.settlement_date)}</td>
+                  <td>{payment.booking_ref || "-"}</td>
+                  <td>{payment.invoice_reference || "-"}</td>
+                  <td>{payment.customer_name || "-"}</td>
+                  <td>{formatMoney(payment.gross_amount)}</td>
+                  <td>{formatMoney(payment.fee_amount)}</td>
+                  <td>{formatMoney(payment.net_settled_amount)}</td>
+                  <td>{payment.payment_method || "-"}</td>
+                  <td>{[payment.card_type, payment.card_brand].filter(Boolean).join(" / ") || "-"}</td>
+                  <td>{payment.transaction_status || "-"}</td>
+                  <td>
+                    <span className={`status-pill ${payment.fee_is_estimated ? "status-estimated" : "status-actual"}`}>
+                      {payment.fee_is_estimated ? "estimated" : "actual"}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`status-pill status-${payment.match_confidence}`}>
+                      {formatStatusLabel(payment.match_confidence)}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="13">No customer payment rows imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [token, setToken] = useState(() => getStoredToken());
@@ -611,6 +724,8 @@ export default function App() {
           <BookingsPage token={token} />
         ) : activeView === "Supplier Payments" ? (
           <SupplierPaymentsPage token={token} />
+        ) : activeView === "Customer Payments" ? (
+          <CustomerPaymentsPage token={token} />
         ) : (
           <>
             <div className="status-grid">
@@ -648,6 +763,8 @@ export default function App() {
                 <strong>CSV/XLSX batch tracking</strong>
                 <span>Supplier payments</span>
                 <strong>Separate import and reconciliation</strong>
+                <span>Customer payments</span>
+                <strong>SINGs/Singhs import ready</strong>
                 <span>Agent access</span>
                 <strong>Not included</strong>
               </div>

@@ -362,6 +362,38 @@ nav button:disabled {
   color: #5c6b72;
 }
 
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #d7e0e4;
+  border-radius: 8px;
+  background: #d7e0e4;
+  margin-bottom: 18px;
+}
+
+.summary-strip div {
+  min-height: 78px;
+  padding: 14px;
+  background: #f7faf9;
+}
+
+.summary-strip span,
+.summary-strip strong {
+  display: block;
+}
+
+.summary-strip span {
+  color: #5c6b72;
+  font-size: 0.84rem;
+}
+
+.summary-strip strong {
+  margin-top: 5px;
+  font-size: 1rem;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -419,13 +451,18 @@ th {
 }
 
 .status-matched,
+.status-booking_ref,
+.status-invoice_ref,
+.status-actual,
 .status-paid_in_full {
   color: #0f5132;
   background: #d1e7dd;
 }
 
 .status-partially_paid,
-.status-awaiting_supplier_nett {
+.status-awaiting_supplier_nett,
+.status-estimated,
+.status-lower_confidence {
   color: #664d03;
   background: #fff3cd;
 }
@@ -469,5 +506,9 @@ th {
 
   .upload-form {
     grid-template-columns: 1fr;
+  }
+
+  .summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
