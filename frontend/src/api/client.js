@@ -80,6 +80,33 @@ export async function getRefunds(token) {
   return apiRequest("/api/refunds", { token });
 }
 
+export async function getEmailRecipients(token) {
+  return apiRequest("/api/email-recipients", { token });
+}
+
+export async function createEmailRecipient({ token, email, name }) {
+  return apiRequest("/api/email-recipients", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ email, name }),
+  });
+}
+
+export async function updateEmailRecipient({ token, recipientId, name, isActive }) {
+  return apiRequest(`/api/email-recipients/${recipientId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ name, is_active: isActive }),
+  });
+}
+
+export async function sendWeeklyEmail(token) {
+  return apiRequest("/api/weekly-email/send", {
+    method: "POST",
+    token,
+  });
+}
+
 export async function getReportTypes(token) {
   return apiRequest("/api/reports/types", { token });
 }

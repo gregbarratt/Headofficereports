@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 
 import {
   clearStoredToken,
+  createEmailRecipient,
   downloadReportExcel,
   getAgentCommissions,
   getApiHealth,
@@ -27,6 +28,7 @@ import {
   getCurrentUser,
   getCustomerPayments,
   getDashboardStatus,
+  getEmailRecipients,
   getExceptions,
   getRefunds,
   getReportRuns,
@@ -41,7 +43,9 @@ import {
   getWeeklySnapshots,
   loginSuperAdmin,
   logoutSuperAdmin,
+  sendWeeklyEmail,
   storeToken,
+  updateEmailRecipient,
   updateExceptionStatus,
   uploadBatch,
 } from "./api/client.js";
@@ -1346,10 +1350,15 @@ function WeeklyReportsPage({ token }) {
   const [reportTypes, setReportTypes] = useState([]);
   const [selectedReportType, setSelectedReportType] = useState("");
   const [reportRuns, setReportRuns] = useState([]);
+  const [emailRecipients, setEmailRecipients] = useState([]);
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientName, setRecipientName] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isAddingRecipient, setIsAddingRecipient] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
   async function loadSnapshots() {
     const data = await getWeeklySnapshots(token);
@@ -1364,8 +1373,13 @@ function WeeklyReportsPage({ token }) {
     setReportRuns(runData.runs);
   }
 
+  async function loadEmailRecipients() {
+    const data = await getEmailRecipients(token);
+    setEmailRecipients(data.recipients);
+  }
+
   useEffect(() => {
-    Promise.all([loadSnapshots(), loadReportControls()]).catch((loadError) =>
+    Promise.all([loadSnapshots(), loadReportControls(), loadEmailRecipients()]).catch((loadError) =>
       setError(loadError.message || "Weekly reports could not load.")
     );
   }, [token]);
@@ -1418,6 +1432,58 @@ function WeeklyReportsPage({ token }) {
     }
   }
 
+  async function handleAddRecipient(event) {
+    event.preventDefault();
+    setIsAddingRecipient(true);
+    setMessage("");
+    setError("");
+    try {
+      await createEmailRecipient({ token, email: recipientEmail, name: recipientName });
+      setRecipientEmail("");
+      setRecipientName("");
+      setMessage("Email recipient added.");
+      await loadEmailRecipients();
+    } catch (recipientError) {
+      setError(recipientError.message || "Email recipient could not be added.");
+    } finally {
+      setIsAddingRecipient(false);
+    }
+  }
+
+  async function handleRecipientActiveChange(recipient, isActive) {
+    setMessage("");
+    setError("");
+    try {
+      await updateEmailRecipient({
+        token,
+        recipientId: recipient.id,
+        name: recipient.name,
+        isActive,
+      });
+      await loadEmailRecipients();
+    } catch (recipientError) {
+      setError(recipientError.message || "Email recipient could not be updated.");
+    }
+  }
+
+  async function handleSendWeeklyEmail() {
+    setIsSendingEmail(true);
+    setMessage("");
+    setError("");
+    try {
+      const result = await sendWeeklyEmail(token);
+      setMessage(
+        `Weekly email sent to ${result.recipient_count} recipient(s) with ${result.attachment_count} attachment(s).`
+      );
+      await loadReportControls();
+    } catch (sendError) {
+      setError(sendError.message || "Weekly email could not be sent.");
+      await loadReportControls().catch(() => undefined);
+    } finally {
+      setIsSendingEmail(false);
+    }
+  }
+
   const summary = latest?.summary;
   const currentSnapshot = latest?.current_snapshot;
   const previousSnapshot = latest?.previous_snapshot;
@@ -1461,8 +1527,79 @@ function WeeklyReportsPage({ token }) {
         </button>
       </div>
 
+      <div className="email-report-panel">
+        <form className="recipient-form" onSubmit={handleAddRecipient}>
+          <label>
+            Recipient email
+            <input
+              onChange={(event) => setRecipientEmail(event.target.value)}
+              required
+              type="email"
+              value={recipientEmail}
+            />
+          </label>
+          <label>
+            Name
+            <input onChange={(event) => setRecipientName(event.target.value)} type="text" value={recipientName} />
+          </label>
+          <button className="primary-button" disabled={isAddingRecipient} type="submit">
+            <Upload size={18} aria-hidden="true" />
+            {isAddingRecipient ? "Adding" : "Add recipient"}
+          </button>
+        </form>
+        <button className="primary-button" disabled={isSendingEmail} onClick={handleSendWeeklyEmail} type="button">
+          <FileSpreadsheet size={18} aria-hidden="true" />
+          {isSendingEmail ? "Sending" : "Send weekly email"}
+        </button>
+      </div>
+
       {message ? <p className="form-success">{message}</p> : null}
       {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="section-heading">
+        <h3>Email recipients</h3>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Added</th>
+              <th>Active</th>
+            </tr>
+          </thead>
+          <tbody>
+            {emailRecipients.length ? (
+              emailRecipients.map((recipient) => (
+                <tr key={recipient.id}>
+                  <td>{recipient.email}</td>
+                  <td>{recipient.name || "-"}</td>
+                  <td>
+                    <span className={`status-pill ${recipient.is_active ? "status-active" : "status-inactive"}`}>
+                      {recipient.is_active ? "active" : "inactive"}
+                    </span>
+                  </td>
+                  <td>{formatDateTime(recipient.created_at)}</td>
+                  <td>
+                    <input
+                      checked={recipient.is_active}
+                      onChange={(event) => handleRecipientActiveChange(recipient, event.target.checked)}
+                      type="checkbox"
+                    />
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="5">No email recipients yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <div className="summary-strip summary-strip-wide">
         <div>

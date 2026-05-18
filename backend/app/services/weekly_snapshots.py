@@ -186,6 +186,14 @@ def previous_snapshot(db: Session, snapshot: WeeklySnapshot) -> WeeklySnapshot |
     )
 
 
+def latest_snapshot(db: Session) -> WeeklySnapshot | None:
+    return db.scalar(
+        select(WeeklySnapshot)
+        .order_by(WeeklySnapshot.week_start_date.desc(), WeeklySnapshot.id.desc())
+        .limit(1)
+    )
+
+
 def snapshot_rows(db: Session, snapshot_id: int) -> list[WeeklySnapshotBooking]:
     return list(
         db.scalars(

@@ -93,6 +93,12 @@ input:focus {
   outline: 3px solid rgb(29 73 69 / 0.16);
 }
 
+input[type="checkbox"] {
+  width: 18px;
+  min-height: 18px;
+  accent-color: #1d4945;
+}
+
 .primary-button,
 .logout-button {
   display: inline-flex;
@@ -431,6 +437,21 @@ nav button:disabled {
   margin-bottom: 16px;
 }
 
+.email-report-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.recipient-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px) auto;
+  gap: 14px;
+  align-items: end;
+}
+
 .table-actions {
   display: flex;
   flex-wrap: wrap;
@@ -516,6 +537,7 @@ th {
 .status-actual,
 .status-calculated,
 .status-calculated_with_estimated_fees,
+.status-active,
 .status-completed,
 .status-generated,
 .status-resolved,
@@ -592,6 +614,11 @@ th {
   background: #e8eef1;
 }
 
+.status-inactive {
+  color: #45545b;
+  background: #e8eef1;
+}
+
 .status-severity-critical {
   color: #ffffff;
   background: #842029;
@@ -647,6 +674,11 @@ th {
   }
 
   .report-export-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .email-report-panel,
+  .recipient-form {
     grid-template-columns: 1fr;
   }
 
