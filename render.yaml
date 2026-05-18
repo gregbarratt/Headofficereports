@@ -5,6 +5,7 @@ services:
     plan: starter
     region: frankfurt
     buildCommand: pip install -r backend/requirements.txt
+    preDeployCommand: cd backend && alembic upgrade head && python -m app.db.create_initial_admin
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
@@ -26,6 +27,10 @@ services:
         value: /opt/render/project/src/backend/uploads
       - key: MAX_UPLOAD_SIZE_MB
         value: "100"
+      - key: INITIAL_SUPER_ADMIN_EMAIL
+        sync: false
+      - key: INITIAL_SUPER_ADMIN_PASSWORD
+        sync: false
 
   - type: web
     name: head-office-reporting

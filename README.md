@@ -4,12 +4,15 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 1 creates the foundation:
+Phase 2 adds the database foundation on top of the Phase 1 app:
 
 - FastAPI backend
 - React frontend
 - Environment-based settings
-- PostgreSQL connection settings ready for later phases
+- PostgreSQL connection settings
+- Alembic database migrations
+- Core reporting and reconciliation tables
+- First Super Admin creation command
 - Render deployment skeleton
 - Health check endpoints
 
@@ -21,6 +24,7 @@ No agent login, registration, or multi-user role system is included.
 - `frontend/` - React web interface
 - `render.yaml` - Render deployment starter file
 - `.env.example` - safe example settings
+- `backend/alembic/` - database migration files
 
 ## Backend Setup
 
@@ -61,4 +65,20 @@ Do not commit `.env` to GitHub.
 
 ## Database
 
-PostgreSQL is not required for the Phase 1 health screen to run. In Phase 2, the database schema and migrations will be added.
+PostgreSQL is now configured through `DATABASE_URL`.
+
+To create or update the database tables after setting `DATABASE_URL`:
+
+```powershell
+cd backend
+alembic upgrade head
+```
+
+To create the first Super Admin after setting `INITIAL_SUPER_ADMIN_EMAIL` and `INITIAL_SUPER_ADMIN_PASSWORD`:
+
+```powershell
+cd backend
+python -m app.db.create_initial_admin
+```
+
+The password is stored as a secure hash. The plain password is never stored in the database.

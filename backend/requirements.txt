@@ -1,4 +1,5 @@
 fastapi
+alembic
 pydantic-settings
 psycopg[binary]
 python-dotenv
