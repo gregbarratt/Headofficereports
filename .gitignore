@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Backend local files
+*.db
+*.sqlite3
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Frontend
+node_modules/
+frontend/dist/
+.npm-cache/
+.vite/
+
+# Environment files with private secrets
+.env
+.env.local
+.env.*.local
+
+# Local Git metadata folder used by this Codex workspace
+_git_data/
+git-data/
+gitmeta/
+
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
