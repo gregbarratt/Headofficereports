@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 13 adds weekly snapshots and movement tracking:
+Phase 14 adds reports and Excel exports:
 
 - FastAPI backend
 - React frontend
@@ -42,6 +42,8 @@ Phase 13 adds weekly snapshots and movement tracking:
 - Exception status updates
 - Weekly snapshot generation
 - Week-on-week movement report
+- Excel report exports
+- Report run history
 - Render deployment skeleton
 - Health check endpoints
 
@@ -132,6 +134,9 @@ Backend endpoints:
 - `GET /api/exceptions`
 - `POST /api/exceptions/generate`
 - `PATCH /api/exceptions/{exception_id}`
+- `GET /api/reports/types`
+- `GET /api/reports/runs`
+- `POST /api/reports/{report_type}/excel`
 - `GET /api/supplier-payments`
 - `GET /api/trust-reconciliation`
 - `GET /api/weekly-snapshots`
@@ -170,6 +175,8 @@ Phase 11 imports Agent Commission rows into the `agent_commissions` table and ca
 Phase 12 scans the database for finance, trust and compliance exceptions and stores them in the `exceptions` table.
 
 Phase 13 creates weekly snapshots and compares the current week with the previous snapshot.
+
+Phase 14 creates Excel reports and stores report run history.
 
 Available upload types:
 
@@ -530,3 +537,32 @@ The movement report detects:
 - changed refund position
 - changed commission position
 - changed ATOL status
+
+## Reports and Excel Exports
+
+Phase 14 adds Excel exports from the Weekly Reports page.
+
+Available reports:
+
+- Executive Weekly Overview
+- Trust Reconciliation Report
+- Customer Payments Report
+- Supplier Payments Report
+- Supplier Liability Report
+- Refund Liability Report
+- Agent Commission Report
+- True Booking Profitability Report
+- ATOL Compliance Report
+- Week-on-Week Movement Report
+- Exception Report
+
+Every report export creates a `report_runs` history record with:
+
+- report type
+- status
+- start time
+- finish time
+- output file name
+- error summary, where needed
+
+The first version uses Excel files only. PDF executive summary export can be added later if needed.

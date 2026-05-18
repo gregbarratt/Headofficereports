@@ -423,6 +423,14 @@ nav button:disabled {
   font-weight: 700;
 }
 
+.report-export-panel {
+  align-items: end;
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) auto;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
 .table-actions {
   display: flex;
   flex-wrap: wrap;
@@ -508,6 +516,7 @@ th {
 .status-actual,
 .status-calculated,
 .status-calculated_with_estimated_fees,
+.status-completed,
 .status-generated,
 .status-resolved,
 .status-paid,
@@ -522,6 +531,7 @@ th {
 .status-accrued,
 .status-due,
 .status-estimated,
+.status-running,
 .status-reviewing,
 .status-lower_confidence,
 .status-calculated_with_missing_data,
@@ -536,6 +546,7 @@ th {
 .status-overdue,
 .status-incomplete,
 .status-open,
+.status-failed,
 .status-incomplete_awaiting_customer_payment {
   color: #842029;
   background: #f8d7da;
@@ -632,6 +643,10 @@ th {
   }
 
   .exception-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .report-export-panel {
     grid-template-columns: 1fr;
   }
 

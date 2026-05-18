@@ -80,6 +80,14 @@ export async function getRefunds(token) {
   return apiRequest("/api/refunds", { token });
 }
 
+export async function getReportTypes(token) {
+  return apiRequest("/api/reports/types", { token });
+}
+
+export async function getReportRuns(token) {
+  return apiRequest("/api/reports/runs", { token });
+}
+
 export async function getBookings(token) {
   return apiRequest("/api/bookings", { token });
 }
@@ -152,4 +160,32 @@ export async function updateExceptionStatus({ token, exceptionId, status }) {
     token,
     body: JSON.stringify({ status }),
   });
+}
+
+export async function downloadReportExcel({ token, reportType }) {
+  const response = await fetch(`${API_BASE_URL}/api/reports/${reportType}/excel`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    let message = "Report export failed.";
+    try {
+      const error = await response.json();
+      message = error.detail || message;
+    } catch {
+      message = response.statusText || message;
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const filenameMatch = disposition.match(/filename=\"?([^\";]+)\"?/);
+  return {
+    blob,
+    filename: filenameMatch?.[1] || `${reportType}.xlsx`,
+  };
 }

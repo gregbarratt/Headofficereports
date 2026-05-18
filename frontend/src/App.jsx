@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 
 import {
   clearStoredToken,
+  downloadReportExcel,
   getAgentCommissions,
   getApiHealth,
   getBankTransactions,
@@ -28,6 +29,8 @@ import {
   getDashboardStatus,
   getExceptions,
   getRefunds,
+  getReportRuns,
+  getReportTypes,
   getSupplierPayments,
   getStoredToken,
   getTrustReconciliation,
@@ -1340,9 +1343,13 @@ function ExceptionsPage({ token }) {
 function WeeklyReportsPage({ token }) {
   const [latest, setLatest] = useState(null);
   const [snapshots, setSnapshots] = useState([]);
+  const [reportTypes, setReportTypes] = useState([]);
+  const [selectedReportType, setSelectedReportType] = useState("");
+  const [reportRuns, setReportRuns] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   async function loadSnapshots() {
     const data = await getWeeklySnapshots(token);
@@ -1350,8 +1357,17 @@ function WeeklyReportsPage({ token }) {
     setSnapshots(data.snapshots);
   }
 
+  async function loadReportControls() {
+    const [types, runData] = await Promise.all([getReportTypes(token), getReportRuns(token)]);
+    setReportTypes(types);
+    setSelectedReportType((current) => current || types[0]?.value || "");
+    setReportRuns(runData.runs);
+  }
+
   useEffect(() => {
-    loadSnapshots().catch((loadError) => setError(loadError.message || "Weekly snapshots could not load."));
+    Promise.all([loadSnapshots(), loadReportControls()]).catch((loadError) =>
+      setError(loadError.message || "Weekly reports could not load.")
+    );
   }, [token]);
 
   async function handleGenerate() {
@@ -1371,6 +1387,34 @@ function WeeklyReportsPage({ token }) {
       setError(generateError.message || "Weekly snapshot could not be generated.");
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  async function handleDownloadReport() {
+    if (!selectedReportType) {
+      setError("Choose a report first.");
+      return;
+    }
+
+    setIsExporting(true);
+    setMessage("");
+    setError("");
+    try {
+      const result = await downloadReportExcel({ token, reportType: selectedReportType });
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setMessage(`Excel report created: ${result.filename}`);
+      await loadReportControls();
+    } catch (downloadError) {
+      setError(downloadError.message || "Report could not be created.");
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -1398,6 +1442,23 @@ function WeeklyReportsPage({ token }) {
             ? `${formatDate(currentSnapshot.week_start_date)} to ${formatDate(currentSnapshot.week_end_date)}`
             : "No snapshot generated yet"}
         </span>
+      </div>
+
+      <div className="report-export-panel">
+        <label>
+          Excel report
+          <select value={selectedReportType} onChange={(event) => setSelectedReportType(event.target.value)}>
+            {reportTypes.map((reportType) => (
+              <option key={reportType.value} value={reportType.value}>
+                {reportType.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="primary-button" disabled={isExporting || !selectedReportType} onClick={handleDownloadReport} type="button">
+          <FileSpreadsheet size={18} aria-hidden="true" />
+          {isExporting ? "Creating" : "Create Excel"}
+        </button>
       </div>
 
       {message ? <p className="form-success">{message}</p> : null}
@@ -1542,6 +1603,45 @@ function WeeklyReportsPage({ token }) {
             ) : (
               <tr>
                 <td colSpan="12">No snapshot bookings yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="section-heading">
+        <h3>Report run history</h3>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Report</th>
+              <th>Status</th>
+              <th>Started</th>
+              <th>Finished</th>
+              <th>File</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reportRuns.length ? (
+              reportRuns.map((run) => (
+                <tr key={run.id}>
+                  <td>{formatStatusLabel(run.report_type)}</td>
+                  <td>
+                    <span className={`status-pill status-${run.status}`}>{formatStatusLabel(run.status)}</span>
+                  </td>
+                  <td>{formatDateTime(run.started_at)}</td>
+                  <td>{formatDateTime(run.finished_at)}</td>
+                  <td>{run.output_filename || "-"}</td>
+                  <td>{run.error_summary || "-"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="6">No report runs yet.</td>
               </tr>
             )}
           </tbody>
