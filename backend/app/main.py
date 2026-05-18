@@ -13,6 +13,7 @@ from app.api.refunds import router as refunds_router
 from app.api.supplier_payments import router as supplier_payments_router
 from app.api.trust_reconciliation import router as trust_reconciliation_router
 from app.api.uploads import router as uploads_router
+from app.api.weekly_snapshots import router as weekly_snapshots_router
 from app.core.config import settings
 
 
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(supplier_payments_router)
     app.include_router(trust_reconciliation_router)
     app.include_router(uploads_router)
+    app.include_router(weekly_snapshots_router)
     app.include_router(health_router)
     return app
 

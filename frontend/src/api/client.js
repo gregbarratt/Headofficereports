@@ -115,6 +115,17 @@ export async function getTrustReconciliation(token) {
   return apiRequest("/api/trust-reconciliation", { token });
 }
 
+export async function getWeeklySnapshots(token) {
+  return apiRequest("/api/weekly-snapshots", { token });
+}
+
+export async function generateWeeklySnapshot(token) {
+  return apiRequest("/api/weekly-snapshots/generate", {
+    method: "POST",
+    token,
+  });
+}
+
 export async function getUploadTypes(token) {
   return apiRequest("/api/uploads/types", { token });
 }

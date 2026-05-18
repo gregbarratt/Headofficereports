@@ -410,6 +410,19 @@ nav button:disabled {
   margin-bottom: 14px;
 }
 
+.weekly-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.weekly-actions span {
+  color: #45545b;
+  font-weight: 700;
+}
+
 .table-actions {
   display: flex;
   flex-wrap: wrap;
@@ -495,6 +508,7 @@ th {
 .status-actual,
 .status-calculated,
 .status-calculated_with_estimated_fees,
+.status-generated,
 .status-resolved,
 .status-paid,
 .status-paid_in_full {
@@ -536,6 +550,30 @@ th {
 .status-clawed_back {
   color: #4b2b03;
   background: #ffe5c0;
+}
+
+.status-new_booking {
+  color: #0f5132;
+  background: #d1e7dd;
+}
+
+.status-cancelled_booking,
+.status-removed_booking {
+  color: #842029;
+  background: #f8d7da;
+}
+
+.status-completed_booking,
+.status-status_changed,
+.status-changed_booking_value,
+.status-changed_supplier_cost,
+.status-changed_payment_position,
+.status-changed_supplier_payment_position,
+.status-changed_refund_position,
+.status-changed_commission_position,
+.status-changed_atol_status {
+  color: #664d03;
+  background: #fff3cd;
 }
 
 .status-ignored {

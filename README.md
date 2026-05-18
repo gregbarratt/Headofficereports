@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 12 adds automated exception generation and review:
+Phase 13 adds weekly snapshots and movement tracking:
 
 - FastAPI backend
 - React frontend
@@ -40,6 +40,8 @@ Phase 12 adds automated exception generation and review:
 - Automated exception scan
 - Exceptions page and dashboard summary
 - Exception status updates
+- Weekly snapshot generation
+- Week-on-week movement report
 - Render deployment skeleton
 - Health check endpoints
 
@@ -132,6 +134,8 @@ Backend endpoints:
 - `PATCH /api/exceptions/{exception_id}`
 - `GET /api/supplier-payments`
 - `GET /api/trust-reconciliation`
+- `GET /api/weekly-snapshots`
+- `POST /api/weekly-snapshots/generate`
 
 Public health checks remain available:
 
@@ -164,6 +168,8 @@ Phase 10 imports Refund rows into the `refunds` table and includes refund liabil
 Phase 11 imports Agent Commission rows into the `agent_commissions` table and calculates true booking profit.
 
 Phase 12 scans the database for finance, trust and compliance exceptions and stores them in the `exceptions` table.
+
+Phase 13 creates weekly snapshots and compares the current week with the previous snapshot.
 
 Available upload types:
 
@@ -490,3 +496,37 @@ Status values:
 - ignored
 
 The Exceptions page lets the Super Admin filter the list, run the scan manually, and mark exceptions as reviewing, resolved, or ignored.
+
+## Weekly Snapshots
+
+Phase 13 adds weekly snapshots.
+
+Each snapshot stores booking-level values for:
+
+- booking status
+- gross booking value
+- expected supplier nett
+- customer payments total
+- card fees total
+- supplier payments total
+- refunds due total
+- refunds paid total
+- commission due total
+- calculated trust balance
+- ATOL required
+- ATOL certificate issued
+
+The Weekly Reports page can generate the current week's snapshot and compare it with the previous snapshot.
+
+The movement report detects:
+
+- new bookings
+- cancelled bookings
+- completed bookings
+- changed booking value
+- changed supplier cost
+- changed customer payment position
+- changed supplier payment position
+- changed refund position
+- changed commission position
+- changed ATOL status

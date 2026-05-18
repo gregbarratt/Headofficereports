@@ -34,6 +34,8 @@ import {
   getUploadBatches,
   getUploadTypes,
   generateExceptions,
+  generateWeeklySnapshot,
+  getWeeklySnapshots,
   loginSuperAdmin,
   logoutSuperAdmin,
   storeToken,
@@ -52,7 +54,7 @@ const navItems = [
   { label: "Bank Transactions", enabled: true },
   { label: "Trust Reconciliation", enabled: true },
   { label: "Exceptions", enabled: true },
-  { label: "Weekly Reports", enabled: false },
+  { label: "Weekly Reports", enabled: true },
   { label: "Settings", enabled: false },
 ];
 
@@ -1335,6 +1337,259 @@ function ExceptionsPage({ token }) {
   );
 }
 
+function WeeklyReportsPage({ token }) {
+  const [latest, setLatest] = useState(null);
+  const [snapshots, setSnapshots] = useState([]);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  async function loadSnapshots() {
+    const data = await getWeeklySnapshots(token);
+    setLatest(data.latest);
+    setSnapshots(data.snapshots);
+  }
+
+  useEffect(() => {
+    loadSnapshots().catch((loadError) => setError(loadError.message || "Weekly snapshots could not load."));
+  }, [token]);
+
+  async function handleGenerate() {
+    setIsGenerating(true);
+    setMessage("");
+    setError("");
+    try {
+      const data = await generateWeeklySnapshot(token);
+      setLatest(data);
+      setMessage(
+        `Snapshot generated for ${formatDate(data.current_snapshot.week_start_date)} to ${formatDate(
+          data.current_snapshot.week_end_date
+        )}.`
+      );
+      await loadSnapshots();
+    } catch (generateError) {
+      setError(generateError.message || "Weekly snapshot could not be generated.");
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  const summary = latest?.summary;
+  const currentSnapshot = latest?.current_snapshot;
+  const previousSnapshot = latest?.previous_snapshot;
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Weekly Reports</h2>
+          <p>Weekly snapshot and movement tracking.</p>
+        </div>
+        <FileSpreadsheet size={24} aria-hidden="true" />
+      </div>
+
+      <div className="weekly-actions">
+        <button className="primary-button" disabled={isGenerating} onClick={handleGenerate} type="button">
+          <RefreshCw size={18} aria-hidden="true" />
+          {isGenerating ? "Generating" : "Generate snapshot"}
+        </button>
+        <span>
+          {currentSnapshot
+            ? `${formatDate(currentSnapshot.week_start_date)} to ${formatDate(currentSnapshot.week_end_date)}`
+            : "No snapshot generated yet"}
+        </span>
+      </div>
+
+      {message ? <p className="form-success">{message}</p> : null}
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip summary-strip-wide">
+        <div>
+          <span>Movements</span>
+          <strong>{summary?.movement_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>New bookings</span>
+          <strong>{summary?.new_bookings ?? 0}</strong>
+        </div>
+        <div>
+          <span>Cancelled</span>
+          <strong>{summary?.cancelled_bookings ?? 0}</strong>
+        </div>
+        <div>
+          <span>Completed</span>
+          <strong>{summary?.completed_bookings ?? 0}</strong>
+        </div>
+        <div>
+          <span>Value changes</span>
+          <strong>{summary?.changed_booking_value ?? 0}</strong>
+        </div>
+        <div>
+          <span>Supplier cost</span>
+          <strong>{summary?.changed_supplier_cost ?? 0}</strong>
+        </div>
+        <div>
+          <span>Customer payment</span>
+          <strong>{summary?.changed_payment_position ?? 0}</strong>
+        </div>
+        <div>
+          <span>Supplier payment</span>
+          <strong>{summary?.changed_supplier_payment_position ?? 0}</strong>
+        </div>
+        <div>
+          <span>Refund</span>
+          <strong>{summary?.changed_refund_position ?? 0}</strong>
+        </div>
+        <div>
+          <span>Commission</span>
+          <strong>{summary?.changed_commission_position ?? 0}</strong>
+        </div>
+        <div>
+          <span>ATOL</span>
+          <strong>{summary?.changed_atol_status ?? 0}</strong>
+        </div>
+        <div>
+          <span>Previous snapshot</span>
+          <strong>{previousSnapshot ? formatDate(previousSnapshot.week_start_date) : "-"}</strong>
+        </div>
+      </div>
+
+      <div className="section-heading">
+        <h3>Movement report</h3>
+        <p>Current weekly snapshot compared with the previous snapshot.</p>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Movement</th>
+              <th>Field</th>
+              <th>Previous</th>
+              <th>Current</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {latest?.movements?.length ? (
+              latest.movements.map((movement, index) => (
+                <tr key={`${movement.booking_ref}-${movement.field_name}-${index}`}>
+                  <td>{movement.booking_ref}</td>
+                  <td>
+                    <span className={`status-pill status-${movement.movement_type}`}>
+                      {formatStatusLabel(movement.movement_type)}
+                    </span>
+                  </td>
+                  <td>{formatStatusLabel(movement.field_name)}</td>
+                  <td>{movement.previous_value || "-"}</td>
+                  <td>{movement.current_value || "-"}</td>
+                  <td>{movement.description}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="6">
+                  {previousSnapshot ? "No week-on-week movement found." : "Generate at least two weekly snapshots to compare movement."}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="section-heading">
+        <h3>Current snapshot bookings</h3>
+        <p>{currentSnapshot ? `${currentSnapshot.booking_count} booking(s) captured.` : "No current snapshot."}</p>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Status</th>
+              <th>Gross Value</th>
+              <th>Supplier Nett</th>
+              <th>Customer Paid</th>
+              <th>Card Fees</th>
+              <th>Supplier Paid</th>
+              <th>Refunds Due</th>
+              <th>Refunds Paid</th>
+              <th>Commission Due</th>
+              <th>Trust Balance</th>
+              <th>ATOL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {latest?.bookings?.length ? (
+              latest.bookings.map((booking) => (
+                <tr key={booking.booking_ref}>
+                  <td>{booking.booking_ref}</td>
+                  <td>{booking.booking_status || "-"}</td>
+                  <td>{formatMoney(booking.gross_booking_value)}</td>
+                  <td>{formatMoney(booking.expected_supplier_nett)}</td>
+                  <td>{formatMoney(booking.customer_payments_total)}</td>
+                  <td>{formatMoney(booking.card_fees_total)}</td>
+                  <td>{formatMoney(booking.supplier_payments_total)}</td>
+                  <td>{formatMoney(booking.refunds_due_total)}</td>
+                  <td>{formatMoney(booking.refunds_paid_total)}</td>
+                  <td>{formatMoney(booking.commission_due_total)}</td>
+                  <td>{formatMoney(booking.calculated_trust_balance)}</td>
+                  <td>{booking.atol_required ? "Required" : "Not required"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="12">No snapshot bookings yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="section-heading">
+        <h3>Snapshot history</h3>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Week Start</th>
+              <th>Week End</th>
+              <th>Status</th>
+              <th>Bookings</th>
+              <th>Generated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {snapshots.length ? (
+              snapshots.map((snapshot) => (
+                <tr key={snapshot.id}>
+                  <td>{formatDate(snapshot.week_start_date)}</td>
+                  <td>{formatDate(snapshot.week_end_date)}</td>
+                  <td>
+                    <span className={`status-pill status-${snapshot.status}`}>
+                      {formatStatusLabel(snapshot.status)}
+                    </span>
+                  </td>
+                  <td>{snapshot.booking_count}</td>
+                  <td>{formatDateTime(snapshot.generated_at)}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="5">No weekly snapshots yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function DashboardHome({ health, token }) {
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
@@ -1400,6 +1655,8 @@ function DashboardHome({ health, token }) {
           <strong>Booking-level calculation ready</strong>
           <span>Exceptions</span>
           <strong>Automated review list ready</strong>
+          <span>Weekly snapshots</span>
+          <strong>Movement tracking ready</strong>
           <span>Agent access</span>
           <strong>Not included</strong>
         </div>
@@ -1553,6 +1810,8 @@ export default function App() {
           <TrustReconciliationPage token={token} />
         ) : activeView === "Exceptions" ? (
           <ExceptionsPage token={token} />
+        ) : activeView === "Weekly Reports" ? (
+          <WeeklyReportsPage token={token} />
         ) : (
           <DashboardHome health={health} token={token} />
         )}
