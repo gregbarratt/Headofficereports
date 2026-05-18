@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 8 adds the Trust Reconciliation engine:
+Phase 9 adds the Bank / Trust Statement import:
 
 - FastAPI backend
 - React frontend
@@ -28,6 +28,9 @@ Phase 8 adds the Trust Reconciliation engine:
 - Trust Reconciliation engine
 - Booking-level trust position
 - Required trust balance summary
+- Bank / Trust Statement import
+- Bank transaction list
+- Actual trust balance and variance
 - Render deployment skeleton
 - Health check endpoints
 
@@ -107,6 +110,7 @@ Backend endpoints:
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
+- `GET /api/bank-transactions`
 - `GET /api/uploads/types`
 - `GET /api/uploads`
 - `POST /api/uploads`
@@ -138,6 +142,8 @@ Phase 6 imports Supplier Payment Report rows into the `supplier_payments` table 
 Phase 7 imports SINGs/Singhs Customer Payment Data rows into the `customer_payments` table.
 
 Phase 8 calculates trust reconciliation from imported source tables. It does not use the Master Booking Report's `Total Received`, `Paid (supp.)`, or `Profit (projected)` values as trusted finance sources.
+
+Phase 9 imports Bank / Trust Statement rows into the `bank_transactions` table and uses the latest trust balance as the actual bank position.
 
 Available upload types:
 
@@ -306,3 +312,38 @@ The Trust Reconciliation page marks incomplete data clearly, including:
 - Awaiting commission data
 
 For booking `OTC-01436`, if only the Master Booking Report and Supplier Payment Report have been imported, the supplier side can show complete while the trust status remains incomplete until SINGs/Singhs customer payment data is imported.
+
+## Bank / Trust Statement Import
+
+Mapped fields:
+
+- transaction_date
+- description
+- money_in
+- money_out
+- balance
+- account_type
+- transaction_reference
+
+The system stores every bank statement row.
+
+Duplicate checking uses:
+
+```text
+transaction date + description + money in + money out + balance + account type + transaction reference
+```
+
+Bank transaction matching:
+
+- The system looks for an existing booking reference inside the bank description or reference.
+- If a booking reference is found, the row is marked as matched.
+- If no booking reference is found, the row is imported and a review exception is created.
+- Duplicate rows are imported, marked as duplicate, and a review exception is created.
+
+Trust variance now uses:
+
+```text
+Latest imported Trust Bank Balance - Required Trust Balance = Trust Variance
+```
+
+If no bank statement has been imported, the Trust Reconciliation page still shows `Awaiting bank statement`.

@@ -461,6 +461,7 @@ th {
 }
 
 .status-matched,
+.status-matched_booking_ref,
 .status-booking_ref,
 .status-invoice_ref,
 .status-actual,
@@ -474,7 +475,8 @@ th {
 .status-awaiting_supplier_nett,
 .status-estimated,
 .status-lower_confidence,
-.status-calculated_with_missing_data {
+.status-calculated_with_missing_data,
+.status-duplicate {
   color: #664d03;
   background: #fff3cd;
 }

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.bank_transactions import router as bank_transactions_router
 from app.api.bookings import router as bookings_router
 from app.api.customer_payments import router as customer_payments_router
 from app.api.dashboard import router as dashboard_router
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
 
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     app.include_router(auth_router)
+    app.include_router(bank_transactions_router)
     app.include_router(bookings_router)
     app.include_router(customer_payments_router)
     app.include_router(dashboard_router)

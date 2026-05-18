@@ -46,6 +46,10 @@ export async function getApiHealth() {
   return apiRequest("/api/health");
 }
 
+export async function getBankTransactions(token) {
+  return apiRequest("/api/bank-transactions", { token });
+}
+
 export async function loginSuperAdmin({ email, password }) {
   return apiRequest("/api/auth/login", {
     method: "POST",

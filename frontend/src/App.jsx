@@ -1,5 +1,6 @@
 import {
   Activity,
+  Banknote,
   CreditCard,
   Database,
   FileSpreadsheet,
@@ -16,6 +17,7 @@ import { useEffect, useState } from "react";
 import {
   clearStoredToken,
   getApiHealth,
+  getBankTransactions,
   getBookings,
   getCurrentUser,
   getCustomerPayments,
@@ -37,6 +39,7 @@ const navItems = [
   { label: "Bookings", enabled: true },
   { label: "Supplier Payments", enabled: true },
   { label: "Customer Payments", enabled: true },
+  { label: "Bank Transactions", enabled: true },
   { label: "Trust Reconciliation", enabled: true },
   { label: "Weekly Reports", enabled: false },
   { label: "Settings", enabled: false },
@@ -593,6 +596,103 @@ function CustomerPaymentsPage({ token }) {
   );
 }
 
+function BankTransactionsPage({ token }) {
+  const [transactions, setTransactions] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getBankTransactions(token)
+      .then((data) => {
+        setTransactions(data.transactions);
+        setSummary(data.summary);
+      })
+      .catch((loadError) => setError(loadError.message || "Bank transactions could not load."));
+  }, [token]);
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Bank Transactions</h2>
+          <p>Imported trust bank statement rows and latest actual balance.</p>
+        </div>
+        <Banknote size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip">
+        <div>
+          <span>Rows</span>
+          <strong>{summary?.total_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Latest trust balance</span>
+          <strong>{formatMoney(summary?.latest_trust_balance)}</strong>
+        </div>
+        <div>
+          <span>Balance date</span>
+          <strong>{formatDate(summary?.latest_trust_balance_date)}</strong>
+        </div>
+        <div>
+          <span>Unmatched</span>
+          <strong>{summary?.unmatched_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Duplicates</span>
+          <strong>{summary?.duplicate_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Trust variance source</span>
+          <strong>{summary?.latest_trust_balance ? "Ready" : "Awaiting statement"}</strong>
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Money In</th>
+              <th>Money Out</th>
+              <th>Balance</th>
+              <th>Account</th>
+              <th>Reference</th>
+              <th>Match</th>
+            </tr>
+          </thead>
+          <tbody>
+            {transactions.length ? (
+              transactions.map((transaction) => (
+                <tr key={transaction.id}>
+                  <td>{formatDate(transaction.transaction_date)}</td>
+                  <td>{transaction.description || "-"}</td>
+                  <td>{formatMoney(transaction.money_in)}</td>
+                  <td>{formatMoney(transaction.money_out)}</td>
+                  <td>{formatMoney(transaction.balance)}</td>
+                  <td>{transaction.account_type || "-"}</td>
+                  <td>{transaction.transaction_reference || "-"}</td>
+                  <td>
+                    <span className={`status-pill status-${transaction.match_status}`}>
+                      {formatStatusLabel(transaction.match_status)}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="8">No bank statement rows imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function TrustReconciliationPage({ token }) {
   const [summary, setSummary] = useState(null);
   const [bookings, setBookings] = useState([]);
@@ -864,6 +964,8 @@ export default function App() {
           <SupplierPaymentsPage token={token} />
         ) : activeView === "Customer Payments" ? (
           <CustomerPaymentsPage token={token} />
+        ) : activeView === "Bank Transactions" ? (
+          <BankTransactionsPage token={token} />
         ) : activeView === "Trust Reconciliation" ? (
           <TrustReconciliationPage token={token} />
         ) : (
@@ -905,6 +1007,8 @@ export default function App() {
                 <strong>Separate import and reconciliation</strong>
                 <span>Customer payments</span>
                 <strong>SINGs/Singhs import ready</strong>
+                <span>Bank transactions</span>
+                <strong>Statement import ready</strong>
                 <span>Trust reconciliation</span>
                 <strong>Booking-level calculation ready</strong>
                 <span>Agent access</span>
