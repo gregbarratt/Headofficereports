@@ -1,7 +1,9 @@
 fastapi
 alembic
+openpyxl
 pydantic-settings
 psycopg[binary]
+python-multipart
 python-dotenv
 sqlalchemy
 uvicorn[standard]

@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 3 adds Super Admin authentication on top of the database foundation:
+Phase 4 adds the Upload Centre on top of the secure Super Admin system:
 
 - FastAPI backend
 - React frontend
@@ -15,6 +15,8 @@ Phase 3 adds Super Admin authentication on top of the database foundation:
 - First Super Admin creation command
 - Super Admin-only login
 - Protected dashboard access
+- Controlled CSV/XLSX uploads
+- Upload batch history
 - Render deployment skeleton
 - Health check endpoints
 
@@ -94,6 +96,9 @@ Backend endpoints:
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
+- `GET /api/uploads/types`
+- `GET /api/uploads`
+- `POST /api/uploads`
 
 Public health checks remain available:
 
@@ -106,3 +111,32 @@ Before logging in locally, set:
 - `JWT_SECRET_KEY`
 - `INITIAL_SUPER_ADMIN_EMAIL`
 - `INITIAL_SUPER_ADMIN_PASSWORD`
+
+## Upload Centre
+
+Phase 4 validates and tracks upload batches. It does not yet import booking or payment rows into the finance tables.
+
+Available upload types:
+
+- Master Booking Report
+- Supplier Payment Report
+- SINGs/Singhs Customer Payment Data
+- Bank / Trust Statement
+- Agent Commission Import
+- Refund Import
+
+Accepted file types:
+
+- `.csv`
+- `.xlsx`
+
+Every upload creates an `upload_batches` record with:
+
+- upload type
+- original file name
+- uploaded time
+- row count
+- accepted rows
+- rejected rows
+- status
+- error summary, where needed

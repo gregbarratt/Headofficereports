@@ -4,8 +4,9 @@ const TOKEN_STORAGE_KEY = "head_office_reporting_token";
 
 async function apiRequest(path, options = {}) {
   const { token, ...fetchOptions } = options;
+  const isFormData = fetchOptions.body instanceof FormData;
   const headers = {
-    ...(fetchOptions.body ? { "Content-Type": "application/json" } : {}),
+    ...(fetchOptions.body && !isFormData ? { "Content-Type": "application/json" } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...fetchOptions.headers,
   };
@@ -65,4 +66,24 @@ export async function logoutSuperAdmin(token) {
 
 export async function getDashboardStatus(token) {
   return apiRequest("/api/dashboard/status", { token });
+}
+
+export async function getUploadTypes(token) {
+  return apiRequest("/api/uploads/types", { token });
+}
+
+export async function getUploadBatches(token) {
+  return apiRequest("/api/uploads", { token });
+}
+
+export async function uploadBatch({ token, uploadType, file }) {
+  const body = new FormData();
+  body.append("upload_type", uploadType);
+  body.append("file", file);
+
+  return apiRequest("/api/uploads", {
+    method: "POST",
+    token,
+    body,
+  });
 }
