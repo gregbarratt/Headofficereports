@@ -9,6 +9,7 @@ import {
   LogOut,
   Plane,
   ReceiptText,
+  RefreshCw,
   ShieldCheck,
   Upload,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import {
   getCurrentUser,
   getCustomerPayments,
   getDashboardStatus,
+  getRefunds,
   getSupplierPayments,
   getStoredToken,
   getTrustReconciliation,
@@ -39,6 +41,7 @@ const navItems = [
   { label: "Bookings", enabled: true },
   { label: "Supplier Payments", enabled: true },
   { label: "Customer Payments", enabled: true },
+  { label: "Refunds", enabled: true },
   { label: "Bank Transactions", enabled: true },
   { label: "Trust Reconciliation", enabled: true },
   { label: "Weekly Reports", enabled: false },
@@ -693,6 +696,133 @@ function BankTransactionsPage({ token }) {
   );
 }
 
+function RefundsPage({ token }) {
+  const [refunds, setRefunds] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getRefunds(token)
+      .then((data) => {
+        setRefunds(data.refunds);
+        setSummary(data.summary);
+      })
+      .catch((loadError) => setError(loadError.message || "Refunds could not load."));
+  }, [token]);
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Refunds</h2>
+          <p>Refund liabilities and supplier refund recovery tracking.</p>
+        </div>
+        <RefreshCw size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip summary-strip-wide">
+        <div>
+          <span>Rows</span>
+          <strong>{summary?.total_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Refund due</span>
+          <strong>{formatMoney(summary?.refund_amount_due_total)}</strong>
+        </div>
+        <div>
+          <span>Refund paid</span>
+          <strong>{formatMoney(summary?.refund_amount_paid_total)}</strong>
+        </div>
+        <div>
+          <span>Unpaid refunds</span>
+          <strong>{formatMoney(summary?.refund_unpaid_total)}</strong>
+        </div>
+        <div>
+          <span>Supplier expected</span>
+          <strong>{formatMoney(summary?.supplier_refund_expected_total)}</strong>
+        </div>
+        <div>
+          <span>Supplier received</span>
+          <strong>{formatMoney(summary?.supplier_refund_received_total)}</strong>
+        </div>
+        <div>
+          <span>Supplier outstanding</span>
+          <strong>{formatMoney(summary?.supplier_refund_outstanding_total)}</strong>
+        </div>
+        <div>
+          <span>Overdue</span>
+          <strong>{summary?.overdue_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Unmatched</span>
+          <strong>{summary?.unmatched_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Trust impact</span>
+          <strong>{summary?.total_rows ? "Included" : "No refunds"}</strong>
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Customer</th>
+              <th>Reason</th>
+              <th>Due</th>
+              <th>Paid</th>
+              <th>Unpaid</th>
+              <th>Status</th>
+              <th>Supplier Expected</th>
+              <th>Supplier Received</th>
+              <th>Supplier Outstanding</th>
+              <th>Due Date</th>
+              <th>Paid Date</th>
+              <th>Match</th>
+            </tr>
+          </thead>
+          <tbody>
+            {refunds.length ? (
+              refunds.map((refund) => (
+                <tr key={refund.id}>
+                  <td>{refund.booking_ref || "-"}</td>
+                  <td>{refund.customer_name || "-"}</td>
+                  <td>{refund.refund_reason || "-"}</td>
+                  <td>{formatMoney(refund.refund_amount_due)}</td>
+                  <td>{formatMoney(refund.refund_amount_paid)}</td>
+                  <td>{formatMoney(refund.refund_unpaid)}</td>
+                  <td>
+                    <span className={`status-pill status-${refund.refund_status}`}>
+                      {formatStatusLabel(refund.refund_status)}
+                    </span>
+                  </td>
+                  <td>{formatMoney(refund.supplier_refund_expected)}</td>
+                  <td>{formatMoney(refund.supplier_refund_received)}</td>
+                  <td>{formatMoney(refund.supplier_refund_outstanding)}</td>
+                  <td>{formatDate(refund.due_date)}</td>
+                  <td>{formatDate(refund.paid_date)}</td>
+                  <td>
+                    <span className={`status-pill status-${refund.match_status}`}>
+                      {formatStatusLabel(refund.match_status)}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="13">No refunds imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function TrustReconciliationPage({ token }) {
   const [summary, setSummary] = useState(null);
   const [bookings, setBookings] = useState([]);
@@ -964,6 +1094,8 @@ export default function App() {
           <SupplierPaymentsPage token={token} />
         ) : activeView === "Customer Payments" ? (
           <CustomerPaymentsPage token={token} />
+        ) : activeView === "Refunds" ? (
+          <RefundsPage token={token} />
         ) : activeView === "Bank Transactions" ? (
           <BankTransactionsPage token={token} />
         ) : activeView === "Trust Reconciliation" ? (
@@ -1007,6 +1139,8 @@ export default function App() {
                 <strong>Separate import and reconciliation</strong>
                 <span>Customer payments</span>
                 <strong>SINGs/Singhs import ready</strong>
+                <span>Refunds</span>
+                <strong>Liability tracking ready</strong>
                 <span>Bank transactions</span>
                 <strong>Statement import ready</strong>
                 <span>Trust reconciliation</span>

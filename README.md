@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 9 adds the Bank / Trust Statement import:
+Phase 10 adds Refund tracking and refund liabilities:
 
 - FastAPI backend
 - React frontend
@@ -31,6 +31,9 @@ Phase 9 adds the Bank / Trust Statement import:
 - Bank / Trust Statement import
 - Bank transaction list
 - Actual trust balance and variance
+- Refund import
+- Refund liability tracking
+- Overdue refund exceptions
 - Render deployment skeleton
 - Health check endpoints
 
@@ -111,6 +114,7 @@ Backend endpoints:
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
 - `GET /api/bank-transactions`
+- `GET /api/refunds`
 - `GET /api/uploads/types`
 - `GET /api/uploads`
 - `POST /api/uploads`
@@ -144,6 +148,8 @@ Phase 7 imports SINGs/Singhs Customer Payment Data rows into the `customer_payme
 Phase 8 calculates trust reconciliation from imported source tables. It does not use the Master Booking Report's `Total Received`, `Paid (supp.)`, or `Profit (projected)` values as trusted finance sources.
 
 Phase 9 imports Bank / Trust Statement rows into the `bank_transactions` table and uses the latest trust balance as the actual bank position.
+
+Phase 10 imports Refund rows into the `refunds` table and includes refund liabilities in trust reconciliation.
 
 Available upload types:
 
@@ -347,3 +353,39 @@ Latest imported Trust Bank Balance - Required Trust Balance = Trust Variance
 ```
 
 If no bank statement has been imported, the Trust Reconciliation page still shows `Awaiting bank statement`.
+
+## Refund Import
+
+Mapped fields:
+
+- booking_ref
+- customer_name
+- refund_reason
+- refund_amount_due
+- refund_amount_paid
+- refund_status
+- supplier_refund_expected
+- supplier_refund_received
+- due_date
+- paid_date
+
+The system stores each refund row separately.
+
+Refund liability calculation:
+
+```text
+Refund Amount Due - Refund Amount Paid = Refund Still Unpaid
+```
+
+Supplier refund recovery calculation:
+
+```text
+Supplier Refund Expected - Supplier Refund Received = Supplier Refund Outstanding
+```
+
+Refunds are included in trust reconciliation:
+
+- refunds paid reduce the current booking trust balance
+- refunds due but unpaid increase the required trust balance
+
+If a refund is past its due date and still unpaid, the system creates an overdue refund exception for Head Office review.

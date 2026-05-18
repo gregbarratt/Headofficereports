@@ -466,6 +466,7 @@ th {
 .status-invoice_ref,
 .status-actual,
 .status-calculated,
+.status-paid,
 .status-paid_in_full {
   color: #0f5132;
   background: #d1e7dd;
@@ -473,6 +474,8 @@ th {
 
 .status-partially_paid,
 .status-awaiting_supplier_nett,
+.status-awaiting_supplier_refund,
+.status-due,
 .status-estimated,
 .status-lower_confidence,
 .status-calculated_with_missing_data,
@@ -484,9 +487,15 @@ th {
 .status-unpaid,
 .status-overpaid,
 .status-unmatched,
+.status-overdue,
 .status-incomplete_awaiting_customer_payment {
   color: #842029;
   background: #f8d7da;
+}
+
+.status-cancelled {
+  color: #45545b;
+  background: #e8eef1;
 }
 
 @media (max-width: 820px) {
