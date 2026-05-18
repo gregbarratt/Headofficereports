@@ -11,6 +11,7 @@ from app.models.reporting import UploadBatch
 from app.models.user import User
 from app.schemas.upload import UploadBatchRead, UploadTypeRead
 from app.services.master_booking_import import import_master_booking_report
+from app.services.supplier_payment_import import import_supplier_payment_report
 from app.services.uploads import (
     build_stored_filename,
     clean_filename,
@@ -100,6 +101,18 @@ async def create_upload_batch(
                 content=content,
                 actor_user_id=current_user.id,
             )
+        elif upload_type == "supplier_payment":
+            import_result = import_supplier_payment_report(
+                db=db,
+                upload_batch=batch,
+                filename=original_filename,
+                content=content,
+                actor_user_id=current_user.id,
+            )
+        else:
+            import_result = None
+
+        if import_result is not None:
             batch.row_count = import_result.row_count
             batch.accepted_rows = import_result.accepted_rows
             batch.rejected_rows = import_result.rejected_rows

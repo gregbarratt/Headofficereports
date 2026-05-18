@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 5 adds the Master Booking import and booking list:
+Phase 6 adds the Supplier Payment import and supplier reconciliation:
 
 - FastAPI backend
 - React frontend
@@ -19,6 +19,9 @@ Phase 5 adds the Master Booking import and booking list:
 - Upload batch history
 - Master Booking Report import
 - Booking list view
+- Supplier Payment Report import
+- Supplier payment row list
+- Booking-level supplier reconciliation
 - Render deployment skeleton
 - Health check endpoints
 
@@ -102,6 +105,7 @@ Backend endpoints:
 - `GET /api/uploads`
 - `POST /api/uploads`
 - `GET /api/bookings`
+- `GET /api/supplier-payments`
 
 Public health checks remain available:
 
@@ -117,9 +121,11 @@ Before logging in locally, set:
 
 ## Upload Centre
 
-Phase 4 validates and tracks upload batches. It does not yet import booking or payment rows into the finance tables.
+Phase 4 validates and tracks upload batches.
 
-Phase 5 imports Master Booking Report rows into the `bookings` table. Other upload types are still validated and tracked only until their later phases.
+Phase 5 imports Master Booking Report rows into the `bookings` table.
+
+Phase 6 imports Supplier Payment Report rows into the `supplier_payments` table and reconciles them against each booking's expected supplier nett value.
 
 Available upload types:
 
@@ -169,3 +175,36 @@ Excluded master report values are stored only as non-trusted audit fields:
 - Total Received
 - Paid (supp.)
 - Profit (projected)
+
+## Supplier Payment Import
+
+Mapped fields:
+
+- Transaction Date
+- Booking Reference
+- Product
+- Supplier
+- Payment Supplier
+- Booking Date
+- Departure Date
+- Payment Method
+- Payment Value
+- Associated VAT
+
+Every supplier payment row is stored separately. Multiple payment lines for the same booking are not merged.
+
+The system matches supplier payments to bookings by `Booking Reference`.
+
+Supplier reconciliation formula:
+
+```text
+Expected Supplier Nett - separately imported Supplier Payments = Calculated Supplier Balance Due
+```
+
+Duplicate checking uses:
+
+```text
+booking reference + supplier + payment supplier + transaction date + payment method + payment value + associated VAT
+```
+
+For booking `OTC-01436`, the supplier side should reconcile when the imported supplier payment rows are `300.00` and `3394.16` against expected supplier nett `3694.16`.

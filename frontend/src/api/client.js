@@ -72,6 +72,10 @@ export async function getBookings(token) {
   return apiRequest("/api/bookings", { token });
 }
 
+export async function getSupplierPayments(token) {
+  return apiRequest("/api/supplier-payments", { token });
+}
+
 export async function getUploadTypes(token) {
   return apiRequest("/api/uploads/types", { token });
 }

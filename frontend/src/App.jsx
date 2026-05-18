@@ -5,6 +5,7 @@ import {
   LockKeyhole,
   LogOut,
   Plane,
+  ReceiptText,
   ShieldCheck,
   Upload,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import {
   getBookings,
   getCurrentUser,
   getDashboardStatus,
+  getSupplierPayments,
   getStoredToken,
   getUploadBatches,
   getUploadTypes,
@@ -29,7 +31,7 @@ const navItems = [
   { label: "Dashboard", enabled: true },
   { label: "Upload Centre", enabled: true },
   { label: "Bookings", enabled: true },
-  { label: "Supplier Payments", enabled: false },
+  { label: "Supplier Payments", enabled: true },
   { label: "Customer Payments", enabled: false },
   { label: "Trust Reconciliation", enabled: false },
   { label: "Weekly Reports", enabled: false },
@@ -140,6 +142,13 @@ function formatMoney(value) {
     style: "currency",
     currency: "GBP",
   }).format(Number(value));
+}
+
+function formatStatusLabel(value) {
+  if (!value) {
+    return "-";
+  }
+  return value.replaceAll("_", " ");
 }
 
 function UploadCentre({ token }) {
@@ -340,6 +349,135 @@ function BookingsPage({ token }) {
   );
 }
 
+function SupplierPaymentsPage({ token }) {
+  const [payments, setPayments] = useState([]);
+  const [reconciliations, setReconciliations] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getSupplierPayments(token)
+      .then((data) => {
+        setPayments(data.payments);
+        setReconciliations(data.reconciliations);
+        setTotal(data.total);
+      })
+      .catch((loadError) => setError(loadError.message || "Supplier payments could not load."));
+  }, [token]);
+
+  return (
+    <section className="panel supplier-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Supplier Payments</h2>
+          <p>{total} imported supplier payment rows</p>
+        </div>
+        <ReceiptText size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="section-heading">
+        <h3>Booking reconciliation</h3>
+        <p>Expected supplier nett minus separately imported supplier payments.</p>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Last Name</th>
+              <th>Expected Nett</th>
+              <th>Total Paid</th>
+              <th>Balance Due</th>
+              <th>Variance</th>
+              <th>Status</th>
+              <th>Exception</th>
+              <th>Trust</th>
+              <th>True Profit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reconciliations.length ? (
+              reconciliations.map((item) => (
+                <tr key={item.booking_ref}>
+                  <td>{item.booking_ref}</td>
+                  <td>{item.customer_last_name || "-"}</td>
+                  <td>{formatMoney(item.expected_supplier_nett)}</td>
+                  <td>{formatMoney(item.supplier_payments_total)}</td>
+                  <td>{formatMoney(item.supplier_balance_due)}</td>
+                  <td>{formatMoney(item.supplier_variance)}</td>
+                  <td>
+                    <span className={`status-pill status-${item.supplier_reconciliation_status}`}>
+                      {formatStatusLabel(item.supplier_reconciliation_status)}
+                    </span>
+                  </td>
+                  <td>{item.supplier_exception || "None"}</td>
+                  <td>{item.trust_status}</td>
+                  <td>{item.true_profit_status}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="10">No bookings are ready for supplier reconciliation yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="section-heading">
+        <h3>Imported payment rows</h3>
+        <p>Each supplier payment line is stored separately.</p>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Booking Ref</th>
+              <th>Product</th>
+              <th>Supplier</th>
+              <th>Payment Supplier</th>
+              <th>Method</th>
+              <th>Payment Value</th>
+              <th>VAT</th>
+              <th>Match</th>
+              <th>Duplicate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payments.length ? (
+              payments.map((payment) => (
+                <tr key={payment.id}>
+                  <td>{formatDate(payment.supplier_payment_date)}</td>
+                  <td>{payment.booking_ref || "-"}</td>
+                  <td>{payment.product_type || "-"}</td>
+                  <td>{payment.supplier_name || "-"}</td>
+                  <td>{payment.payment_supplier_name || "-"}</td>
+                  <td>{payment.supplier_payment_method || "-"}</td>
+                  <td>{formatMoney(payment.supplier_payment_amount)}</td>
+                  <td>{formatMoney(payment.associated_vat)}</td>
+                  <td>
+                    <span className={`status-pill status-${payment.match_status}`}>
+                      {formatStatusLabel(payment.match_status)}
+                    </span>
+                  </td>
+                  <td>{payment.is_duplicate ? "Yes" : "No"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="10">No supplier payment rows imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [token, setToken] = useState(() => getStoredToken());
@@ -471,6 +609,8 @@ export default function App() {
           <UploadCentre token={token} />
         ) : activeView === "Bookings" ? (
           <BookingsPage token={token} />
+        ) : activeView === "Supplier Payments" ? (
+          <SupplierPaymentsPage token={token} />
         ) : (
           <>
             <div className="status-grid">
@@ -506,6 +646,8 @@ export default function App() {
                 <strong>Super Admin only</strong>
                 <span>Upload Centre</span>
                 <strong>CSV/XLSX batch tracking</strong>
+                <span>Supplier payments</span>
+                <strong>Separate import and reconciliation</strong>
                 <span>Agent access</span>
                 <strong>Not included</strong>
               </div>

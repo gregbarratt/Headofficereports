@@ -344,6 +344,24 @@ nav button:disabled {
   font-weight: 700;
 }
 
+.section-heading {
+  margin: 20px 0 10px;
+}
+
+.section-heading h3,
+.section-heading p {
+  margin: 0;
+}
+
+.section-heading h3 {
+  font-size: 1rem;
+}
+
+.section-heading p {
+  margin-top: 4px;
+  color: #5c6b72;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -396,6 +414,25 @@ th {
 }
 
 .status-failed {
+  color: #842029;
+  background: #f8d7da;
+}
+
+.status-matched,
+.status-paid_in_full {
+  color: #0f5132;
+  background: #d1e7dd;
+}
+
+.status-partially_paid,
+.status-awaiting_supplier_nett {
+  color: #664d03;
+  background: #fff3cd;
+}
+
+.status-unpaid,
+.status-overpaid,
+.status-unmatched {
   color: #842029;
   background: #f8d7da;
 }
