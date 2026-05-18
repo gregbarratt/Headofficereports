@@ -80,6 +80,10 @@ export async function getSupplierPayments(token) {
   return apiRequest("/api/supplier-payments", { token });
 }
 
+export async function getTrustReconciliation(token) {
+  return apiRequest("/api/trust-reconciliation", { token });
+}
+
 export async function getUploadTypes(token) {
   return apiRequest("/api/uploads/types", { token });
 }

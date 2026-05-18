@@ -3,6 +3,7 @@ import {
   CreditCard,
   Database,
   FileSpreadsheet,
+  Landmark,
   LockKeyhole,
   LogOut,
   Plane,
@@ -21,6 +22,7 @@ import {
   getDashboardStatus,
   getSupplierPayments,
   getStoredToken,
+  getTrustReconciliation,
   getUploadBatches,
   getUploadTypes,
   loginSuperAdmin,
@@ -35,7 +37,7 @@ const navItems = [
   { label: "Bookings", enabled: true },
   { label: "Supplier Payments", enabled: true },
   { label: "Customer Payments", enabled: true },
-  { label: "Trust Reconciliation", enabled: false },
+  { label: "Trust Reconciliation", enabled: true },
   { label: "Weekly Reports", enabled: false },
   { label: "Settings", enabled: false },
 ];
@@ -591,6 +593,142 @@ function CustomerPaymentsPage({ token }) {
   );
 }
 
+function TrustReconciliationPage({ token }) {
+  const [summary, setSummary] = useState(null);
+  const [bookings, setBookings] = useState([]);
+  const [generatedAt, setGeneratedAt] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getTrustReconciliation(token)
+      .then((data) => {
+        setSummary(data.summary);
+        setBookings(data.bookings);
+        setGeneratedAt(data.generated_at);
+      })
+      .catch((loadError) => setError(loadError.message || "Trust reconciliation could not load."));
+  }, [token]);
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Trust Reconciliation</h2>
+          <p>Calculated from SINGs/Singhs payments, supplier payments and refunds.</p>
+        </div>
+        <Landmark size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip summary-strip-wide">
+        <div>
+          <span>Customer payments</span>
+          <strong>{formatMoney(summary?.customer_payments_received)}</strong>
+        </div>
+        <div>
+          <span>Card fees</span>
+          <strong>{formatMoney(summary?.card_fees)}</strong>
+        </div>
+        <div>
+          <span>Net trust receipts</span>
+          <strong>{formatMoney(summary?.net_trust_receipts)}</strong>
+        </div>
+        <div>
+          <span>Supplier payments</span>
+          <strong>{formatMoney(summary?.supplier_payments_made)}</strong>
+        </div>
+        <div>
+          <span>Refunds paid</span>
+          <strong>{formatMoney(summary?.refunds_paid)}</strong>
+        </div>
+        <div>
+          <span>Refunds due</span>
+          <strong>{formatMoney(summary?.refunds_due)}</strong>
+        </div>
+        <div>
+          <span>Required trust</span>
+          <strong>{formatMoney(summary?.required_trust_balance)}</strong>
+        </div>
+        <div>
+          <span>Actual bank balance</span>
+          <strong>{formatMoney(summary?.actual_trust_balance)}</strong>
+        </div>
+        <div>
+          <span>Trust variance</span>
+          <strong>{formatMoney(summary?.trust_variance)}</strong>
+        </div>
+        <div>
+          <span>Bank status</span>
+          <strong>{summary?.bank_status || "Awaiting bank statement"}</strong>
+        </div>
+      </div>
+
+      <div className="section-heading">
+        <h3>Booking trust position</h3>
+        <p>Net trust receipts minus supplier payments and refunds paid.</p>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Last Name</th>
+              <th>Status</th>
+              <th>Gross Value</th>
+              <th>Customer Paid</th>
+              <th>Card Fees</th>
+              <th>Net Trust Receipts</th>
+              <th>Supplier Paid</th>
+              <th>Refunds Paid</th>
+              <th>Refunds Unpaid</th>
+              <th>Current Trust Balance</th>
+              <th>Required Contribution</th>
+              <th>Trust Status</th>
+              <th>Missing Data</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bookings.length ? (
+              bookings.map((booking) => (
+                <tr key={booking.booking_ref}>
+                  <td>{booking.booking_ref}</td>
+                  <td>{booking.customer_last_name || "-"}</td>
+                  <td>{booking.booking_status || "-"}</td>
+                  <td>{formatMoney(booking.gross_booking_value)}</td>
+                  <td>{formatMoney(booking.customer_payments_received)}</td>
+                  <td>{formatMoney(booking.card_fees)}</td>
+                  <td>{formatMoney(booking.net_trust_receipts)}</td>
+                  <td>{formatMoney(booking.supplier_payments_made)}</td>
+                  <td>{formatMoney(booking.refunds_paid)}</td>
+                  <td>{formatMoney(booking.refunds_unpaid)}</td>
+                  <td>{formatMoney(booking.current_booking_trust_balance)}</td>
+                  <td>{formatMoney(booking.required_trust_balance_contribution)}</td>
+                  <td>
+                    <span className={`status-pill status-${booking.trust_status}`}>
+                      {formatStatusLabel(booking.trust_status)}
+                    </span>
+                  </td>
+                  <td>{booking.missing_items.length ? booking.missing_items.join("; ") : "None"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="14">No bookings imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="muted-note">
+        Last calculated {formatDateTime(generatedAt)}. Master Booking Report received values are not used here.
+      </p>
+    </section>
+  );
+}
+
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [token, setToken] = useState(() => getStoredToken());
@@ -726,6 +864,8 @@ export default function App() {
           <SupplierPaymentsPage token={token} />
         ) : activeView === "Customer Payments" ? (
           <CustomerPaymentsPage token={token} />
+        ) : activeView === "Trust Reconciliation" ? (
+          <TrustReconciliationPage token={token} />
         ) : (
           <>
             <div className="status-grid">
@@ -765,6 +905,8 @@ export default function App() {
                 <strong>Separate import and reconciliation</strong>
                 <span>Customer payments</span>
                 <strong>SINGs/Singhs import ready</strong>
+                <span>Trust reconciliation</span>
+                <strong>Booking-level calculation ready</strong>
                 <span>Agent access</span>
                 <strong>Not included</strong>
               </div>

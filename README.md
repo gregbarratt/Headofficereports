@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 7 adds the SINGs/Singhs Customer Payment import:
+Phase 8 adds the Trust Reconciliation engine:
 
 - FastAPI backend
 - React frontend
@@ -25,6 +25,9 @@ Phase 7 adds the SINGs/Singhs Customer Payment import:
 - SINGs/Singhs Customer Payment import
 - Customer payment row list
 - Actual fee storage and estimated fee fallback
+- Trust Reconciliation engine
+- Booking-level trust position
+- Required trust balance summary
 - Render deployment skeleton
 - Health check endpoints
 
@@ -110,6 +113,7 @@ Backend endpoints:
 - `GET /api/bookings`
 - `GET /api/customer-payments`
 - `GET /api/supplier-payments`
+- `GET /api/trust-reconciliation`
 
 Public health checks remain available:
 
@@ -132,6 +136,8 @@ Phase 5 imports Master Booking Report rows into the `bookings` table.
 Phase 6 imports Supplier Payment Report rows into the `supplier_payments` table and reconciles them against each booking's expected supplier nett value.
 
 Phase 7 imports SINGs/Singhs Customer Payment Data rows into the `customer_payments` table.
+
+Phase 8 calculates trust reconciliation from imported source tables. It does not use the Master Booking Report's `Total Received`, `Paid (supp.)`, or `Profit (projected)` values as trusted finance sources.
 
 Available upload types:
 
@@ -259,3 +265,44 @@ The Customer Payments page shows:
 - net settled amount
 - booking match confidence
 - unmatched payment count
+
+## Trust Reconciliation
+
+Booking-level calculation:
+
+```text
+Customer Gross Payments
+- Card / payment fees
+= Net Trust Receipts
+
+Net Trust Receipts
+- Supplier Payments Made
+- Refunds Paid
+= Current Booking Trust Balance
+```
+
+Overall required trust balance:
+
+```text
+Positive booking-level trust balances
++ refunds due but unpaid
++ unmatched customer receipts
+= Required Trust Balance
+```
+
+Trust variance:
+
+```text
+Actual Trust Bank Balance - Required Trust Balance = Trust Variance
+```
+
+For the MVP, the system does not automatically release margin.
+
+The Trust Reconciliation page marks incomplete data clearly, including:
+
+- Awaiting SINGs/Singhs payment data
+- Awaiting supplier payment data
+- Awaiting bank statement
+- Awaiting commission data
+
+For booking `OTC-01436`, if only the Master Booking Report and Supplier Payment Report have been imported, the supplier side can show complete while the trust status remains incomplete until SINGs/Singhs customer payment data is imported.

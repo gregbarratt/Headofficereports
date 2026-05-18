@@ -394,6 +394,16 @@ nav button:disabled {
   font-size: 1rem;
 }
 
+.summary-strip-wide {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.muted-note {
+  margin: 16px 0 0;
+  color: #5c6b72;
+  font-size: 0.9rem;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -454,6 +464,7 @@ th {
 .status-booking_ref,
 .status-invoice_ref,
 .status-actual,
+.status-calculated,
 .status-paid_in_full {
   color: #0f5132;
   background: #d1e7dd;
@@ -462,14 +473,16 @@ th {
 .status-partially_paid,
 .status-awaiting_supplier_nett,
 .status-estimated,
-.status-lower_confidence {
+.status-lower_confidence,
+.status-calculated_with_missing_data {
   color: #664d03;
   background: #fff3cd;
 }
 
 .status-unpaid,
 .status-overpaid,
-.status-unmatched {
+.status-unmatched,
+.status-incomplete_awaiting_customer_payment {
   color: #842029;
   background: #f8d7da;
 }
@@ -509,6 +522,10 @@ th {
   }
 
   .summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-strip-wide {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

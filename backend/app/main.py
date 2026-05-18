@@ -7,6 +7,7 @@ from app.api.customer_payments import router as customer_payments_router
 from app.api.dashboard import router as dashboard_router
 from app.api.health import router as health_router
 from app.api.supplier_payments import router as supplier_payments_router
+from app.api.trust_reconciliation import router as trust_reconciliation_router
 from app.api.uploads import router as uploads_router
 from app.core.config import settings
 
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(customer_payments_router)
     app.include_router(dashboard_router)
     app.include_router(supplier_payments_router)
+    app.include_router(trust_reconciliation_router)
     app.include_router(uploads_router)
     app.include_router(health_router)
     return app
