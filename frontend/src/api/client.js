@@ -46,6 +46,10 @@ export async function getApiHealth() {
   return apiRequest("/api/health");
 }
 
+export async function getAgentCommissions(token) {
+  return apiRequest("/api/agent-commissions", { token });
+}
+
 export async function getBankTransactions(token) {
   return apiRequest("/api/bank-transactions", { token });
 }

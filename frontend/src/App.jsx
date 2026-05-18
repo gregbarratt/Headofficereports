@@ -4,6 +4,7 @@ import {
   CreditCard,
   Database,
   FileSpreadsheet,
+  HandCoins,
   Landmark,
   LockKeyhole,
   LogOut,
@@ -17,6 +18,7 @@ import { useEffect, useState } from "react";
 
 import {
   clearStoredToken,
+  getAgentCommissions,
   getApiHealth,
   getBankTransactions,
   getBookings,
@@ -42,6 +44,7 @@ const navItems = [
   { label: "Supplier Payments", enabled: true },
   { label: "Customer Payments", enabled: true },
   { label: "Refunds", enabled: true },
+  { label: "Agent Commissions", enabled: true },
   { label: "Bank Transactions", enabled: true },
   { label: "Trust Reconciliation", enabled: true },
   { label: "Weekly Reports", enabled: false },
@@ -823,6 +826,184 @@ function RefundsPage({ token }) {
   );
 }
 
+function AgentCommissionsPage({ token }) {
+  const [commissions, setCommissions] = useState([]);
+  const [trueProfits, setTrueProfits] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getAgentCommissions(token)
+      .then((data) => {
+        setCommissions(data.commissions);
+        setTrueProfits(data.true_profits);
+        setSummary(data.summary);
+      })
+      .catch((loadError) => setError(loadError.message || "Agent commissions could not load."));
+  }, [token]);
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Agent Commissions</h2>
+          <p>Commission imports and true booking profitability calculated by the system.</p>
+        </div>
+        <HandCoins size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip summary-strip-wide">
+        <div>
+          <span>Rows</span>
+          <strong>{summary?.total_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Gross commission</span>
+          <strong>{formatMoney(summary?.gross_commission_total)}</strong>
+        </div>
+        <div>
+          <span>Deductions</span>
+          <strong>{formatMoney(summary?.deductions_total)}</strong>
+        </div>
+        <div>
+          <span>Net commission due</span>
+          <strong>{formatMoney(summary?.net_commission_due_total)}</strong>
+        </div>
+        <div>
+          <span>Accrued</span>
+          <strong>{summary?.accrued_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Due</span>
+          <strong>{summary?.due_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Paid</span>
+          <strong>{summary?.paid_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Withheld</span>
+          <strong>{summary?.withheld_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Clawed back</span>
+          <strong>{summary?.clawed_back_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Unmatched</span>
+          <strong>{summary?.unmatched_count ?? 0}</strong>
+        </div>
+      </div>
+
+      <div className="section-heading">
+        <h3>True profitability</h3>
+        <p>Gross value minus supplier nett, payment fees, commission and refunds.</p>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Last Name</th>
+              <th>Gross Value</th>
+              <th>Supplier Nett</th>
+              <th>Payment Fees</th>
+              <th>Commission</th>
+              <th>Refunds</th>
+              <th>True Profit</th>
+              <th>Margin</th>
+              <th>Status</th>
+              <th>Missing Data</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trueProfits.length ? (
+              trueProfits.map((profit) => (
+                <tr key={profit.booking_ref}>
+                  <td>{profit.booking_ref}</td>
+                  <td>{profit.customer_last_name || "-"}</td>
+                  <td>{formatMoney(profit.gross_booking_value)}</td>
+                  <td>{formatMoney(profit.expected_supplier_nett)}</td>
+                  <td>{formatMoney(profit.payment_fees)}</td>
+                  <td>{formatMoney(profit.agent_commission)}</td>
+                  <td>{formatMoney(profit.refunds_adjustments)}</td>
+                  <td>{formatMoney(profit.true_booking_profit)}</td>
+                  <td>{profit.true_margin_percentage === null ? "-" : `${profit.true_margin_percentage}%`}</td>
+                  <td>
+                    <span className={`status-pill status-${profit.true_profit_status}`}>
+                      {formatStatusLabel(profit.true_profit_status)}
+                    </span>
+                  </td>
+                  <td>{profit.missing_items.length ? profit.missing_items.join("; ") : "None"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="11">No bookings are ready for true profit calculation yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="section-heading">
+        <h3>Imported commission rows</h3>
+        <p>Each commission line is stored separately.</p>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Agent</th>
+              <th>Basis</th>
+              <th>Gross</th>
+              <th>Deductions</th>
+              <th>Net Due</th>
+              <th>Status</th>
+              <th>Due Date</th>
+              <th>Paid Date</th>
+              <th>Match</th>
+            </tr>
+          </thead>
+          <tbody>
+            {commissions.length ? (
+              commissions.map((commission) => (
+                <tr key={commission.id}>
+                  <td>{commission.booking_ref || "-"}</td>
+                  <td>{commission.agent_name || "-"}</td>
+                  <td>{commission.commission_basis || "-"}</td>
+                  <td>{formatMoney(commission.gross_commission)}</td>
+                  <td>{formatMoney(commission.deductions)}</td>
+                  <td>{formatMoney(commission.net_commission_due)}</td>
+                  <td>
+                    <span className={`status-pill status-${commission.commission_status}`}>
+                      {formatStatusLabel(commission.commission_status)}
+                    </span>
+                  </td>
+                  <td>{formatDate(commission.due_date)}</td>
+                  <td>{formatDate(commission.paid_date)}</td>
+                  <td>
+                    <span className={`status-pill status-${commission.match_status}`}>
+                      {formatStatusLabel(commission.match_status)}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="10">No agent commission rows imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function TrustReconciliationPage({ token }) {
   const [summary, setSummary] = useState(null);
   const [bookings, setBookings] = useState([]);
@@ -1096,6 +1277,8 @@ export default function App() {
           <CustomerPaymentsPage token={token} />
         ) : activeView === "Refunds" ? (
           <RefundsPage token={token} />
+        ) : activeView === "Agent Commissions" ? (
+          <AgentCommissionsPage token={token} />
         ) : activeView === "Bank Transactions" ? (
           <BankTransactionsPage token={token} />
         ) : activeView === "Trust Reconciliation" ? (
@@ -1141,6 +1324,8 @@ export default function App() {
                 <strong>SINGs/Singhs import ready</strong>
                 <span>Refunds</span>
                 <strong>Liability tracking ready</strong>
+                <span>Agent commissions</span>
+                <strong>True profit calculation ready</strong>
                 <span>Bank transactions</span>
                 <strong>Statement import ready</strong>
                 <span>Trust reconciliation</span>

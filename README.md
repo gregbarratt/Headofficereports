@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 10 adds Refund tracking and refund liabilities:
+Phase 11 adds Agent Commission import and true profit calculation:
 
 - FastAPI backend
 - React frontend
@@ -34,6 +34,9 @@ Phase 10 adds Refund tracking and refund liabilities:
 - Refund import
 - Refund liability tracking
 - Overdue refund exceptions
+- Agent Commission import
+- Agent commission liability tracking
+- True booking profitability calculation
 - Render deployment skeleton
 - Health check endpoints
 
@@ -113,6 +116,7 @@ Backend endpoints:
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
+- `GET /api/agent-commissions`
 - `GET /api/bank-transactions`
 - `GET /api/refunds`
 - `GET /api/uploads/types`
@@ -150,6 +154,8 @@ Phase 8 calculates trust reconciliation from imported source tables. It does not
 Phase 9 imports Bank / Trust Statement rows into the `bank_transactions` table and uses the latest trust balance as the actual bank position.
 
 Phase 10 imports Refund rows into the `refunds` table and includes refund liabilities in trust reconciliation.
+
+Phase 11 imports Agent Commission rows into the `agent_commissions` table and calculates true booking profit.
 
 Available upload types:
 
@@ -389,3 +395,51 @@ Refunds are included in trust reconciliation:
 - refunds due but unpaid increase the required trust balance
 
 If a refund is past its due date and still unpaid, the system creates an overdue refund exception for Head Office review.
+
+## Agent Commission Import
+
+Mapped fields:
+
+- booking_ref
+- agent_name
+- commission_basis
+- gross_commission
+- deductions
+- net_commission_due
+- commission_status
+- due_date
+- paid_date
+
+Commission statuses:
+
+- accrued
+- due
+- paid
+- withheld
+- clawed_back
+- cancelled
+
+The system stores each commission row separately.
+
+True booking profit is calculated by the system:
+
+```text
+Gross Booking Value
+- Expected Supplier Nett
+- Actual card / payment fees
+- Agent commission
+- Refunds / adjustments
+= True Booking Profit
+```
+
+True margin percentage:
+
+```text
+True Booking Profit / Gross Booking Value x 100
+```
+
+Important rule:
+
+The Master Booking Report `Profit (projected)` value is not used for true profit.
+
+The Agent Commissions page shows imported commission rows and a booking-level true profitability table. If SINGs/Singhs fees or commission rows are missing, the true profit status is marked incomplete.
