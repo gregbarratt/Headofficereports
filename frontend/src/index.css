@@ -284,6 +284,10 @@ nav button:disabled {
   color: #1f7a4d;
 }
 
+.status-card-warning svg {
+  color: #8a5a00;
+}
+
 .panel {
   padding: 20px;
 }
@@ -398,6 +402,30 @@ nav button:disabled {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.exception-toolbar {
+  align-items: end;
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(150px, 220px) auto;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.table-actions button {
+  min-height: 32px;
+  border: 1px solid #b8c7cd;
+  border-radius: 6px;
+  color: #172026;
+  background: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
 .muted-note {
   margin: 16px 0 0;
   color: #5c6b72;
@@ -467,6 +495,7 @@ th {
 .status-actual,
 .status-calculated,
 .status-calculated_with_estimated_fees,
+.status-resolved,
 .status-paid,
 .status-paid_in_full {
   color: #0f5132;
@@ -479,6 +508,7 @@ th {
 .status-accrued,
 .status-due,
 .status-estimated,
+.status-reviewing,
 .status-lower_confidence,
 .status-calculated_with_missing_data,
 .status-duplicate {
@@ -491,6 +521,7 @@ th {
 .status-unmatched,
 .status-overdue,
 .status-incomplete,
+.status-open,
 .status-incomplete_awaiting_customer_payment {
   color: #842029;
   background: #f8d7da;
@@ -505,6 +536,31 @@ th {
 .status-clawed_back {
   color: #4b2b03;
   background: #ffe5c0;
+}
+
+.status-ignored {
+  color: #45545b;
+  background: #e8eef1;
+}
+
+.status-severity-critical {
+  color: #ffffff;
+  background: #842029;
+}
+
+.status-severity-high {
+  color: #842029;
+  background: #f8d7da;
+}
+
+.status-severity-medium {
+  color: #664d03;
+  background: #fff3cd;
+}
+
+.status-severity-low {
+  color: #45545b;
+  background: #e8eef1;
 }
 
 @media (max-width: 820px) {
@@ -534,6 +590,10 @@ th {
   }
 
   .progress-list {
+    grid-template-columns: 1fr;
+  }
+
+  .exception-toolbar {
     grid-template-columns: 1fr;
   }
 

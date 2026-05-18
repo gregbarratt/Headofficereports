@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 11 adds Agent Commission import and true profit calculation:
+Phase 12 adds automated exception generation and review:
 
 - FastAPI backend
 - React frontend
@@ -37,6 +37,9 @@ Phase 11 adds Agent Commission import and true profit calculation:
 - Agent Commission import
 - Agent commission liability tracking
 - True booking profitability calculation
+- Automated exception scan
+- Exceptions page and dashboard summary
+- Exception status updates
 - Render deployment skeleton
 - Health check endpoints
 
@@ -124,6 +127,9 @@ Backend endpoints:
 - `POST /api/uploads`
 - `GET /api/bookings`
 - `GET /api/customer-payments`
+- `GET /api/exceptions`
+- `POST /api/exceptions/generate`
+- `PATCH /api/exceptions/{exception_id}`
 - `GET /api/supplier-payments`
 - `GET /api/trust-reconciliation`
 
@@ -156,6 +162,8 @@ Phase 9 imports Bank / Trust Statement rows into the `bank_transactions` table a
 Phase 10 imports Refund rows into the `refunds` table and includes refund liabilities in trust reconciliation.
 
 Phase 11 imports Agent Commission rows into the `agent_commissions` table and calculates true booking profit.
+
+Phase 12 scans the database for finance, trust and compliance exceptions and stores them in the `exceptions` table.
 
 Available upload types:
 
@@ -443,3 +451,42 @@ Important rule:
 The Master Booking Report `Profit (projected)` value is not used for true profit.
 
 The Agent Commissions page shows imported commission rows and a booking-level true profitability table. If SINGs/Singhs fees or commission rows are missing, the true profit status is marked incomplete.
+
+## Exceptions
+
+Phase 12 adds an automated exception scan.
+
+It checks for:
+
+- trust shortfall
+- unmatched customer payments
+- lower-confidence customer payment matches
+- unmatched supplier payments
+- duplicate supplier payments
+- missing supplier references
+- supplier overpayments
+- supplier balances still due after departure
+- cancelled bookings with supplier balances due
+- cancelled bookings with commission still due
+- unmatched bank transactions
+- duplicate bank transactions
+- overdue refunds
+- unmatched refunds
+- missing ATOL certificate review items
+- estimated card fees
+
+Severity levels:
+
+- critical
+- high
+- medium
+- low
+
+Status values:
+
+- open
+- reviewing
+- resolved
+- ignored
+
+The Exceptions page lets the Super Admin filter the list, run the scan manually, and mark exceptions as reviewing, resolved, or ignored.

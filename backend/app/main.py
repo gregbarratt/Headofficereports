@@ -7,6 +7,7 @@ from app.api.bank_transactions import router as bank_transactions_router
 from app.api.bookings import router as bookings_router
 from app.api.customer_payments import router as customer_payments_router
 from app.api.dashboard import router as dashboard_router
+from app.api.exceptions import router as exceptions_router
 from app.api.health import router as health_router
 from app.api.refunds import router as refunds_router
 from app.api.supplier_payments import router as supplier_payments_router
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     app.include_router(bookings_router)
     app.include_router(customer_payments_router)
     app.include_router(dashboard_router)
+    app.include_router(exceptions_router)
     app.include_router(refunds_router)
     app.include_router(supplier_payments_router)
     app.include_router(trust_reconciliation_router)

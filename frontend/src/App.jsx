@@ -1,5 +1,6 @@
 import {
   Activity,
+  AlertTriangle,
   Banknote,
   CreditCard,
   Database,
@@ -25,15 +26,18 @@ import {
   getCurrentUser,
   getCustomerPayments,
   getDashboardStatus,
+  getExceptions,
   getRefunds,
   getSupplierPayments,
   getStoredToken,
   getTrustReconciliation,
   getUploadBatches,
   getUploadTypes,
+  generateExceptions,
   loginSuperAdmin,
   logoutSuperAdmin,
   storeToken,
+  updateExceptionStatus,
   uploadBatch,
 } from "./api/client.js";
 
@@ -47,6 +51,7 @@ const navItems = [
   { label: "Agent Commissions", enabled: true },
   { label: "Bank Transactions", enabled: true },
   { label: "Trust Reconciliation", enabled: true },
+  { label: "Exceptions", enabled: true },
   { label: "Weekly Reports", enabled: false },
   { label: "Settings", enabled: false },
 ];
@@ -1140,6 +1145,269 @@ function TrustReconciliationPage({ token }) {
   );
 }
 
+function ExceptionsPage({ token }) {
+  const [exceptions, setExceptions] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [generation, setGeneration] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("open");
+  const [severityFilter, setSeverityFilter] = useState("all");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  async function loadExceptions() {
+    const data = await getExceptions(token, { status: statusFilter, severity: severityFilter });
+    setExceptions(data.exceptions);
+    setSummary(data.summary);
+    setGeneration(data.generation);
+  }
+
+  useEffect(() => {
+    setError("");
+    loadExceptions().catch((loadError) => setError(loadError.message || "Exceptions could not load."));
+  }, [token, statusFilter, severityFilter]);
+
+  async function handleGenerate() {
+    setIsGenerating(true);
+    setMessage("");
+    setError("");
+    try {
+      const result = await generateExceptions(token);
+      setMessage(
+        `Scan complete: ${result.generated_count} current issue(s), ${result.created_count} new, ${result.auto_resolved_count} resolved.`
+      );
+      await loadExceptions();
+    } catch (generateError) {
+      setError(generateError.message || "Exception scan failed.");
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  async function handleStatusChange(exceptionId, status) {
+    setError("");
+    setMessage("");
+    try {
+      await updateExceptionStatus({ token, exceptionId, status });
+      setMessage(`Exception marked as ${formatStatusLabel(status)}.`);
+      await loadExceptions();
+    } catch (statusError) {
+      setError(statusError.message || "Exception status could not be updated.");
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Exceptions</h2>
+          <p>Automated checks for finance, trust and compliance items that need review.</p>
+        </div>
+        <AlertTriangle size={24} aria-hidden="true" />
+      </div>
+
+      <div className="summary-strip summary-strip-wide">
+        <div>
+          <span>Open</span>
+          <strong>{summary?.open_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Reviewing</span>
+          <strong>{summary?.reviewing_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Critical</span>
+          <strong>{summary?.critical_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>High</span>
+          <strong>{summary?.high_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Medium</span>
+          <strong>{summary?.medium_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Low</span>
+          <strong>{summary?.low_count ?? 0}</strong>
+        </div>
+      </div>
+
+      <div className="exception-toolbar">
+        <label>
+          Status
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="open">Open</option>
+            <option value="reviewing">Reviewing</option>
+            <option value="resolved">Resolved</option>
+            <option value="ignored">Ignored</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+        <label>
+          Severity
+          <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>
+            <option value="all">All</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+        <button className="primary-button" disabled={isGenerating} onClick={handleGenerate} type="button">
+          <RefreshCw size={18} aria-hidden="true" />
+          {isGenerating ? "Scanning" : "Run scan"}
+        </button>
+      </div>
+
+      {message ? <p className="form-success">{message}</p> : null}
+      {error ? <p className="form-error">{error}</p> : null}
+      {generation ? (
+        <p className="muted-note">
+          Latest scan found {generation.generated_count} current issue(s). New: {generation.created_count}. Updated:{" "}
+          {generation.updated_count}. Auto-resolved: {generation.auto_resolved_count}.
+        </p>
+      ) : null}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Status</th>
+              <th>Type</th>
+              <th>Title</th>
+              <th>Booking</th>
+              <th>Detail</th>
+              <th>Detected</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {exceptions.length ? (
+              exceptions.map((exception) => (
+                <tr key={exception.id}>
+                  <td>
+                    <span className={`status-pill status-severity-${exception.severity}`}>
+                      {formatStatusLabel(exception.severity)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`status-pill status-${exception.status}`}>
+                      {formatStatusLabel(exception.status)}
+                    </span>
+                  </td>
+                  <td>{formatStatusLabel(exception.exception_type)}</td>
+                  <td>{exception.title}</td>
+                  <td>{exception.booking_ref || "-"}</td>
+                  <td>{exception.detail || "-"}</td>
+                  <td>{formatDateTime(exception.detected_at)}</td>
+                  <td>
+                    <div className="table-actions">
+                      {exception.status !== "reviewing" ? (
+                        <button type="button" onClick={() => handleStatusChange(exception.id, "reviewing")}>
+                          Review
+                        </button>
+                      ) : null}
+                      {exception.status !== "resolved" ? (
+                        <button type="button" onClick={() => handleStatusChange(exception.id, "resolved")}>
+                          Resolve
+                        </button>
+                      ) : null}
+                      {exception.status !== "ignored" ? (
+                        <button type="button" onClick={() => handleStatusChange(exception.id, "ignored")}>
+                          Ignore
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="8">No exceptions match these filters.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function DashboardHome({ health, token }) {
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getExceptions(token, { status: "all", severity: "all" })
+      .then((data) => {
+        setSummary(data.summary);
+        setError("");
+      })
+      .catch((loadError) => setError(loadError.message || "Exceptions could not load."));
+  }, [token]);
+
+  const openExceptions = (summary?.open_count ?? 0) + (summary?.reviewing_count ?? 0);
+
+  return (
+    <>
+      <div className="status-grid">
+        <StatusCard
+          icon={Activity}
+          label="Backend"
+          value={health?.status === "ok" ? "Healthy" : "Checking"}
+          tone={health?.status === "ok" ? "success" : "neutral"}
+        />
+        <StatusCard
+          icon={Database}
+          label="Database"
+          value={health?.database_configured ? "Configured" : "Not configured yet"}
+        />
+        <StatusCard icon={ShieldCheck} label="Access" value="Super Admin only" tone="success" />
+        <StatusCard
+          icon={AlertTriangle}
+          label="Open exceptions"
+          value={error ? "Unable to load" : openExceptions}
+          tone={openExceptions ? "warning" : "success"}
+        />
+      </div>
+
+      <section className="panel">
+        <h2>Build Progress</h2>
+        <div className="progress-list">
+          <span>FastAPI backend</span>
+          <strong>Ready</strong>
+          <span>React frontend</span>
+          <strong>Ready</strong>
+          <span>PostgreSQL settings</span>
+          <strong>Schema ready</strong>
+          <span>Authentication</span>
+          <strong>Super Admin only</strong>
+          <span>Upload Centre</span>
+          <strong>CSV/XLSX batch tracking</strong>
+          <span>Supplier payments</span>
+          <strong>Separate import and reconciliation</strong>
+          <span>Customer payments</span>
+          <strong>SINGs/Singhs import ready</strong>
+          <span>Refunds</span>
+          <strong>Liability tracking ready</strong>
+          <span>Agent commissions</span>
+          <strong>True profit calculation ready</strong>
+          <span>Bank transactions</span>
+          <strong>Statement import ready</strong>
+          <span>Trust reconciliation</span>
+          <strong>Booking-level calculation ready</strong>
+          <span>Exceptions</span>
+          <strong>Automated review list ready</strong>
+          <span>Agent access</span>
+          <strong>Not included</strong>
+        </div>
+      </section>
+    </>
+  );
+}
+
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [token, setToken] = useState(() => getStoredToken());
@@ -1283,58 +1551,10 @@ export default function App() {
           <BankTransactionsPage token={token} />
         ) : activeView === "Trust Reconciliation" ? (
           <TrustReconciliationPage token={token} />
+        ) : activeView === "Exceptions" ? (
+          <ExceptionsPage token={token} />
         ) : (
-          <>
-            <div className="status-grid">
-              <StatusCard
-                icon={Activity}
-                label="Backend"
-                value={health?.status === "ok" ? "Healthy" : "Checking"}
-                tone={health?.status === "ok" ? "success" : "neutral"}
-              />
-              <StatusCard
-                icon={Database}
-                label="Database"
-                value={health?.database_configured ? "Configured" : "Not configured yet"}
-              />
-              <StatusCard
-                icon={ShieldCheck}
-                label="Access"
-                value="Super Admin only"
-                tone="success"
-              />
-            </div>
-
-            <section className="panel">
-              <h2>Build Progress</h2>
-              <div className="progress-list">
-                <span>FastAPI backend</span>
-                <strong>Ready</strong>
-                <span>React frontend</span>
-                <strong>Ready</strong>
-                <span>PostgreSQL settings</span>
-                <strong>Schema ready</strong>
-                <span>Authentication</span>
-                <strong>Super Admin only</strong>
-                <span>Upload Centre</span>
-                <strong>CSV/XLSX batch tracking</strong>
-                <span>Supplier payments</span>
-                <strong>Separate import and reconciliation</strong>
-                <span>Customer payments</span>
-                <strong>SINGs/Singhs import ready</strong>
-                <span>Refunds</span>
-                <strong>Liability tracking ready</strong>
-                <span>Agent commissions</span>
-                <strong>True profit calculation ready</strong>
-                <span>Bank transactions</span>
-                <strong>Statement import ready</strong>
-                <span>Trust reconciliation</span>
-                <strong>Booking-level calculation ready</strong>
-                <span>Agent access</span>
-                <strong>Not included</strong>
-              </div>
-            </section>
-          </>
+          <DashboardHome health={health} token={token} />
         )}
       </section>
     </main>

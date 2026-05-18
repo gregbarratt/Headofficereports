@@ -88,6 +88,25 @@ export async function getCustomerPayments(token) {
   return apiRequest("/api/customer-payments", { token });
 }
 
+export async function getExceptions(token, filters = {}) {
+  const search = new URLSearchParams();
+  if (filters.status && filters.status !== "all") {
+    search.set("status", filters.status);
+  }
+  if (filters.severity && filters.severity !== "all") {
+    search.set("severity", filters.severity);
+  }
+  const query = search.toString();
+  return apiRequest(`/api/exceptions${query ? `?${query}` : ""}`, { token });
+}
+
+export async function generateExceptions(token) {
+  return apiRequest("/api/exceptions/generate", {
+    method: "POST",
+    token,
+  });
+}
+
 export async function getSupplierPayments(token) {
   return apiRequest("/api/supplier-payments", { token });
 }
@@ -113,5 +132,13 @@ export async function uploadBatch({ token, uploadType, file }) {
     method: "POST",
     token,
     body,
+  });
+}
+
+export async function updateExceptionStatus({ token, exceptionId, status }) {
+  return apiRequest(`/api/exceptions/${exceptionId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ status }),
   });
 }
