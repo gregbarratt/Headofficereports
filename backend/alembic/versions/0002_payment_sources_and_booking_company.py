@@ -6,6 +6,7 @@ Create Date: 2026-05-19
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import table, column
 
 
 revision = "0002_payment_sources_and_booking_company"
@@ -14,40 +15,58 @@ branch_labels = None
 depends_on = None
 
 
+bookings_table = table(
+    "bookings",
+    column("booking_ref", sa.String()),
+    column("booking_company", sa.String()),
+)
+
+supplier_payments_table = table(
+    "supplier_payments",
+    column("payment_source", sa.String()),
+    column("duplicate_key", sa.String()),
+)
+
+
+def booking_company_for_reference(booking_ref: str | None) -> str:
+    reference = (booking_ref or "").strip().upper()
+    if reference.startswith("OTC"):
+        return "otc"
+    if reference.startswith(("LEM", "LMX", "LM-", "LM_")) or "LEMIEUX" in reference:
+        return "lemieux"
+    return "review"
+
+
 def upgrade() -> None:
     op.add_column(
         "bookings",
         sa.Column("booking_company", sa.String(length=80), nullable=False, server_default="otc"),
     )
-    op.execute(
-        """
-        UPDATE bookings
-        SET booking_company = CASE
-            WHEN upper(booking_ref) LIKE 'OTC%' THEN 'otc'
-            WHEN upper(booking_ref) LIKE 'LEM%' THEN 'lemieux'
-            WHEN upper(booking_ref) LIKE 'LMX%' THEN 'lemieux'
-            WHEN upper(booking_ref) LIKE 'LM-%' THEN 'lemieux'
-            WHEN upper(booking_ref) LIKE 'LM_%' THEN 'lemieux'
-            WHEN upper(booking_ref) LIKE '%LEMIEUX%' THEN 'lemieux'
-            ELSE 'review'
-        END
-        """
-    )
+    connection = op.get_bind()
+    booking_refs = connection.execute(sa.select(bookings_table.c.booking_ref)).scalars()
+    for booking_ref in booking_refs:
+        connection.execute(
+            bookings_table.update()
+            .where(bookings_table.c.booking_ref == booking_ref)
+            .values(booking_company=booking_company_for_reference(booking_ref))
+        )
     op.create_index("ix_bookings_booking_company", "bookings", ["booking_company"])
 
     op.add_column(
         "supplier_payments",
         sa.Column("payment_source", sa.String(length=40), nullable=False, server_default="taps"),
     )
-    op.execute(
-        """
-        UPDATE supplier_payments
-        SET duplicate_key = payment_source || '|' || duplicate_key
-        WHERE duplicate_key IS NOT NULL
-          AND duplicate_key NOT LIKE 'taps|%'
-          AND duplicate_key NOT LIKE 'tt|%'
-        """
-    )
+    duplicate_rows = connection.execute(
+        sa.select(supplier_payments_table.c.duplicate_key).where(supplier_payments_table.c.duplicate_key.is_not(None))
+    ).scalars()
+    for duplicate_key in duplicate_rows:
+        if duplicate_key.startswith(("taps|", "tt|")):
+            continue
+        connection.execute(
+            supplier_payments_table.update()
+            .where(supplier_payments_table.c.duplicate_key == duplicate_key)
+            .values(duplicate_key=f"taps|{duplicate_key}")
+        )
     op.create_index("ix_supplier_payments_payment_source", "supplier_payments", ["payment_source"])
 
     op.add_column(
