@@ -21,7 +21,7 @@ from app.services.customer_payment_import import (
 )
 
 
-MAX_TAKE = 100
+MAX_TAKE = 25
 
 
 @dataclass(frozen=True)
