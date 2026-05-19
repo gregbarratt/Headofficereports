@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 16 prepares Render deployment:
+Phase 17 adds the future SINGs/Singhs API placeholder:
 
 - FastAPI backend
 - React frontend
@@ -51,6 +51,8 @@ Phase 16 prepares Render deployment:
 - Render PostgreSQL configuration
 - Render Cron Job configuration
 - Production checklist
+- SINGs/Singhs API placeholder settings
+- SINGs/Singhs API placeholder service
 - Health check endpoints
 
 No agent login, registration, or multi-user role system is included.
@@ -173,6 +175,14 @@ Before sending weekly emails, set:
 - `SMTP_FROM_EMAIL`
 - `SMTP_USE_TLS`
 
+Future SINGs/Singhs API settings:
+
+- `SINGS_API_BASE_URL`
+- `SINGS_API_KEY`
+- `SINGS_API_SECRET`, if SINGs/Singhs requires one later
+
+These settings are placeholders only until official SINGs/Singhs API documentation is received.
+
 ## Upload Centre
 
 Phase 4 validates and tracks upload batches.
@@ -200,6 +210,8 @@ Phase 14 creates Excel reports and stores report run history.
 Phase 15 sends weekly Head Office report emails with Excel attachments.
 
 Phase 16 prepares the app for Render deployment with backend, frontend, PostgreSQL and weekly email cron configuration.
+
+Phase 17 adds a placeholder service for future SINGs/Singhs API integration. It does not make live API calls and does not guess any endpoint details. CSV/XLSX upload remains the active customer payment import method.
 
 Available upload types:
 
@@ -327,6 +339,27 @@ The Customer Payments page shows:
 - net settled amount
 - booking match confidence
 - unmatched payment count
+
+## Future SINGs/Singhs API Integration
+
+Phase 17 prepares the codebase for a later SINGs/Singhs API connection.
+
+The placeholder service is:
+
+```text
+backend/app/services/sings_service.py
+```
+
+It includes placeholder methods for:
+
+- transactions
+- settlements
+- refunds
+- chargebacks
+
+No real endpoint paths are hardcoded. The real endpoint URLs, authentication format, request fields and response mapping must be added only after official SINGs/Singhs API documentation is received.
+
+For now, Head Office should continue importing SINGs/Singhs customer payment data by CSV/XLSX upload.
 
 ## Trust Reconciliation
 

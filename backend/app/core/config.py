@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
+    sings_api_base_url: str = ""
+    sings_api_key: str = ""
+    sings_api_secret: str = ""
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_DIR / ".env"),
@@ -59,6 +62,10 @@ class Settings(BaseSettings):
     @property
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host.strip() and self.smtp_from_email.strip())
+
+    @property
+    def sings_api_configured(self) -> bool:
+        return bool(self.sings_api_base_url.strip() and self.sings_api_key.strip())
 
 
 @lru_cache
