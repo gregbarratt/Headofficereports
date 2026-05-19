@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
@@ -48,12 +48,41 @@ def get_supplier_status(
 
 @router.get("", response_model=SupplierPaymentListResponse)
 def list_supplier_payments(
+    search: str = "",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin),
 ) -> SupplierPaymentListResponse:
+    search_term = search.strip()
+    search_pattern = f"%{search_term}%" if search_term else ""
     total = db.scalar(select(func.count()).select_from(SupplierPayment)) or 0
+    payment_filters = []
+    booking_filters = []
+    if search_term:
+        payment_filters.append(
+            or_(
+                SupplierPayment.booking_ref.ilike(search_pattern),
+                SupplierPayment.product_type.ilike(search_pattern),
+                SupplierPayment.supplier_name.ilike(search_pattern),
+                SupplierPayment.payment_supplier_name.ilike(search_pattern),
+                SupplierPayment.supplier_payment_method.ilike(search_pattern),
+            )
+        )
+        booking_filters.append(
+            or_(
+                Booking.booking_ref.ilike(search_pattern),
+                Booking.customer_last_name.ilike(search_pattern),
+                Booking.destination.ilike(search_pattern),
+            )
+        )
+
+    filtered_total_statement = select(func.count()).select_from(SupplierPayment)
+    if payment_filters:
+        filtered_total_statement = filtered_total_statement.where(*payment_filters)
+    filtered_total = db.scalar(filtered_total_statement) or 0
+
     payment_statement = (
         select(SupplierPayment)
+        .where(*payment_filters)
         .order_by(SupplierPayment.created_at.desc(), SupplierPayment.id.desc())
         .limit(200)
     )
@@ -68,7 +97,27 @@ def list_supplier_payments(
         )
     }
 
-    booking_statement = select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(200)
+    booking_refs_from_filtered_payments: set[str] = set()
+    if search_term:
+        booking_refs_from_filtered_payments = {
+            booking_ref
+            for booking_ref in db.scalars(
+                select(SupplierPayment.booking_ref)
+                .where(*payment_filters)
+                .where(SupplierPayment.booking_ref.is_not(None))
+            )
+            if booking_ref
+        }
+
+    booking_statement = select(Booking)
+    if search_term:
+        booking_statement = booking_statement.where(
+            or_(
+                *booking_filters,
+                Booking.booking_ref.in_(booking_refs_from_filtered_payments),
+            )
+        )
+    booking_statement = booking_statement.order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(200)
     reconciliations = []
     for booking in db.scalars(booking_statement):
         supplier_payments_total = total_by_booking.get(booking.booking_ref, ZERO)
@@ -95,4 +144,5 @@ def list_supplier_payments(
         payments=payments,
         reconciliations=reconciliations,
         total=total,
+        filtered_total=filtered_total,
     )

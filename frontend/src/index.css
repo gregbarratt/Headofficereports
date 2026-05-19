@@ -100,6 +100,7 @@ input[type="checkbox"] {
 }
 
 .primary-button,
+.secondary-button,
 .logout-button {
   display: inline-flex;
   align-items: center;
@@ -117,8 +118,21 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 
+.secondary-button {
+  border: 1px solid #b8c7cd;
+  color: #172026;
+  background: #ffffff;
+  cursor: pointer;
+}
+
 .primary-button:disabled {
   background: #8aa29d;
+  cursor: wait;
+}
+
+.secondary-button:disabled {
+  color: #7a8a91;
+  background: #eef2f4;
   cursor: wait;
 }
 
@@ -346,6 +360,14 @@ nav button:disabled {
   display: grid;
   grid-template-columns: minmax(180px, 260px) minmax(220px, 1fr) auto;
   margin-bottom: 16px;
+}
+
+.supplier-search {
+  align-items: end;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .form-success {
@@ -682,7 +704,8 @@ th {
     grid-template-columns: 1fr;
   }
 
-  .upload-form {
+  .upload-form,
+  .supplier-search {
     grid-template-columns: 1fr;
   }
 

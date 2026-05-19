@@ -12,6 +12,7 @@ import {
   Plane,
   ReceiptText,
   RefreshCw,
+  Search,
   ShieldCheck,
   Upload,
 } from "lucide-react";
@@ -380,17 +381,35 @@ function SupplierPaymentsPage({ token }) {
   const [payments, setPayments] = useState([]);
   const [reconciliations, setReconciliations] = useState([]);
   const [total, setTotal] = useState(0);
+  const [filteredTotal, setFilteredTotal] = useState(0);
+  const [searchText, setSearchText] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    getSupplierPayments(token)
+    setIsLoading(true);
+    setError("");
+    getSupplierPayments(token, activeSearch)
       .then((data) => {
         setPayments(data.payments);
         setReconciliations(data.reconciliations);
         setTotal(data.total);
+        setFilteredTotal(data.filtered_total);
       })
-      .catch((loadError) => setError(loadError.message || "Supplier payments could not load."));
-  }, [token]);
+      .catch((loadError) => setError(loadError.message || "Supplier payments could not load."))
+      .finally(() => setIsLoading(false));
+  }, [token, activeSearch]);
+
+  function handleSearchSubmit(event) {
+    event.preventDefault();
+    setActiveSearch(searchText.trim());
+  }
+
+  function clearSearch() {
+    setSearchText("");
+    setActiveSearch("");
+  }
 
   return (
     <section className="panel supplier-panel">
@@ -403,6 +422,32 @@ function SupplierPaymentsPage({ token }) {
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
+
+      <form className="supplier-search" onSubmit={handleSearchSubmit}>
+        <label>
+          Search supplier payments
+          <input
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="Booking ref, supplier, product or payment method"
+            type="search"
+            value={searchText}
+          />
+        </label>
+        <button className="primary-button" disabled={isLoading} type="submit">
+          <Search size={18} aria-hidden="true" />
+          Search
+        </button>
+        <button className="secondary-button" disabled={isLoading && !activeSearch} onClick={clearSearch} type="button">
+          <RefreshCw size={18} aria-hidden="true" />
+          Clear
+        </button>
+      </form>
+
+      <p className="muted-note">
+        {activeSearch
+          ? `Showing ${filteredTotal} matching supplier payment row(s) out of ${total}.`
+          : "Showing the latest 200 supplier payment rows. Use search to find a specific booking."}
+      </p>
 
       <div className="section-heading">
         <h3>Booking reconciliation</h3>
@@ -446,7 +491,11 @@ function SupplierPaymentsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="10">No bookings are ready for supplier reconciliation yet.</td>
+                <td colSpan="10">
+                  {activeSearch
+                    ? "No booking reconciliation rows match this search."
+                    : "No bookings are ready for supplier reconciliation yet."}
+                </td>
               </tr>
             )}
           </tbody>
@@ -495,7 +544,9 @@ function SupplierPaymentsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="10">No supplier payment rows imported yet.</td>
+                <td colSpan="10">
+                  {activeSearch ? "No supplier payment rows match this search." : "No supplier payment rows imported yet."}
+                </td>
               </tr>
             )}
           </tbody>

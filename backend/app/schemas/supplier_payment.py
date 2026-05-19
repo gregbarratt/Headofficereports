@@ -41,3 +41,4 @@ class SupplierPaymentListResponse(BaseModel):
     payments: list[SupplierPaymentRead]
     reconciliations: list[SupplierBookingReconciliationRead]
     total: int
+    filtered_total: int

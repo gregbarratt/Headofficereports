@@ -142,8 +142,12 @@ export async function generateExceptions(token) {
   });
 }
 
-export async function getSupplierPayments(token) {
-  return apiRequest("/api/supplier-payments", { token });
+export async function getSupplierPayments(token, search = "") {
+  const query = new URLSearchParams();
+  if (search.trim()) {
+    query.set("search", search.trim());
+  }
+  return apiRequest(`/api/supplier-payments${query.toString() ? `?${query.toString()}` : ""}`, { token });
 }
 
 export async function getTrustReconciliation(token) {
