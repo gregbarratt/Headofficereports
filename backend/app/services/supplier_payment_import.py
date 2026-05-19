@@ -31,6 +31,7 @@ COLUMN_ALIASES = {
 }
 
 REQUIRED_FIELDS = {"booking_ref", "supplier_payment_amount"}
+QUERY_CHUNK_SIZE = 500
 
 
 @dataclass
@@ -92,6 +93,32 @@ def build_duplicate_key(values: dict[str, Any]) -> str:
     return "|".join(parts)
 
 
+def chunk_values(values: set[str], size: int = QUERY_CHUNK_SIZE) -> list[list[str]]:
+    ordered_values = sorted(value for value in values if value)
+    return [ordered_values[index : index + size] for index in range(0, len(ordered_values), size)]
+
+
+def fetch_booking_ids_by_ref(db: Session, booking_refs: set[str]) -> dict[str, int]:
+    booking_ids: dict[str, int] = {}
+    for booking_ref_chunk in chunk_values(booking_refs):
+        rows = db.execute(
+            select(Booking.booking_ref, Booking.id).where(Booking.booking_ref.in_(booking_ref_chunk))
+        ).all()
+        booking_ids.update({booking_ref: booking_id for booking_ref, booking_id in rows})
+    return booking_ids
+
+
+def fetch_existing_duplicate_keys(db: Session, duplicate_keys: set[str]) -> set[str]:
+    existing_duplicate_keys: set[str] = set()
+    for duplicate_key_chunk in chunk_values(duplicate_keys):
+        existing_duplicate_keys.update(
+            db.scalars(
+                select(SupplierPayment.duplicate_key).where(SupplierPayment.duplicate_key.in_(duplicate_key_chunk))
+            ).all()
+        )
+    return existing_duplicate_keys
+
+
 def import_supplier_payment_report(
     db: Session,
     upload_batch: UploadBatch,
@@ -110,7 +137,9 @@ def import_supplier_payment_report(
         result.errors.append(f"Required supplier payment column(s) missing: {friendly_names}.")
         return result
 
-    duplicate_keys_in_this_upload: set[str] = set()
+    parsed_payments: list[dict[str, Any]] = []
+    booking_refs_to_match: set[str] = set()
+    duplicate_keys_to_check: set[str] = set()
 
     for index, row in enumerate(rows, start=2):
         try:
@@ -119,13 +148,12 @@ def import_supplier_payment_report(
                 raise ValueError("Payment Value is missing.")
 
             booking_ref = clean_text(get_row_value(row, column_map, "booking_ref"))
-            booking = None
             if booking_ref:
-                booking = db.scalar(select(Booking).where(Booking.booking_ref == booking_ref))
+                booking_refs_to_match.add(booking_ref)
 
             values = {
                 "upload_batch_id": upload_batch.id,
-                "booking_id": booking.id if booking else None,
+                "booking_id": None,
                 "booking_ref": booking_ref,
                 "supplier_payment_date": parse_date(get_row_value(row, column_map, "supplier_payment_date")),
                 "product_type": clean_text(get_row_value(row, column_map, "product_type")),
@@ -136,21 +164,33 @@ def import_supplier_payment_report(
                 "supplier_payment_method": clean_text(get_row_value(row, column_map, "supplier_payment_method")),
                 "supplier_payment_amount": payment_amount,
                 "associated_vat": parse_money(get_row_value(row, column_map, "associated_vat")),
-                "match_status": "matched" if booking else "unmatched",
+                "match_status": "unmatched",
             }
             duplicate_key = build_duplicate_key(values)
-            existing_duplicate_id = db.scalar(
-                select(SupplierPayment.id).where(SupplierPayment.duplicate_key == duplicate_key).limit(1)
-            )
             values["duplicate_key"] = duplicate_key
-            values["is_duplicate"] = duplicate_key in duplicate_keys_in_this_upload or existing_duplicate_id is not None
-
-            db.add(SupplierPayment(**values))
-            duplicate_keys_in_this_upload.add(duplicate_key)
-            result.accepted_rows += 1
+            duplicate_keys_to_check.add(duplicate_key)
+            parsed_payments.append(values)
         except ValueError as exc:
             result.rejected_rows += 1
             result.errors.append(f"Row {index}: {exc}")
+
+    booking_ids_by_ref = fetch_booking_ids_by_ref(db, booking_refs_to_match)
+    existing_duplicate_keys = fetch_existing_duplicate_keys(db, duplicate_keys_to_check)
+    duplicate_keys_in_this_upload: set[str] = set()
+
+    supplier_payments = []
+    for values in parsed_payments:
+        booking_id = booking_ids_by_ref.get(values["booking_ref"] or "")
+        values["booking_id"] = booking_id
+        values["match_status"] = "matched" if booking_id else "unmatched"
+        duplicate_key = values["duplicate_key"]
+        values["is_duplicate"] = duplicate_key in duplicate_keys_in_this_upload or duplicate_key in existing_duplicate_keys
+        duplicate_keys_in_this_upload.add(duplicate_key)
+        supplier_payments.append(SupplierPayment(**values))
+
+    if supplier_payments:
+        db.add_all(supplier_payments)
+        result.accepted_rows = len(supplier_payments)
 
     db.add(
         AuditLog(
