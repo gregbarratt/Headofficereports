@@ -46,3 +46,21 @@ class CustomerPaymentSummaryRead(BaseModel):
 class CustomerPaymentListResponse(BaseModel):
     payments: list[CustomerPaymentRead]
     summary: CustomerPaymentSummaryRead
+
+
+class FellohSyncRequest(BaseModel):
+    start_date: date
+    end_date: date
+
+
+class FellohSyncResponse(BaseModel):
+    start_date: date
+    end_date: date
+    fetched_transactions: int
+    created_rows: int
+    updated_rows: int
+    skipped_rows: int
+    actual_fee_rows: int
+    estimated_fee_rows: int
+    unmatched_rows: int
+    warnings: list[str]

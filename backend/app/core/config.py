@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     sings_api_base_url: str = ""
     sings_api_key: str = ""
     sings_api_secret: str = ""
+    felloh_api_base_url: str = "https://api.felloh.com"
+    felloh_public_key: str = ""
+    felloh_private_key: str = ""
+    felloh_organisation_id: str = ""
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_DIR / ".env"),
@@ -66,6 +70,15 @@ class Settings(BaseSettings):
     @property
     def sings_api_configured(self) -> bool:
         return bool(self.sings_api_base_url.strip() and self.sings_api_key.strip())
+
+    @property
+    def felloh_api_configured(self) -> bool:
+        return bool(
+            self.felloh_api_base_url.strip()
+            and self.felloh_public_key.strip()
+            and self.felloh_private_key.strip()
+            and self.felloh_organisation_id.strip()
+        )
 
 
 @lru_cache

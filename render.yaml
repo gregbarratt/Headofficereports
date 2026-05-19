@@ -43,6 +43,14 @@ services:
         sync: false
       - key: SMTP_USE_TLS
         value: "true"
+      - key: FELLOH_API_BASE_URL
+        value: https://api.felloh.com
+      - key: FELLOH_PUBLIC_KEY
+        sync: false
+      - key: FELLOH_PRIVATE_KEY
+        sync: false
+      - key: FELLOH_ORGANISATION_ID
+        sync: false
 
   - type: web
     name: head-office-reporting

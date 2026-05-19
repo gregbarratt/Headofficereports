@@ -370,6 +370,14 @@ nav button:disabled {
   margin-bottom: 12px;
 }
 
+.customer-sync {
+  align-items: end;
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(160px, 220px) auto;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .form-success {
   margin: 0 0 12px;
   color: #0f5132;
@@ -705,7 +713,8 @@ th {
   }
 
   .upload-form,
-  .supplier-search {
+  .supplier-search,
+  .customer-sync {
     grid-template-columns: 1fr;
   }
 

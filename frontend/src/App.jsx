@@ -46,6 +46,7 @@ import {
   logoutSuperAdmin,
   sendWeeklyEmail,
   storeToken,
+  syncFellohCustomerPayments,
   updateEmailRecipient,
   updateExceptionStatus,
   uploadBatch,
@@ -170,6 +171,16 @@ function formatMoney(value) {
     style: "currency",
     currency: "GBP",
   }).format(Number(value));
+}
+
+function toDateInputValue(dateValue) {
+  return dateValue.toISOString().slice(0, 10);
+}
+
+function defaultSyncStartDate() {
+  const dateValue = new Date();
+  dateValue.setDate(dateValue.getDate() - 30);
+  return toDateInputValue(dateValue);
 }
 
 function formatStatusLabel(value) {
@@ -560,15 +571,48 @@ function CustomerPaymentsPage({ token }) {
   const [payments, setPayments] = useState([]);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
+  const [syncStartDate, setSyncStartDate] = useState(defaultSyncStartDate());
+  const [syncEndDate, setSyncEndDate] = useState(toDateInputValue(new Date()));
+  const [syncMessage, setSyncMessage] = useState("");
+  const [syncWarnings, setSyncWarnings] = useState([]);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  useEffect(() => {
-    getCustomerPayments(token)
+  function loadCustomerPayments() {
+    return getCustomerPayments(token)
       .then((data) => {
         setPayments(data.payments);
         setSummary(data.summary);
       })
       .catch((loadError) => setError(loadError.message || "Customer payments could not load."));
+  }
+
+  useEffect(() => {
+    loadCustomerPayments();
   }, [token]);
+
+  async function handleFellohSync(event) {
+    event.preventDefault();
+    setError("");
+    setSyncMessage("");
+    setSyncWarnings([]);
+    setIsSyncing(true);
+    try {
+      const result = await syncFellohCustomerPayments({
+        token,
+        startDate: syncStartDate,
+        endDate: syncEndDate,
+      });
+      setSyncMessage(
+        `Felloh sync complete: ${result.created_rows} new, ${result.updated_rows} updated, ${result.skipped_rows} skipped.`
+      );
+      setSyncWarnings(result.warnings || []);
+      await loadCustomerPayments();
+    } catch (syncError) {
+      setError(syncError.message || "Felloh sync failed.");
+    } finally {
+      setIsSyncing(false);
+    }
+  }
 
   return (
     <section className="panel">
@@ -581,6 +625,35 @@ function CustomerPaymentsPage({ token }) {
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
+      {syncMessage ? <p className="form-success">{syncMessage}</p> : null}
+      {syncWarnings.length ? (
+        <p className="muted-note">{syncWarnings.join(" ")}</p>
+      ) : null}
+
+      <form className="customer-sync" onSubmit={handleFellohSync}>
+        <label>
+          Felloh from
+          <input
+            onChange={(event) => setSyncStartDate(event.target.value)}
+            required
+            type="date"
+            value={syncStartDate}
+          />
+        </label>
+        <label>
+          Felloh to
+          <input
+            onChange={(event) => setSyncEndDate(event.target.value)}
+            required
+            type="date"
+            value={syncEndDate}
+          />
+        </label>
+        <button className="primary-button" disabled={isSyncing} type="submit">
+          <RefreshCw size={18} aria-hidden="true" />
+          {isSyncing ? "Syncing" : "Sync Felloh"}
+        </button>
+      </form>
 
       <div className="summary-strip">
         <div>

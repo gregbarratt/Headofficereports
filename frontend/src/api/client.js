@@ -123,6 +123,14 @@ export async function getCustomerPayments(token) {
   return apiRequest("/api/customer-payments", { token });
 }
 
+export async function syncFellohCustomerPayments({ token, startDate, endDate }) {
+  return apiRequest("/api/customer-payments/sync-felloh", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ start_date: startDate, end_date: endDate }),
+  });
+}
+
 export async function getExceptions(token, filters = {}) {
   const search = new URLSearchParams();
   if (filters.status && filters.status !== "all") {

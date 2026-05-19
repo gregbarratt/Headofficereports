@@ -33,6 +33,9 @@ Backend service:
 - `SMTP_USERNAME`
 - `SMTP_PASSWORD`
 - `SMTP_FROM_EMAIL`
+- `FELLOH_PUBLIC_KEY`
+- `FELLOH_PRIVATE_KEY`
+- `FELLOH_ORGANISATION_ID`
 
 Cron service:
 
@@ -45,6 +48,11 @@ Values that Render can create or link automatically:
 
 - `DATABASE_URL`
 - `JWT_SECRET_KEY`
+
+Felloh API base URL:
+
+- live: `https://api.felloh.com`
+- sandbox: `https://sandbox.felloh.com`
 
 ## Outlook / Microsoft 365 Email
 

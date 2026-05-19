@@ -4,7 +4,7 @@ This is the new Head Office-only reporting system. It is separate from the exist
 
 ## Current Phase
 
-Phase 17 adds the future SINGs/Singhs API placeholder:
+Phase 17 adds the Felloh / SINGs API customer payment sync:
 
 - FastAPI backend
 - React frontend
@@ -51,8 +51,9 @@ Phase 17 adds the future SINGs/Singhs API placeholder:
 - Render PostgreSQL configuration
 - Render Cron Job configuration
 - Production checklist
-- SINGs/Singhs API placeholder settings
-- SINGs/Singhs API placeholder service
+- Felloh / SINGs API customer payment sync
+- Manual customer payment sync from the Customer Payments page
+- Felloh API settings for Render
 - Health check endpoints
 
 No agent login, registration, or multi-user role system is included.
@@ -177,11 +178,22 @@ Before sending weekly emails, set:
 
 Future SINGs/Singhs API settings:
 
-- `SINGS_API_BASE_URL`
-- `SINGS_API_KEY`
-- `SINGS_API_SECRET`, if SINGs/Singhs requires one later
+- `FELLOH_API_BASE_URL`
+- `FELLOH_PUBLIC_KEY`
+- `FELLOH_PRIVATE_KEY`
+- `FELLOH_ORGANISATION_ID`
 
-These settings are placeholders only until official SINGs/Singhs API documentation is received.
+For production, the Felloh API base URL is:
+
+```text
+https://api.felloh.com
+```
+
+For sandbox testing, Felloh documents:
+
+```text
+https://sandbox.felloh.com
+```
 
 ## Upload Centre
 
@@ -211,7 +223,7 @@ Phase 15 sends weekly Head Office report emails with Excel attachments.
 
 Phase 16 prepares the app for Render deployment with backend, frontend, PostgreSQL and weekly email cron configuration.
 
-Phase 17 adds a placeholder service for future SINGs/Singhs API integration. It does not make live API calls and does not guess any endpoint details. CSV/XLSX upload remains the active customer payment import method.
+Phase 17 connects to the Felloh / SINGs API for customer payment sync. CSV/XLSX upload remains available as a fallback import method.
 
 Available upload types:
 
@@ -340,26 +352,39 @@ The Customer Payments page shows:
 - booking match confidence
 - unmatched payment count
 
-## Future SINGs/Singhs API Integration
+## Felloh / SINGs API Integration
 
-Phase 17 prepares the codebase for a later SINGs/Singhs API connection.
+Phase 17 adds a manual Felloh / SINGs customer payment sync.
 
-The placeholder service is:
+The API service is:
 
 ```text
 backend/app/services/sings_service.py
 ```
 
-It includes placeholder methods for:
+It uses the official Felloh flow:
 
-- transactions
-- settlements
-- refunds
-- chargebacks
+- `POST /token` to create a bearer token from the public/private keys
+- `POST /agent/transactions` to fetch completed customer payment transactions
+- `POST /agent/charges` to fetch actual processing charges where available
 
-No real endpoint paths are hardcoded. The real endpoint URLs, authentication format, request fields and response mapping must be added only after official SINGs/Singhs API documentation is received.
+The Customer Payments page has a manual **Sync Felloh** button with a date range.
 
-For now, Head Office should continue importing SINGs/Singhs customer payment data by CSV/XLSX upload.
+The sync:
+
+- creates new customer payment rows for new Felloh transaction IDs
+- updates existing rows when the same Felloh transaction ID is synced again
+- matches payments to bookings by booking reference where possible
+- uses Felloh charges as actual fees where available
+- falls back to payment method fee rules where Felloh charges are unavailable
+
+The required private Render environment variables are:
+
+- `FELLOH_PUBLIC_KEY`
+- `FELLOH_PRIVATE_KEY`
+- `FELLOH_ORGANISATION_ID`
+
+Do not commit API keys to GitHub.
 
 ## Trust Reconciliation
 
