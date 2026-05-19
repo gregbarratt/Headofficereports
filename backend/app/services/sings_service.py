@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.session import get_session_factory
 from app.models.reporting import AuditLog, Booking, CustomerPayment, UploadBatch
 from app.services.customer_payment_import import (
     calculate_estimated_fee,
@@ -44,6 +45,23 @@ class SingsApiError(RuntimeError):
 class FellohSyncResult:
     start_date: date
     end_date: date
+    fetched_transactions: int = 0
+    created_rows: int = 0
+    updated_rows: int = 0
+    checked_rows: int = 0
+    skipped_rows: int = 0
+    actual_fee_rows: int = 0
+    estimated_fee_rows: int = 0
+    unmatched_rows: int = 0
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class FellohBackfillResult:
+    start_date: date
+    end_date: date
+    chunk_days: int
+    chunk_count: int = 0
     fetched_transactions: int = 0
     created_rows: int = 0
     updated_rows: int = 0
@@ -331,8 +349,9 @@ def sync_felloh_customer_payments(
     start_date: date,
     end_date: date,
     actor_user_id: int | None,
+    service: SingsService | None = None,
 ) -> FellohSyncResult:
-    service = get_sings_service()
+    service = service or get_sings_service()
     result = FellohSyncResult(start_date=start_date, end_date=end_date)
     sync_batch = UploadBatch(
         upload_type="felloh_customer_payment_sync",
@@ -399,3 +418,99 @@ def sync_felloh_customer_payments(
         )
     )
     return result
+
+
+def count_date_chunks(start_date: date, end_date: date, chunk_days: int) -> int:
+    return len(list(iter_date_chunks(start_date, end_date, chunk_days)))
+
+
+def iter_date_chunks(start_date: date, end_date: date, chunk_days: int):
+    current_start = start_date
+    while current_start <= end_date:
+        current_end = min(current_start + timedelta(days=chunk_days - 1), end_date)
+        yield current_start, current_end
+        current_start = current_end + timedelta(days=1)
+
+
+def run_felloh_customer_payment_backfill(
+    start_date: date,
+    end_date: date,
+    actor_user_id: int | None,
+    parent_batch_id: int,
+    chunk_days: int = 14,
+) -> None:
+    session_factory = get_session_factory()
+    service = get_sings_service()
+    result = FellohBackfillResult(
+        start_date=start_date,
+        end_date=end_date,
+        chunk_days=chunk_days,
+        chunk_count=count_date_chunks(start_date, end_date, chunk_days),
+    )
+
+    with session_factory() as db:
+        parent_batch = db.get(UploadBatch, parent_batch_id)
+        if parent_batch is None:
+            return
+        parent_batch.status = "importing"
+        db.commit()
+
+        try:
+            for chunk_start, chunk_end in iter_date_chunks(start_date, end_date, chunk_days):
+                chunk_result = sync_felloh_customer_payments(
+                    db=db,
+                    start_date=chunk_start,
+                    end_date=chunk_end,
+                    actor_user_id=actor_user_id,
+                    service=service,
+                )
+                db.commit()
+
+                result.fetched_transactions += chunk_result.fetched_transactions
+                result.created_rows += chunk_result.created_rows
+                result.updated_rows += chunk_result.updated_rows
+                result.checked_rows += chunk_result.checked_rows
+                result.skipped_rows += chunk_result.skipped_rows
+                result.actual_fee_rows += chunk_result.actual_fee_rows
+                result.estimated_fee_rows += chunk_result.estimated_fee_rows
+                result.unmatched_rows += chunk_result.unmatched_rows
+                result.warnings.extend(chunk_result.warnings)
+
+            parent_batch = db.get(UploadBatch, parent_batch_id)
+            if parent_batch:
+                parent_batch.row_count = result.fetched_transactions
+                parent_batch.accepted_rows = result.created_rows + result.updated_rows + result.checked_rows
+                parent_batch.rejected_rows = result.skipped_rows
+                parent_batch.error_summary = " ".join(result.warnings) if result.warnings else None
+                parent_batch.status = "imported_with_errors" if result.warnings or result.skipped_rows else "imported"
+                parent_batch.completed_at = datetime.now(UTC)
+                db.add(
+                    AuditLog(
+                        actor_user_id=actor_user_id,
+                        action="felloh_customer_payment_backfill",
+                        table_name="customer_payments",
+                        record_id=parent_batch.id,
+                        description=(
+                            f"Felloh backfill synced {result.chunk_count} date block(s), "
+                            f"fetched {result.fetched_transactions} transaction(s), "
+                            f"created {result.created_rows}, cross-checked {result.checked_rows}, "
+                            f"updated {result.updated_rows}, skipped {result.skipped_rows}."
+                        ),
+                        after_data={
+                            "start_date": result.start_date.isoformat(),
+                            "end_date": result.end_date.isoformat(),
+                            "chunk_days": result.chunk_days,
+                            "chunk_count": result.chunk_count,
+                            "warnings": result.warnings,
+                        },
+                    )
+                )
+                db.commit()
+        except Exception as exc:
+            db.rollback()
+            parent_batch = db.get(UploadBatch, parent_batch_id)
+            if parent_batch:
+                parent_batch.status = "failed"
+                parent_batch.error_summary = str(exc)
+                parent_batch.completed_at = datetime.now(UTC)
+                db.commit()

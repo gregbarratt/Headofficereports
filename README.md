@@ -413,6 +413,8 @@ The sync:
 - uses Felloh charges as actual fees where available
 - falls back to payment method fee rules where Felloh charges are unavailable
 
+The Customer Payments page also has a **Start 2023 Catch-up** button. It starts a background Felloh sync from `2023-01-01` to the selected end date in 14-day blocks, then records the overall catch-up and each block in upload batch history.
+
 The required private Render environment variables are:
 
 - `FELLOH_PUBLIC_KEY`

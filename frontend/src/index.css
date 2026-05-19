@@ -373,7 +373,7 @@ nav button:disabled {
 .customer-sync {
   align-items: end;
   display: grid;
-  grid-template-columns: minmax(160px, 220px) minmax(160px, 220px) auto;
+  grid-template-columns: minmax(160px, 220px) minmax(160px, 220px) auto auto;
   gap: 12px;
   margin-bottom: 16px;
 }

@@ -1,20 +1,30 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
 from app.db.session import get_db
-from app.models.reporting import CustomerPayment
+from app.models.reporting import CustomerPayment, UploadBatch
 from app.models.user import User
 from app.schemas.customer_payment import (
+    FellohBackfillRequest,
+    FellohBackfillResponse,
     CustomerPaymentListResponse,
     CustomerPaymentSummaryRead,
     FellohSyncRequest,
     FellohSyncResponse,
 )
-from app.services.sings_service import SingsApiError, SingsApiNotConfiguredError, sync_felloh_customer_payments
+from app.services.sings_service import (
+    SingsApiError,
+    SingsApiNotConfiguredError,
+    count_date_chunks,
+    get_sings_service,
+    run_felloh_customer_payment_backfill,
+    sync_felloh_customer_payments,
+)
 
 
 router = APIRouter(prefix="/api/customer-payments", tags=["Customer Payments"])
@@ -114,4 +124,71 @@ def sync_felloh_payments(
         estimated_fee_rows=result.estimated_fee_rows,
         unmatched_rows=result.unmatched_rows,
         warnings=result.warnings,
+    )
+
+
+@router.post("/sync-felloh-backfill", response_model=FellohBackfillResponse, status_code=status.HTTP_202_ACCEPTED)
+def start_felloh_backfill(
+    request: FellohBackfillRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> FellohBackfillResponse:
+    if request.end_date < request.start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="End date must be on or after start date.",
+        )
+
+    active_backfill = db.scalar(
+        select(UploadBatch)
+        .where(UploadBatch.upload_type == "felloh_customer_payment_backfill")
+        .where(UploadBatch.status.in_(["queued", "importing"]))
+        .limit(1)
+    )
+    if active_backfill:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A Felloh catch-up sync is already running. Check Upload Centre for progress.",
+        )
+
+    try:
+        get_sings_service().ensure_configured()
+    except SingsApiNotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    chunk_count = count_date_chunks(request.start_date, request.end_date, request.chunk_days)
+    backfill_batch = UploadBatch(
+        upload_type="felloh_customer_payment_backfill",
+        original_filename=(
+            f"Felloh API catch-up {request.start_date.isoformat()} "
+            f"to {request.end_date.isoformat()}"
+        ),
+        status="queued",
+        uploaded_by_user_id=current_user.id,
+        uploaded_at=datetime.now(UTC),
+    )
+    db.add(backfill_batch)
+    db.commit()
+    db.refresh(backfill_batch)
+
+    background_tasks.add_task(
+        run_felloh_customer_payment_backfill,
+        request.start_date,
+        request.end_date,
+        current_user.id,
+        backfill_batch.id,
+        request.chunk_days,
+    )
+
+    return FellohBackfillResponse(
+        batch_id=backfill_batch.id,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        chunk_days=request.chunk_days,
+        chunk_count=chunk_count,
+        message=(
+            f"Felloh catch-up started in the background across {chunk_count} date block(s). "
+            "Check Upload Centre for progress."
+        ),
     )

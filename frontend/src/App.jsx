@@ -45,6 +45,7 @@ import {
   loginSuperAdmin,
   logoutSuperAdmin,
   sendWeeklyEmail,
+  startFellohCustomerPaymentBackfill,
   storeToken,
   syncFellohCustomerPayments,
   updateEmailRecipient,
@@ -67,6 +68,8 @@ const navItems = [
   { label: "Weekly Reports", enabled: true },
   { label: "Settings", enabled: false },
 ];
+
+const FELLOH_CATCH_UP_START_DATE = "2023-01-01";
 
 function StatusCard({ icon: Icon, label, value, tone = "neutral" }) {
   return (
@@ -601,6 +604,7 @@ function CustomerPaymentsPage({ token }) {
   const [syncMessage, setSyncMessage] = useState("");
   const [syncWarnings, setSyncWarnings] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isBackfilling, setIsBackfilling] = useState(false);
 
   function loadCustomerPayments() {
     return getCustomerPayments(token)
@@ -639,6 +643,26 @@ function CustomerPaymentsPage({ token }) {
     }
   }
 
+  async function handleFellohBackfill() {
+    setError("");
+    setSyncMessage("");
+    setSyncWarnings([]);
+    setIsBackfilling(true);
+    try {
+      const result = await startFellohCustomerPaymentBackfill({
+        token,
+        startDate: FELLOH_CATCH_UP_START_DATE,
+        endDate: syncEndDate,
+        chunkDays: 14,
+      });
+      setSyncMessage(result.message);
+    } catch (backfillError) {
+      setError(backfillError.message || "Felloh catch-up sync failed to start.");
+    } finally {
+      setIsBackfilling(false);
+    }
+  }
+
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -674,9 +698,13 @@ function CustomerPaymentsPage({ token }) {
             value={syncEndDate}
           />
         </label>
-        <button className="primary-button" disabled={isSyncing} type="submit">
+        <button className="primary-button" disabled={isSyncing || isBackfilling} type="submit">
           <RefreshCw size={18} aria-hidden="true" />
           {isSyncing ? "Syncing" : "Sync Felloh"}
+        </button>
+        <button className="secondary-button" disabled={isSyncing || isBackfilling} onClick={handleFellohBackfill} type="button">
+          <RefreshCw size={18} aria-hidden="true" />
+          {isBackfilling ? "Starting" : "Start 2023 Catch-up"}
         </button>
       </form>
 

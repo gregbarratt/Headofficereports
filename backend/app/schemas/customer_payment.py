@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CustomerPaymentRead(BaseModel):
@@ -57,6 +57,12 @@ class FellohSyncRequest(BaseModel):
     end_date: date
 
 
+class FellohBackfillRequest(BaseModel):
+    start_date: date
+    end_date: date
+    chunk_days: int = Field(default=14, ge=1, le=31)
+
+
 class FellohSyncResponse(BaseModel):
     start_date: date
     end_date: date
@@ -69,3 +75,12 @@ class FellohSyncResponse(BaseModel):
     estimated_fee_rows: int
     unmatched_rows: int
     warnings: list[str]
+
+
+class FellohBackfillResponse(BaseModel):
+    batch_id: int
+    start_date: date
+    end_date: date
+    chunk_days: int
+    chunk_count: int
+    message: str

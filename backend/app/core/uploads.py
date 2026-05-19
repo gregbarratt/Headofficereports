@@ -11,6 +11,7 @@ UPLOAD_TYPES = {
 
 SYSTEM_UPLOAD_TYPES = {
     "felloh_customer_payment_sync": "Felloh / SINGs API Sync",
+    "felloh_customer_payment_backfill": "Felloh / SINGs Catch-up Sync",
 }
 
 LEGACY_UPLOAD_TYPES = {

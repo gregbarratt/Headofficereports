@@ -131,6 +131,14 @@ export async function syncFellohCustomerPayments({ token, startDate, endDate }) 
   });
 }
 
+export async function startFellohCustomerPaymentBackfill({ token, startDate, endDate, chunkDays = 14 }) {
+  return apiRequest("/api/customer-payments/sync-felloh-backfill", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ start_date: startDate, end_date: endDate, chunk_days: chunkDays }),
+  });
+}
+
 export async function getExceptions(token, filters = {}) {
   const search = new URLSearchParams();
   if (filters.status && filters.status !== "all") {
