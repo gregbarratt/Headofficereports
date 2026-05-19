@@ -101,6 +101,7 @@ def sync_felloh_payments(
         fetched_transactions=result.fetched_transactions,
         created_rows=result.created_rows,
         updated_rows=result.updated_rows,
+        checked_rows=result.checked_rows,
         skipped_rows=result.skipped_rows,
         actual_fee_rows=result.actual_fee_rows,
         estimated_fee_rows=result.estimated_fee_rows,

@@ -603,7 +603,7 @@ function CustomerPaymentsPage({ token }) {
         endDate: syncEndDate,
       });
       setSyncMessage(
-        `Felloh sync complete: ${result.created_rows} new, ${result.updated_rows} updated, ${result.skipped_rows} skipped.`
+        `Felloh sync complete: ${result.created_rows} new, ${result.checked_rows} cross-checked, ${result.updated_rows} updated, ${result.skipped_rows} skipped.`
       );
       setSyncWarnings(result.warnings || []);
       await loadCustomerPayments();

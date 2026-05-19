@@ -59,6 +59,7 @@ class FellohSyncResponse(BaseModel):
     fetched_transactions: int
     created_rows: int
     updated_rows: int
+    checked_rows: int
     skipped_rows: int
     actual_fee_rows: int
     estimated_fee_rows: int

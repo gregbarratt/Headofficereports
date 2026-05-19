@@ -373,7 +373,9 @@ The Customer Payments page has a manual **Sync Felloh** button with a date range
 The sync:
 
 - creates new customer payment rows for new Felloh transaction IDs
-- updates existing rows when the same Felloh transaction ID is synced again
+- cross-checks existing rows when the same Felloh transaction ID is synced again
+- updates existing rows only when Felloh has changed the transaction data
+- records every Felloh sync in upload batch history
 - matches payments to bookings by booking reference where possible
 - uses Felloh charges as actual fees where available
 - falls back to payment method fee rules where Felloh charges are unavailable

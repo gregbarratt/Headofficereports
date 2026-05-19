@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.reporting import AuditLog, Booking, CustomerPayment
+from app.models.reporting import AuditLog, Booking, CustomerPayment, UploadBatch
 from app.services.customer_payment_import import (
     calculate_estimated_fee,
     find_booking_by_reference,
@@ -47,6 +47,7 @@ class FellohSyncResult:
     fetched_transactions: int = 0
     created_rows: int = 0
     updated_rows: int = 0
+    checked_rows: int = 0
     skipped_rows: int = 0
     actual_fee_rows: int = 0
     estimated_fee_rows: int = 0
@@ -244,6 +245,7 @@ def upsert_felloh_transaction(
     db: Session,
     transaction: dict[str, Any],
     charge_totals_by_transaction: dict[str, Decimal],
+    sync_batch_id: int,
 ) -> tuple[str, bool, bool, bool]:
     transaction_id = object_id(transaction.get("id"))
     if not transaction_id:
@@ -284,7 +286,6 @@ def upsert_felloh_transaction(
         net_settled_amount = (gross_amount - fee_amount).quantize(Decimal("0.01"))
 
     values = {
-        "upload_batch_id": None,
         "booking_id": booking.id if booking else None,
         "booking_ref": booking_ref or (booking.booking_ref if booking else None),
         "invoice_reference": None,
@@ -308,11 +309,15 @@ def upsert_felloh_transaction(
 
     existing = db.scalar(select(CustomerPayment).where(CustomerPayment.transaction_id == transaction_id).limit(1))
     if existing:
+        has_changes = any(getattr(existing, key) != value for key, value in values.items())
+        if not has_changes:
+            return "checked", used_actual_fee, fee_is_estimated, match_confidence == "unmatched"
+
         for key, value in values.items():
             setattr(existing, key, value)
         return "updated", used_actual_fee, fee_is_estimated, match_confidence == "unmatched"
 
-    db.add(CustomerPayment(transaction_id=transaction_id, **values))
+    db.add(CustomerPayment(upload_batch_id=sync_batch_id, transaction_id=transaction_id, **values))
     return "created", used_actual_fee, fee_is_estimated, match_confidence == "unmatched"
 
 
@@ -324,6 +329,15 @@ def sync_felloh_customer_payments(
 ) -> FellohSyncResult:
     service = get_sings_service()
     result = FellohSyncResult(start_date=start_date, end_date=end_date)
+    sync_batch = UploadBatch(
+        upload_type="felloh_customer_payment_sync",
+        original_filename=f"Felloh API sync {start_date.isoformat()} to {end_date.isoformat()}",
+        status="importing",
+        uploaded_by_user_id=actor_user_id,
+    )
+    db.add(sync_batch)
+    db.flush()
+
     transactions = service.fetch_transactions(start_date=start_date, end_date=end_date)
     result.fetched_transactions = len(transactions)
 
@@ -337,12 +351,14 @@ def sync_felloh_customer_payments(
 
     for transaction in transactions:
         action, used_actual_fee, used_estimated_fee, is_unmatched = upsert_felloh_transaction(
-            db, transaction, charge_totals_by_transaction
+            db, transaction, charge_totals_by_transaction, sync_batch.id
         )
         if action == "created":
             result.created_rows += 1
         elif action == "updated":
             result.updated_rows += 1
+        elif action == "checked":
+            result.checked_rows += 1
         else:
             result.skipped_rows += 1
         if used_actual_fee:
@@ -352,6 +368,13 @@ def sync_felloh_customer_payments(
         if is_unmatched:
             result.unmatched_rows += 1
 
+    sync_batch.row_count = result.fetched_transactions
+    sync_batch.accepted_rows = result.created_rows + result.updated_rows + result.checked_rows
+    sync_batch.rejected_rows = result.skipped_rows
+    sync_batch.error_summary = " ".join(result.warnings) if result.warnings else None
+    sync_batch.status = "imported_with_errors" if result.warnings or result.skipped_rows else "imported"
+    sync_batch.completed_at = datetime.now(UTC)
+
     db.add(
         AuditLog(
             actor_user_id=actor_user_id,
@@ -359,9 +382,11 @@ def sync_felloh_customer_payments(
             table_name="customer_payments",
             description=(
                 f"Felloh sync fetched {result.fetched_transactions} transaction(s), "
-                f"created {result.created_rows}, updated {result.updated_rows}, skipped {result.skipped_rows}."
+                f"created {result.created_rows}, cross-checked {result.checked_rows}, "
+                f"updated {result.updated_rows}, skipped {result.skipped_rows}."
             ),
             after_data={
+                "sync_batch_id": sync_batch.id,
                 "start_date": result.start_date.isoformat(),
                 "end_date": result.end_date.isoformat(),
                 "warnings": result.warnings,
