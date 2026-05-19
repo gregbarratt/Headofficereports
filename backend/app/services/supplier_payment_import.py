@@ -18,15 +18,21 @@ from app.services.master_booking_import import (
 
 
 COLUMN_ALIASES = {
-    "supplier_payment_date": ("transaction date", "supplier payment date", "payment date"),
-    "booking_ref": ("booking reference", "booking ref"),
+    "supplier_payment_date": (
+        "transaction date",
+        "supplier payment date",
+        "payment date",
+        "collection",
+        "collection date",
+    ),
+    "booking_ref": ("booking reference", "booking ref", "bkg reference", "bkg ref"),
     "product_type": ("product", "product type"),
-    "supplier_name": ("supplier", "supplier name"),
-    "payment_supplier_name": ("payment supplier", "payment supplier name"),
+    "supplier_name": ("supplier name", "supplier"),
+    "payment_supplier_name": ("payment supplier", "payment supplier name", "supplier name"),
     "booking_date_imported": ("booking date", "date booked"),
     "departure_date_imported": ("departure date",),
     "supplier_payment_method": ("payment method", "supplier payment method"),
-    "supplier_payment_amount": ("payment value", "payment amount", "supplier payment amount"),
+    "supplier_payment_amount": ("collected", "payment value", "value", "payment amount", "supplier payment amount"),
     "associated_vat": ("associated vat", "vat"),
 }
 
@@ -68,6 +74,22 @@ def get_row_value(row: dict[str, Any], column_map: dict[str, str], field_name: s
     if header is None:
         return None
     return row.get(header)
+
+
+def is_taps_total_row(row: dict[str, Any], column_map: dict[str, str]) -> bool:
+    booking_ref = clean_text(get_row_value(row, column_map, "booking_ref"))
+    amount = clean_text(get_row_value(row, column_map, "supplier_payment_amount"))
+    return not booking_ref and bool(amount) and amount.strip().startswith("=")
+
+
+def default_supplier_payment_method(payment_source: str, value: str | None) -> str | None:
+    if value:
+        return value
+    if payment_source == "taps":
+        return "TAPs"
+    if payment_source == "tt":
+        return "TT"
+    return None
 
 
 def duplicate_text(value: str | None) -> str:
@@ -144,6 +166,10 @@ def import_supplier_payment_report(
     duplicate_keys_to_check: set[str] = set()
 
     for index, row in enumerate(rows, start=2):
+        if payment_source == "taps" and is_taps_total_row(row, column_map):
+            result.row_count -= 1
+            continue
+
         try:
             payment_amount = parse_money(get_row_value(row, column_map, "supplier_payment_amount"))
             if payment_amount is None:
@@ -164,7 +190,10 @@ def import_supplier_payment_report(
                 "payment_supplier_name": clean_text(get_row_value(row, column_map, "payment_supplier_name")),
                 "booking_date_imported": parse_date(get_row_value(row, column_map, "booking_date_imported")),
                 "departure_date_imported": parse_date(get_row_value(row, column_map, "departure_date_imported")),
-                "supplier_payment_method": clean_text(get_row_value(row, column_map, "supplier_payment_method")),
+                "supplier_payment_method": default_supplier_payment_method(
+                    payment_source,
+                    clean_text(get_row_value(row, column_map, "supplier_payment_method")),
+                ),
                 "supplier_payment_amount": payment_amount,
                 "associated_vat": parse_money(get_row_value(row, column_map, "associated_vat")),
                 "match_status": "unmatched",

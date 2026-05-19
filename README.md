@@ -301,6 +301,15 @@ Mapped fields:
 - Payment Value
 - Associated VAT
 
+The TAPs export format is also supported directly. For TAPs files, the importer maps:
+
+- `Bkg Reference` as the booking reference
+- the first `Collection` column as the supplier payment date
+- `Supplier Name` as the supplier
+- `Collected` as the actual amount paid
+
+Important: TAPs `Value` is treated as an attempted/requested value only. The system uses `Collected` for actual supplier paid totals, so `NotPaid` rows with `Collected` as `0.00` do not inflate supplier reconciliation.
+
 Every supplier payment row is stored separately. Multiple payment lines for the same booking are not merged.
 
 The system matches supplier payments to bookings by `Booking Reference`.

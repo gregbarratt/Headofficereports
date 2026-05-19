@@ -78,15 +78,34 @@ def read_tabular_rows(filename: str, content: bytes) -> tuple[list[str], list[di
     raise ValueError("Unsupported file type.")
 
 
+def make_unique_headers(headers: list[str]) -> list[str]:
+    seen: dict[str, int] = {}
+    unique_headers = []
+    for header in headers:
+        header_text = str(header or "").strip()
+        key = normalise_header(header_text)
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] == 1:
+            unique_headers.append(header_text)
+        else:
+            unique_headers.append(f"{header_text} {seen[key]}")
+    return unique_headers
+
+
 def read_csv_rows(content: bytes) -> tuple[list[str], list[dict[str, Any]]]:
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
         text = content.decode("cp1252")
 
-    reader = csv.DictReader(StringIO(text))
-    headers = reader.fieldnames or []
-    rows = [row for row in reader if any(str(value or "").strip() for value in row.values())]
+    reader = csv.reader(StringIO(text))
+    raw_headers = next(reader, [])
+    headers = make_unique_headers(raw_headers)
+    rows = []
+    for row in reader:
+        row_data = {headers[index]: value for index, value in enumerate(row) if index < len(headers)}
+        if any(str(value or "").strip() for value in row_data.values()):
+            rows.append(row_data)
     return headers, rows
 
 
@@ -95,7 +114,7 @@ def read_xlsx_rows(content: bytes) -> tuple[list[str], list[dict[str, Any]]]:
     try:
         sheet = workbook.active
         rows = sheet.iter_rows(values_only=True)
-        headers = [str(value or "") for value in next(rows, [])]
+        headers = make_unique_headers([str(value or "") for value in next(rows, [])])
         output = []
         for row in rows:
             row_data = {headers[index]: value for index, value in enumerate(row) if index < len(headers)}
