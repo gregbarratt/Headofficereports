@@ -56,7 +56,8 @@ const navItems = [
   { label: "Dashboard", enabled: true },
   { label: "Upload Centre", enabled: true },
   { label: "Bookings", enabled: true },
-  { label: "Supplier Payments", enabled: true },
+  { label: "Supplier Payments TAPs", enabled: true },
+  { label: "Supplier Payments TT", enabled: true },
   { label: "Customer Payments", enabled: true },
   { label: "Refunds", enabled: true },
   { label: "Agent Commissions", enabled: true },
@@ -402,7 +403,7 @@ function BookingsPage({ token }) {
   );
 }
 
-function SupplierPaymentsPage({ token }) {
+function SupplierPaymentsPage({ token, source = "all" }) {
   const [payments, setPayments] = useState([]);
   const [reconciliations, setReconciliations] = useState([]);
   const [total, setTotal] = useState(0);
@@ -415,7 +416,7 @@ function SupplierPaymentsPage({ token }) {
   useEffect(() => {
     setIsLoading(true);
     setError("");
-    getSupplierPayments(token, activeSearch)
+    getSupplierPayments(token, activeSearch, source)
       .then((data) => {
         setPayments(data.payments);
         setReconciliations(data.reconciliations);
@@ -424,7 +425,7 @@ function SupplierPaymentsPage({ token }) {
       })
       .catch((loadError) => setError(loadError.message || "Supplier payments could not load."))
       .finally(() => setIsLoading(false));
-  }, [token, activeSearch]);
+  }, [token, activeSearch, source]);
 
   function handleSearchSubmit(event) {
     event.preventDefault();
@@ -440,8 +441,10 @@ function SupplierPaymentsPage({ token }) {
     <section className="panel supplier-panel">
       <div className="panel-heading">
         <div>
-          <h2>Supplier Payments</h2>
-          <p>{total} imported supplier payment rows</p>
+          <h2>{source === "tt" ? "Supplier Payments TT" : "Supplier Payments TAPs"}</h2>
+          <p>
+            {total} imported {source === "tt" ? "TT human input" : "TAPs actual"} supplier payment rows
+          </p>
         </div>
         <ReceiptText size={24} aria-hidden="true" />
       </div>
@@ -471,7 +474,9 @@ function SupplierPaymentsPage({ token }) {
       <p className="muted-note">
         {activeSearch
           ? `Showing ${filteredTotal} matching supplier payment row(s) out of ${total}.`
-          : "Showing the latest 200 supplier payment rows. TAPs is treated as actual supplier payment data; TT is human input for cross-checking."}
+          : source === "tt"
+            ? "Showing TT human-input supplier rows for cross-checking against TAPs."
+            : "Showing TAPs actual supplier payment rows. TT values appear in the reconciliation table for cross-checking."}
       </p>
 
       <div className="section-heading">
@@ -2191,8 +2196,10 @@ export default function App() {
           <UploadCentre token={token} />
         ) : activeView === "Bookings" ? (
           <BookingsPage token={token} />
-        ) : activeView === "Supplier Payments" ? (
-          <SupplierPaymentsPage token={token} />
+        ) : activeView === "Supplier Payments TAPs" ? (
+          <SupplierPaymentsPage token={token} source="taps" />
+        ) : activeView === "Supplier Payments TT" ? (
+          <SupplierPaymentsPage token={token} source="tt" />
         ) : activeView === "Customer Payments" ? (
           <CustomerPaymentsPage token={token} />
         ) : activeView === "Refunds" ? (

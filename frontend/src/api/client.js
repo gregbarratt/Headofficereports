@@ -150,10 +150,13 @@ export async function generateExceptions(token) {
   });
 }
 
-export async function getSupplierPayments(token, search = "") {
+export async function getSupplierPayments(token, search = "", source = "all") {
   const query = new URLSearchParams();
   if (search.trim()) {
     query.set("search", search.trim());
+  }
+  if (source && source !== "all") {
+    query.set("source", source);
   }
   return apiRequest(`/api/supplier-payments${query.toString() ? `?${query.toString()}` : ""}`, { token });
 }

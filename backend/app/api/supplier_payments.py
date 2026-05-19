@@ -49,14 +49,23 @@ def get_supplier_status(
 @router.get("", response_model=SupplierPaymentListResponse)
 def list_supplier_payments(
     search: str = "",
+    source: str = "all",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin),
 ) -> SupplierPaymentListResponse:
     search_term = search.strip()
     search_pattern = f"%{search_term}%" if search_term else ""
-    total = db.scalar(select(func.count()).select_from(SupplierPayment)) or 0
+    source_filter = source.strip().lower()
+    if source_filter not in {"all", "taps", "tt"}:
+        source_filter = "all"
     payment_filters = []
     booking_filters = []
+    if source_filter != "all":
+        payment_filters.append(SupplierPayment.payment_source == source_filter)
+    total_statement = select(func.count()).select_from(SupplierPayment)
+    if source_filter != "all":
+        total_statement = total_statement.where(SupplierPayment.payment_source == source_filter)
+    total = db.scalar(total_statement) or 0
     if search_term:
         payment_filters.append(
             or_(
