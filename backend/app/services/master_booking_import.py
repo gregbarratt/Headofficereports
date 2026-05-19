@@ -204,6 +204,15 @@ def normalise_booking_status(status: str | None) -> str | None:
     return status_map.get(cleaned, cleaned)
 
 
+def determine_booking_company(booking_ref: str | None) -> str:
+    reference = (booking_ref or "").strip().upper()
+    if reference.startswith("OTC"):
+        return "otc"
+    if reference.startswith(("LEM", "LMX", "LM-", "LM_")) or "LEMIEUX" in reference:
+        return "lemieux"
+    return "review"
+
+
 def parse_elements(elements: str | None) -> dict[str, bool]:
     cleaned = (elements or "").lower()
     return {
@@ -270,6 +279,7 @@ def import_master_booking_report(
 
             values = {
                 "booking_ref": booking_ref,
+                "booking_company": determine_booking_company(booking_ref),
                 "imported_booking_status": imported_status,
                 "normalised_status": normalise_booking_status(imported_status),
                 "customer_last_name": clean_text(get_row_value(row, column_map, "customer_last_name")),

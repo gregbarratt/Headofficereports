@@ -106,6 +106,7 @@ def supplier_totals(db: Session) -> dict[str, Decimal]:
     for booking_ref, total in db.execute(
         select(SupplierPayment.booking_ref, func.sum(SupplierPayment.supplier_payment_amount))
         .where(SupplierPayment.booking_ref.is_not(None))
+        .where(SupplierPayment.payment_source == "taps")
         .group_by(SupplierPayment.booking_ref)
     ):
         totals[booking_ref] = money(total)
@@ -209,6 +210,7 @@ def build_customer_payments(db: Session, workbook: Workbook) -> None:
         "Customer Payments",
         [
             "Transaction ID",
+            "Source",
             "Booking Ref",
             "Invoice Ref",
             "Customer Name",
@@ -231,6 +233,7 @@ def build_customer_payments(db: Session, workbook: Workbook) -> None:
         [
             [
                 payment.transaction_id,
+                payment.payment_source,
                 payment.booking_ref,
                 payment.invoice_reference,
                 payment.customer_name,
@@ -262,6 +265,7 @@ def build_supplier_payments(db: Session, workbook: Workbook) -> None:
         "Supplier Payments",
         [
             "Booking Ref",
+            "Source",
             "Transaction Date",
             "Product",
             "Supplier",
@@ -275,6 +279,7 @@ def build_supplier_payments(db: Session, workbook: Workbook) -> None:
         [
             [
                 payment.booking_ref,
+                payment.payment_source,
                 payment.supplier_payment_date,
                 payment.product_type,
                 payment.supplier_name,
@@ -393,7 +398,7 @@ def build_true_booking_profitability(db: Session, workbook: Workbook) -> None:
     commissions_by_booking: dict[str, list[AgentCommission]] = {}
     refunds_by_booking: dict[str, list[Refund]] = {}
 
-    for payment in db.scalars(select(CustomerPayment)):
+    for payment in db.scalars(select(CustomerPayment).where(CustomerPayment.payment_source == "sings")):
         if payment.booking_ref and payment.match_confidence != "unmatched":
             payments_by_booking.setdefault(payment.booking_ref, []).append(payment)
     for commission in db.scalars(select(AgentCommission)):

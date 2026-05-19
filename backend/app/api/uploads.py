@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
-from app.core.uploads import UPLOAD_TYPES
+from app.core.uploads import ALL_UPLOAD_TYPES, FILE_UPLOAD_TYPES, UPLOAD_TYPES
 from app.db.session import get_db
 from app.models.reporting import UploadBatch
 from app.models.user import User
@@ -32,7 +32,7 @@ def to_upload_batch_read(batch: UploadBatch) -> UploadBatchRead:
     return UploadBatchRead(
         id=batch.id,
         upload_type=batch.upload_type,
-        upload_type_label=UPLOAD_TYPES.get(batch.upload_type, batch.upload_type),
+        upload_type_label=ALL_UPLOAD_TYPES.get(batch.upload_type, batch.upload_type),
         original_filename=batch.original_filename,
         status=batch.status,
         row_count=batch.row_count,
@@ -66,7 +66,7 @@ async def create_upload_batch(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin),
 ) -> UploadBatchRead:
-    if upload_type not in UPLOAD_TYPES:
+    if upload_type not in FILE_UPLOAD_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Upload type is not recognised.",
@@ -105,21 +105,41 @@ async def create_upload_batch(
                 content=content,
                 actor_user_id=current_user.id,
             )
-        elif upload_type == "supplier_payment":
+        elif upload_type in {"supplier_payment", "supplier_payment_taps"}:
             import_result = import_supplier_payment_report(
                 db=db,
                 upload_batch=batch,
                 filename=original_filename,
                 content=content,
                 actor_user_id=current_user.id,
+                payment_source="taps",
             )
-        elif upload_type == "customer_payment":
+        elif upload_type == "supplier_payment_tt":
+            import_result = import_supplier_payment_report(
+                db=db,
+                upload_batch=batch,
+                filename=original_filename,
+                content=content,
+                actor_user_id=current_user.id,
+                payment_source="tt",
+            )
+        elif upload_type in {"customer_payment", "customer_payment_sings"}:
             import_result = import_customer_payment_report(
                 db=db,
                 upload_batch=batch,
                 filename=original_filename,
                 content=content,
                 actor_user_id=current_user.id,
+                payment_source="sings",
+            )
+        elif upload_type == "customer_payment_tt":
+            import_result = import_customer_payment_report(
+                db=db,
+                upload_batch=batch,
+                filename=original_filename,
+                content=content,
+                actor_user_id=current_user.id,
+                payment_source="tt",
             )
         elif upload_type == "bank_statement":
             import_result = import_bank_statement_report(

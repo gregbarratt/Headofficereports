@@ -31,6 +31,14 @@ def net_payment_amount(payment: CustomerPayment) -> Decimal:
     return money(payment.gross_amount) - money(payment.fee_amount)
 
 
+def trusted_customer_payment(payment: CustomerPayment) -> bool:
+    return payment.payment_source == "sings"
+
+
+def trusted_supplier_payment(payment: SupplierPayment) -> bool:
+    return payment.payment_source == "taps"
+
+
 def latest_trust_bank_balance(db: Session) -> Decimal | None:
     trust_statement = (
         select(BankTransaction)
@@ -54,8 +62,8 @@ def latest_trust_bank_balance(db: Session) -> Decimal | None:
 
 def calculate_trust_reconciliation(db: Session) -> TrustReconciliationResponse:
     bookings = list(db.scalars(select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(500)))
-    customer_payments = list(db.scalars(select(CustomerPayment)))
-    supplier_payments = list(db.scalars(select(SupplierPayment)))
+    customer_payments = [payment for payment in db.scalars(select(CustomerPayment)) if trusted_customer_payment(payment)]
+    supplier_payments = [payment for payment in db.scalars(select(SupplierPayment)) if trusted_supplier_payment(payment)]
     refunds = list(db.scalars(select(Refund)))
     commission_booking_refs = {
         booking_ref

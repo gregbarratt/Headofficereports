@@ -190,6 +190,18 @@ function formatStatusLabel(value) {
   return value.replaceAll("_", " ");
 }
 
+function formatSourceLabel(value) {
+  const labels = {
+    taps: "TAPs",
+    tt: "TT",
+    sings: "SINGs",
+    otc: "OTC",
+    lemieux: "LeMieux",
+    review: "Review",
+  };
+  return labels[value] || formatStatusLabel(value);
+}
+
 function UploadCentre({ token }) {
   const [uploadTypes, setUploadTypes] = useState([]);
   const [uploadType, setUploadType] = useState("");
@@ -351,6 +363,7 @@ function BookingsPage({ token }) {
           <thead>
             <tr>
               <th>Booking Ref</th>
+              <th>Company</th>
               <th>Status</th>
               <th>Last Name</th>
               <th>Destination</th>
@@ -366,6 +379,7 @@ function BookingsPage({ token }) {
               bookings.map((booking) => (
                 <tr key={booking.id}>
                   <td>{booking.booking_ref}</td>
+                  <td>{formatSourceLabel(booking.booking_company)}</td>
                   <td>{booking.normalised_status || "-"}</td>
                   <td>{booking.customer_last_name || "-"}</td>
                   <td>{booking.destination || "-"}</td>
@@ -378,7 +392,7 @@ function BookingsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="9">No bookings imported yet.</td>
+                <td colSpan="10">No bookings imported yet.</td>
               </tr>
             )}
           </tbody>
@@ -457,7 +471,7 @@ function SupplierPaymentsPage({ token }) {
       <p className="muted-note">
         {activeSearch
           ? `Showing ${filteredTotal} matching supplier payment row(s) out of ${total}.`
-          : "Showing the latest 200 supplier payment rows. Use search to find a specific booking."}
+          : "Showing the latest 200 supplier payment rows. TAPs is treated as actual supplier payment data; TT is human input for cross-checking."}
       </p>
 
       <div className="section-heading">
@@ -471,7 +485,9 @@ function SupplierPaymentsPage({ token }) {
               <th>Booking Ref</th>
               <th>Last Name</th>
               <th>Expected Nett</th>
-              <th>Total Paid</th>
+              <th>TAPs Paid</th>
+              <th>TT Input</th>
+              <th>TAPs vs TT</th>
               <th>Balance Due</th>
               <th>Variance</th>
               <th>Status</th>
@@ -487,7 +503,9 @@ function SupplierPaymentsPage({ token }) {
                   <td>{item.booking_ref}</td>
                   <td>{item.customer_last_name || "-"}</td>
                   <td>{formatMoney(item.expected_supplier_nett)}</td>
-                  <td>{formatMoney(item.supplier_payments_total)}</td>
+                  <td>{formatMoney(item.supplier_payments_taps_total)}</td>
+                  <td>{formatMoney(item.supplier_payments_tt_total)}</td>
+                  <td>{formatMoney(item.supplier_cross_check_variance)}</td>
                   <td>{formatMoney(item.supplier_balance_due)}</td>
                   <td>{formatMoney(item.supplier_variance)}</td>
                   <td>
@@ -502,7 +520,7 @@ function SupplierPaymentsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="10">
+                <td colSpan="12">
                   {activeSearch
                     ? "No booking reconciliation rows match this search."
                     : "No bookings are ready for supplier reconciliation yet."}
@@ -522,6 +540,7 @@ function SupplierPaymentsPage({ token }) {
           <thead>
             <tr>
               <th>Date</th>
+              <th>Source</th>
               <th>Booking Ref</th>
               <th>Product</th>
               <th>Supplier</th>
@@ -538,6 +557,7 @@ function SupplierPaymentsPage({ token }) {
               payments.map((payment) => (
                 <tr key={payment.id}>
                   <td>{formatDate(payment.supplier_payment_date)}</td>
+                  <td>{formatSourceLabel(payment.payment_source)}</td>
                   <td>{payment.booking_ref || "-"}</td>
                   <td>{payment.product_type || "-"}</td>
                   <td>{payment.supplier_name || "-"}</td>
@@ -555,7 +575,7 @@ function SupplierPaymentsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="10">
+                <td colSpan="11">
                   {activeSearch ? "No supplier payment rows match this search." : "No supplier payment rows imported yet."}
                 </td>
               </tr>
@@ -661,8 +681,20 @@ function CustomerPaymentsPage({ token }) {
           <strong>{summary?.total_rows ?? 0}</strong>
         </div>
         <div>
-          <span>Gross customer payments</span>
+          <span>Total gross rows</span>
           <strong>{formatMoney(summary?.gross_total)}</strong>
+        </div>
+        <div>
+          <span>SINGs actual</span>
+          <strong>{formatMoney(summary?.sings_gross_total)}</strong>
+        </div>
+        <div>
+          <span>TT human input</span>
+          <strong>{formatMoney(summary?.tt_gross_total)}</strong>
+        </div>
+        <div>
+          <span>SINGs vs TT</span>
+          <strong>{formatMoney(summary?.source_variance)}</strong>
         </div>
         <div>
           <span>Total fees</span>
@@ -687,6 +719,7 @@ function CustomerPaymentsPage({ token }) {
           <thead>
             <tr>
               <th>Payment Date</th>
+              <th>Source</th>
               <th>Settlement</th>
               <th>Booking Ref</th>
               <th>Invoice Ref</th>
@@ -706,6 +739,7 @@ function CustomerPaymentsPage({ token }) {
               payments.map((payment) => (
                 <tr key={payment.id}>
                   <td>{formatDate(payment.payment_date)}</td>
+                  <td>{formatSourceLabel(payment.payment_source)}</td>
                   <td>{formatDate(payment.settlement_date)}</td>
                   <td>{payment.booking_ref || "-"}</td>
                   <td>{payment.invoice_reference || "-"}</td>
@@ -730,7 +764,7 @@ function CustomerPaymentsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="13">No customer payment rows imported yet.</td>
+                <td colSpan="14">No customer payment rows imported yet.</td>
               </tr>
             )}
           </tbody>

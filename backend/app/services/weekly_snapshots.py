@@ -83,13 +83,13 @@ def build_current_snapshot_rows(db: Session, snapshot_id: int) -> list[WeeklySna
     refund_paid_totals: dict[str, Decimal] = {}
     commission_due_totals: dict[str, Decimal] = {}
 
-    for payment in db.scalars(select(CustomerPayment)):
+    for payment in db.scalars(select(CustomerPayment).where(CustomerPayment.payment_source == "sings")):
         if payment.match_confidence == "unmatched":
             continue
         add_amount(customer_totals, payment.booking_ref, payment.gross_amount)
         add_amount(card_fee_totals, payment.booking_ref, payment.fee_amount)
 
-    for payment in db.scalars(select(SupplierPayment)):
+    for payment in db.scalars(select(SupplierPayment).where(SupplierPayment.payment_source == "taps")):
         add_amount(supplier_totals, payment.booking_ref, payment.supplier_payment_amount)
 
     for refund in db.scalars(select(Refund)):

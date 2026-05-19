@@ -102,6 +102,7 @@ def supplier_payments_due(db: Session) -> Decimal:
         for booking_ref, total in db.execute(
             select(SupplierPayment.booking_ref, func.sum(SupplierPayment.supplier_payment_amount))
             .where(SupplierPayment.booking_ref.is_not(None))
+            .where(SupplierPayment.payment_source == "taps")
             .group_by(SupplierPayment.booking_ref)
         )
     }
@@ -135,11 +136,19 @@ def count_active_exceptions(db: Session, *, severity: str | None = None, excepti
 
 def unmatched_transaction_count(db: Session) -> int:
     customer = (
-        db.scalar(select(func.count()).select_from(CustomerPayment).where(CustomerPayment.match_confidence == "unmatched"))
+        db.scalar(
+            select(func.count())
+            .select_from(CustomerPayment)
+            .where(CustomerPayment.match_confidence == "unmatched", CustomerPayment.payment_source == "sings")
+        )
         or 0
     )
     supplier = (
-        db.scalar(select(func.count()).select_from(SupplierPayment).where(SupplierPayment.match_status == "unmatched"))
+        db.scalar(
+            select(func.count())
+            .select_from(SupplierPayment)
+            .where(SupplierPayment.match_status == "unmatched", SupplierPayment.payment_source == "taps")
+        )
         or 0
     )
     bank = db.scalar(select(func.count()).select_from(BankTransaction).where(BankTransaction.match_status == "unmatched")) or 0

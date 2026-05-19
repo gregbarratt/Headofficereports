@@ -82,6 +82,7 @@ def duplicate_decimal(value: Decimal | None) -> str:
 
 def build_duplicate_key(values: dict[str, Any]) -> str:
     parts = (
+        duplicate_text(values.get("payment_source")),
         duplicate_text(values.get("booking_ref")),
         duplicate_text(values.get("supplier_name")),
         duplicate_text(values.get("payment_supplier_name")),
@@ -125,6 +126,7 @@ def import_supplier_payment_report(
     filename: str,
     content: bytes,
     actor_user_id: int | None,
+    payment_source: str = "taps",
 ) -> SupplierPaymentImportResult:
     headers, rows = read_tabular_rows(filename, content)
     result = SupplierPaymentImportResult(row_count=len(rows))
@@ -154,6 +156,7 @@ def import_supplier_payment_report(
             values = {
                 "upload_batch_id": upload_batch.id,
                 "booking_id": None,
+                "payment_source": payment_source,
                 "booking_ref": booking_ref,
                 "supplier_payment_date": parse_date(get_row_value(row, column_map, "supplier_payment_date")),
                 "product_type": clean_text(get_row_value(row, column_map, "product_type")),

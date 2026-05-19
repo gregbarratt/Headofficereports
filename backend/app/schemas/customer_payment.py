@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class CustomerPaymentRead(BaseModel):
     id: int
     upload_batch_id: int | None
+    payment_source: str
     transaction_id: str | None
     booking_ref: str | None
     invoice_reference: str | None
@@ -38,6 +39,9 @@ class CustomerPaymentSummaryRead(BaseModel):
     actual_fee_total: Decimal
     estimated_fee_total: Decimal
     net_settled_total: Decimal
+    sings_gross_total: Decimal
+    tt_gross_total: Decimal
+    source_variance: Decimal
     matched_count: int
     lower_confidence_count: int
     unmatched_count: int

@@ -287,6 +287,7 @@ def upsert_felloh_transaction(
 
     values = {
         "booking_id": booking.id if booking else None,
+        "payment_source": "sings",
         "booking_ref": booking_ref or (booking.booking_ref if booking else None),
         "invoice_reference": None,
         "customer_name": customer_name,
@@ -307,7 +308,11 @@ def upsert_felloh_transaction(
         "match_confidence": match_confidence,
     }
 
-    existing = db.scalar(select(CustomerPayment).where(CustomerPayment.transaction_id == transaction_id).limit(1))
+    existing = db.scalar(
+        select(CustomerPayment)
+        .where(CustomerPayment.transaction_id == transaction_id, CustomerPayment.payment_source == "sings")
+        .limit(1)
+    )
     if existing:
         has_changes = any(getattr(existing, key) != value for key, value in values.items())
         if not has_changes:

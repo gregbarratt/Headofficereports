@@ -65,6 +65,7 @@ def list_supplier_payments(
                 SupplierPayment.supplier_name.ilike(search_pattern),
                 SupplierPayment.payment_supplier_name.ilike(search_pattern),
                 SupplierPayment.supplier_payment_method.ilike(search_pattern),
+                SupplierPayment.payment_source.ilike(search_pattern),
             )
         )
         booking_filters.append(
@@ -88,12 +89,16 @@ def list_supplier_payments(
     )
     payments = list(db.scalars(payment_statement))
 
-    total_by_booking = {
-        booking_ref: money(total_paid)
-        for booking_ref, total_paid in db.execute(
-            select(SupplierPayment.booking_ref, func.sum(SupplierPayment.supplier_payment_amount))
+    totals_by_booking_and_source: dict[tuple[str, str], Decimal] = {
+        (booking_ref, payment_source): money(total_paid)
+        for booking_ref, payment_source, total_paid in db.execute(
+            select(
+                SupplierPayment.booking_ref,
+                SupplierPayment.payment_source,
+                func.sum(SupplierPayment.supplier_payment_amount),
+            )
             .where(SupplierPayment.booking_ref.is_not(None))
-            .group_by(SupplierPayment.booking_ref)
+            .group_by(SupplierPayment.booking_ref, SupplierPayment.payment_source)
         )
     }
 
@@ -120,7 +125,10 @@ def list_supplier_payments(
     booking_statement = booking_statement.order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(200)
     reconciliations = []
     for booking in db.scalars(booking_statement):
-        supplier_payments_total = total_by_booking.get(booking.booking_ref, ZERO)
+        supplier_payments_taps_total = totals_by_booking_and_source.get((booking.booking_ref, "taps"), ZERO)
+        supplier_payments_tt_total = totals_by_booking_and_source.get((booking.booking_ref, "tt"), ZERO)
+        supplier_payments_total = supplier_payments_taps_total
+        supplier_cross_check_variance = money(supplier_payments_taps_total - supplier_payments_tt_total)
         status, balance_due, variance, supplier_exception = get_supplier_status(
             booking.expected_supplier_nett,
             supplier_payments_total,
@@ -131,6 +139,9 @@ def list_supplier_payments(
                 customer_last_name=booking.customer_last_name,
                 expected_supplier_nett=booking.expected_supplier_nett,
                 supplier_payments_total=supplier_payments_total,
+                supplier_payments_taps_total=supplier_payments_taps_total,
+                supplier_payments_tt_total=supplier_payments_tt_total,
+                supplier_cross_check_variance=supplier_cross_check_variance,
                 supplier_balance_due=balance_due,
                 supplier_variance=variance,
                 supplier_reconciliation_status=status,

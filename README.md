@@ -16,13 +16,17 @@ Phase 17 adds the Felloh / SINGs API customer payment sync:
 - Super Admin-only login
 - Protected dashboard access
 - Controlled CSV/XLSX uploads
+- Separate TT human input and live payment source imports
 - Upload batch history
 - Master Booking Report import
 - Booking list view
+- OTC / LeMieux booking company labelling from booking reference
 - Supplier Payment Report import
+- Supplier Payments TAPs and Supplier Payments TT import sources
 - Supplier payment row list
 - Booking-level supplier reconciliation
 - SINGs/Singhs Customer Payment import
+- Customer Payments SINGs and Customer Payments TT import sources
 - Customer payment row list
 - Actual fee storage and estimated fee fallback
 - Trust Reconciliation engine
@@ -228,8 +232,10 @@ Phase 17 connects to the Felloh / SINGs API for customer payment sync. CSV/XLSX 
 Available upload types:
 
 - Master Booking Report
-- Supplier Payment Report
-- SINGs/Singhs Customer Payment Data
+- Supplier Payments TAPs
+- Supplier Payments TT (Human Input)
+- Customer Payments SINGs
+- Customer Payments TT (Human Input)
 - Bank / Trust Statement
 - Agent Commission Import
 - Refund Import
@@ -274,6 +280,12 @@ Excluded master report values are stored only as non-trusted audit fields:
 - Paid (supp.)
 - Profit (projected)
 
+Bookings are labelled from the booking reference:
+
+- `OTC...` = OTC
+- `LEM...`, `LMX...`, `LM-...`, `LM_...`, or references containing `LEMIEUX` = LeMieux
+- anything else = review
+
 ## Supplier Payment Import
 
 Mapped fields:
@@ -293,6 +305,13 @@ Every supplier payment row is stored separately. Multiple payment lines for the 
 
 The system matches supplier payments to bookings by `Booking Reference`.
 
+Supplier payment sources:
+
+- TAPs = actual supplier payment source
+- TT = human-entered Traveltek value for cross-checking
+
+Supplier reconciliation uses TAPs as the actual paid source. TT rows are stored separately and shown beside TAPs so Head Office can spot differences between human input and actual payment data.
+
 Supplier reconciliation formula:
 
 ```text
@@ -304,6 +323,8 @@ Duplicate checking uses:
 ```text
 booking reference + supplier + payment supplier + transaction date + payment method + payment value + associated VAT
 ```
+
+The source is also included in duplicate checking, so a TT row and a TAPs row for the same booking are not treated as the same record.
 
 For booking `OTC-01436`, the supplier side should reconcile when the imported supplier payment rows are `300.00` and `3394.16` against expected supplier nett `3694.16`.
 
@@ -347,6 +368,9 @@ Customer payment matching:
 The Customer Payments page shows:
 
 - gross customer payments
+- SINGs actual gross total
+- TT human-input gross total
+- SINGs vs TT variance
 - actual and estimated fees
 - net settled amount
 - booking match confidence

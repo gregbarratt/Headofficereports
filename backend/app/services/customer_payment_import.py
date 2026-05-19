@@ -186,6 +186,7 @@ def import_customer_payment_report(
     filename: str,
     content: bytes,
     actor_user_id: int | None,
+    payment_source: str = "sings",
 ) -> CustomerPaymentImportResult:
     headers, rows = read_tabular_rows(filename, content)
     result = CustomerPaymentImportResult(row_count=len(rows))
@@ -233,6 +234,7 @@ def import_customer_payment_report(
                 CustomerPayment(
                     upload_batch_id=upload_batch.id,
                     booking_id=booking.id if booking else None,
+                    payment_source=payment_source,
                     transaction_id=clean_text(get_row_value(row, column_map, "transaction_id")),
                     booking_ref=booking_ref or (booking.booking_ref if booking else None),
                     invoice_reference=invoice_reference,

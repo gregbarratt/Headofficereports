@@ -52,6 +52,10 @@ def list_customer_payments(
         ZERO,
     )
     net_settled_total = sum((money(payment.net_settled_amount) for payment in all_payments), ZERO)
+    sings_payments = [payment for payment in all_payments if payment.payment_source == "sings"]
+    tt_payments = [payment for payment in all_payments if payment.payment_source == "tt"]
+    sings_gross_total = sum((money(payment.gross_amount) for payment in sings_payments), ZERO)
+    tt_gross_total = sum((money(payment.gross_amount) for payment in tt_payments), ZERO)
 
     summary = CustomerPaymentSummaryRead(
         total_rows=len(all_payments),
@@ -60,6 +64,9 @@ def list_customer_payments(
         actual_fee_total=money(actual_fee_total),
         estimated_fee_total=money(estimated_fee_total),
         net_settled_total=money(net_settled_total),
+        sings_gross_total=money(sings_gross_total),
+        tt_gross_total=money(tt_gross_total),
+        source_variance=money(sings_gross_total - tt_gross_total),
         matched_count=sum(
             1 for payment in all_payments if payment.match_confidence in {"booking_ref", "invoice_ref"}
         ),

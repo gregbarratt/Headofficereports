@@ -148,7 +148,7 @@ def list_agent_commissions(
     )
     all_commissions = list(db.scalars(select(AgentCommission)))
     bookings = list(db.scalars(select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(500)))
-    customer_payments = list(db.scalars(select(CustomerPayment)))
+    customer_payments = list(db.scalars(select(CustomerPayment).where(CustomerPayment.payment_source == "sings")))
     refunds = list(db.scalars(select(Refund)))
 
     summary = AgentCommissionSummaryRead(

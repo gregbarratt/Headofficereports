@@ -53,6 +53,7 @@ class Booking(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     booking_ref: Mapped[str] = mapped_column(String(80), unique=True, index=True, nullable=False)
+    booking_company: Mapped[str] = mapped_column(String(80), default="otc", server_default="otc", index=True, nullable=False)
     imported_booking_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
     normalised_status: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
     customer_last_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
@@ -92,6 +93,7 @@ class SupplierPayment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     upload_batch_id: Mapped[int | None] = mapped_column(ForeignKey("upload_batches.id"), nullable=True)
     booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), nullable=True)
+    payment_source: Mapped[str] = mapped_column(String(40), default="taps", server_default="taps", index=True, nullable=False)
     booking_ref: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
     supplier_payment_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     product_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -114,6 +116,7 @@ class CustomerPayment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     upload_batch_id: Mapped[int | None] = mapped_column(ForeignKey("upload_batches.id"), nullable=True)
     booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), nullable=True)
+    payment_source: Mapped[str] = mapped_column(String(40), default="sings", server_default="sings", index=True, nullable=False)
     transaction_id: Mapped[str | None] = mapped_column(String(160), index=True, nullable=True)
     booking_ref: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
     invoice_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)

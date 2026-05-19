@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class SupplierPaymentRead(BaseModel):
     id: int
     upload_batch_id: int | None
+    payment_source: str
     booking_ref: str | None
     supplier_payment_date: date | None
     product_type: str | None
@@ -29,6 +30,9 @@ class SupplierBookingReconciliationRead(BaseModel):
     customer_last_name: str | None
     expected_supplier_nett: Decimal | None
     supplier_payments_total: Decimal
+    supplier_payments_taps_total: Decimal
+    supplier_payments_tt_total: Decimal
+    supplier_cross_check_variance: Decimal
     supplier_balance_due: Decimal | None
     supplier_variance: Decimal | None
     supplier_reconciliation_status: str

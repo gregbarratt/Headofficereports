@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class BookingRead(BaseModel):
     id: int
     booking_ref: str
+    booking_company: str
     imported_booking_status: str | None
     normalised_status: str | None
     customer_last_name: str | None

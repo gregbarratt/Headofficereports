@@ -176,8 +176,8 @@ def build_exception_findings(db: Session) -> list[ExceptionFinding]:
 
     bookings = list(db.scalars(select(Booking)))
     bookings_by_ref = {booking.booking_ref: booking for booking in bookings}
-    supplier_payments = list(db.scalars(select(SupplierPayment)))
-    customer_payments = list(db.scalars(select(CustomerPayment)))
+    supplier_payments = list(db.scalars(select(SupplierPayment).where(SupplierPayment.payment_source == "taps")))
+    customer_payments = list(db.scalars(select(CustomerPayment).where(CustomerPayment.payment_source == "sings")))
     bank_transactions = list(db.scalars(select(BankTransaction)))
     refunds = list(db.scalars(select(Refund)))
     commissions = list(db.scalars(select(AgentCommission)))
