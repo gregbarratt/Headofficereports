@@ -1,6 +1,6 @@
 """Add payment sources and booking company.
 
-Revision ID: 0002_payment_sources_and_booking_company
+Revision ID: 0002_payment_sources
 Revises: 0001_phase_2_core_schema
 Create Date: 2026-05-19
 """
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy import table, column
 
 
-revision = "0002_payment_sources_and_booking_company"
+revision = "0002_payment_sources"
 down_revision = "0001_phase_2_core_schema"
 branch_labels = None
 depends_on = None
