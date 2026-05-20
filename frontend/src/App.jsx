@@ -44,6 +44,7 @@ import {
   getWeeklySnapshots,
   loginSuperAdmin,
   logoutSuperAdmin,
+  onAuthExpired,
   sendWeeklyEmail,
   startFellohCustomerPaymentBackfill,
   storeToken,
@@ -83,7 +84,7 @@ function StatusCard({ icon: Icon, label, value, tone = "neutral" }) {
   );
 }
 
-function LoginPage({ onLogin }) {
+function LoginPage({ notice = "", onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -117,6 +118,7 @@ function LoginPage({ onLogin }) {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {notice ? <p className="form-notice">{notice}</p> : null}
           <label>
             Email
             <input
@@ -2101,6 +2103,7 @@ export default function App() {
   const [dashboardStatus, setDashboardStatus] = useState(null);
   const [activeView, setActiveView] = useState("Dashboard");
   const [error, setError] = useState("");
+  const [loginNotice, setLoginNotice] = useState("");
 
   useEffect(() => {
     if (!token) {
@@ -2118,8 +2121,20 @@ export default function App() {
         setToken(null);
         setUser(null);
         setAuthChecked(true);
+        setLoginNotice("Your login has expired. Please log in again.");
       });
   }, [token]);
+
+  useEffect(() => {
+    return onAuthExpired((event) => {
+      clearStoredToken();
+      setToken(null);
+      setUser(null);
+      setHealth(null);
+      setDashboardStatus(null);
+      setLoginNotice(event.detail?.message || "Your login has expired. Please log in again.");
+    });
+  }, []);
 
   useEffect(() => {
     if (!user || !token) {
@@ -2144,6 +2159,7 @@ export default function App() {
   function handleLogin(nextUser, nextToken) {
     setUser(nextUser);
     setToken(nextToken);
+    setLoginNotice("");
   }
 
   async function handleLogout() {
@@ -2157,6 +2173,7 @@ export default function App() {
       setUser(null);
       setHealth(null);
       setDashboardStatus(null);
+      setLoginNotice("");
     }
   }
 
@@ -2177,7 +2194,7 @@ export default function App() {
   }
 
   if (!user || !token) {
-    return <LoginPage onLogin={handleLogin} />;
+    return <LoginPage notice={loginNotice} onLogin={handleLogin} />;
   }
 
   return (

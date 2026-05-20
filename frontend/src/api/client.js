@@ -1,6 +1,15 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const TOKEN_STORAGE_KEY = "head_office_reporting_token";
+const AUTH_EXPIRED_EVENT = "head-office-auth-expired";
+
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 async function apiRequest(path, options = {}) {
   const { token, ...fetchOptions } = options;
@@ -24,10 +33,24 @@ async function apiRequest(path, options = {}) {
     } catch {
       message = response.statusText || message;
     }
-    throw new Error(message);
+    handleAuthExpired(response.status, token, message);
+    throw new ApiError(message, response.status);
   }
 
   return response.json();
+}
+
+function handleAuthExpired(status, token, message) {
+  if (status !== 401 || !token) {
+    return;
+  }
+  clearStoredToken();
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { message } }));
+}
+
+export function onAuthExpired(callback) {
+  window.addEventListener(AUTH_EXPIRED_EVENT, callback);
+  return () => window.removeEventListener(AUTH_EXPIRED_EVENT, callback);
 }
 
 export function getStoredToken() {
@@ -228,7 +251,8 @@ export async function downloadReportExcel({ token, reportType }) {
     } catch {
       message = response.statusText || message;
     }
-    throw new Error(message);
+    handleAuthExpired(response.status, token, message);
+    throw new ApiError(message, response.status);
   }
 
   const blob = await response.blob();

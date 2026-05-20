@@ -142,6 +142,12 @@ input[type="checkbox"] {
   font-weight: 700;
 }
 
+.form-notice {
+  margin: 0;
+  color: #614c04;
+  font-weight: 700;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
