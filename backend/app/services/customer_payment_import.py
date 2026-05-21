@@ -55,6 +55,7 @@ COLUMN_ALIASES = {
 
 REQUIRED_FIELDS = {"gross_amount"}
 TRUE_VALUES = {"1", "true", "yes", "y", "refund", "refunded", "chargeback", "charged back"}
+QUERY_CHUNK_SIZE = 500
 
 
 @dataclass
@@ -105,14 +106,31 @@ def normalised_value(value: str | None) -> str:
     return normalise_header(value or "")
 
 
-def find_booking_by_reference(db: Session, booking_ref: str | None, invoice_reference: str | None) -> tuple[Booking | None, str]:
+def chunk_values(values: set[str], size: int = QUERY_CHUNK_SIZE) -> list[list[str]]:
+    ordered_values = sorted(value for value in values if value)
+    return [ordered_values[index : index + size] for index in range(0, len(ordered_values), size)]
+
+
+def fetch_bookings_by_ref(db: Session, booking_refs: set[str]) -> dict[str, Booking]:
+    bookings_by_ref: dict[str, Booking] = {}
+    for booking_ref_chunk in chunk_values(booking_refs):
+        bookings = db.scalars(select(Booking).where(Booking.booking_ref.in_(booking_ref_chunk))).all()
+        bookings_by_ref.update({booking.booking_ref: booking for booking in bookings})
+    return bookings_by_ref
+
+
+def find_booking_by_reference(
+    bookings_by_ref: dict[str, Booking],
+    booking_ref: str | None,
+    invoice_reference: str | None,
+) -> tuple[Booking | None, str]:
     if booking_ref:
-        booking = db.scalar(select(Booking).where(Booking.booking_ref == booking_ref))
+        booking = bookings_by_ref.get(booking_ref)
         if booking:
             return booking, "booking_ref"
 
     if invoice_reference:
-        booking = db.scalar(select(Booking).where(Booking.booking_ref == invoice_reference))
+        booking = bookings_by_ref.get(invoice_reference)
         if booking:
             return booking, "invoice_ref"
 
@@ -148,7 +166,7 @@ def rule_matches(rule_value: str | None, payment_value: str | None) -> bool:
 
 
 def find_payment_method_rule(
-    db: Session,
+    rules: list[PaymentMethodRule],
     payment_method: str | None,
     card_type: str | None,
     card_brand: str | None,
@@ -157,7 +175,6 @@ def find_payment_method_rule(
     if not payment_method:
         return None
 
-    rules = db.scalars(select(PaymentMethodRule).where(PaymentMethodRule.is_active.is_(True))).all()
     best_rule = None
     best_score = -1
     for rule in rules:
@@ -218,6 +235,19 @@ def import_customer_payment_report(
         result.errors.append(f"Required customer payment column(s) missing: {friendly_names}.")
         return result
 
+    booking_refs_to_match: set[str] = set()
+    for row in rows:
+        booking_ref = clean_text(get_row_value(row, column_map, "booking_ref"))
+        invoice_reference = clean_text(get_row_value(row, column_map, "invoice_reference"))
+        if booking_ref:
+            booking_refs_to_match.add(booking_ref)
+        if invoice_reference:
+            booking_refs_to_match.add(invoice_reference)
+
+    bookings_by_ref = fetch_bookings_by_ref(db, booking_refs_to_match)
+    active_payment_rules = db.scalars(select(PaymentMethodRule).where(PaymentMethodRule.is_active.is_(True))).all()
+    customer_payments: list[CustomerPayment] = []
+
     for index, row in enumerate(rows, start=2):
         try:
             gross_amount = parse_money(get_row_value(row, column_map, "gross_amount"))
@@ -237,22 +267,22 @@ def import_customer_payment_report(
             card_type = clean_text(get_row_value(row, column_map, "card_type"))
             card_brand = clean_text(get_row_value(row, column_map, "card_brand"))
 
-            booking, match_confidence = find_booking_by_reference(db, booking_ref, invoice_reference)
-            if booking is None:
+            booking, match_confidence = find_booking_by_reference(bookings_by_ref, booking_ref, invoice_reference)
+            if booking is None and payment_source == "sings":
                 booking = find_lower_confidence_booking(db, customer_name, gross_amount, payment_date)
                 if booking is not None:
                     match_confidence = "lower_confidence"
 
             fee_is_estimated = False
             if fee_amount is None:
-                rule = find_payment_method_rule(db, payment_method, card_type, card_brand, payment_date)
+                rule = find_payment_method_rule(active_payment_rules, payment_method, card_type, card_brand, payment_date)
                 fee_amount = calculate_estimated_fee(gross_amount, rule)
                 fee_is_estimated = fee_amount is not None
 
             if net_settled_amount is None and fee_amount is not None:
                 net_settled_amount = (gross_amount - fee_amount).quantize(Decimal("0.01"))
 
-            db.add(
+            customer_payments.append(
                 CustomerPayment(
                     upload_batch_id=upload_batch.id,
                     booking_id=booking.id if booking else None,
@@ -284,6 +314,9 @@ def import_customer_payment_report(
         except ValueError as exc:
             result.rejected_rows += 1
             result.errors.append(f"Row {index}: {exc}")
+
+    if customer_payments:
+        db.add_all(customer_payments)
 
     db.add(
         AuditLog(
