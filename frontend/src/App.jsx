@@ -486,6 +486,27 @@ function amountMatches(value, rawValue) {
   return Number(value).toFixed(2) === Number(rawValue).toFixed(2);
 }
 
+function csvValue(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function downloadCsv(filename, headers, rows) {
+  const lines = [
+    headers.map(csvValue).join(","),
+    ...rows.map((row) => row.map(csvValue).join(",")),
+  ];
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function groupedCheckStatus(row, area) {
   const checks =
     area === "supplier"
@@ -553,6 +574,7 @@ function BookingChecksPage({ token }) {
     }
     return true;
   });
+  const editingRow = rows.find((row) => row.booking_ref === editingRef);
 
   function startEditing(row) {
     setMessage("");
@@ -631,6 +653,62 @@ function BookingChecksPage({ token }) {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function exportBookingChecksCsv() {
+    const headers = [
+      "Booking Ref",
+      "Company",
+      "Customer",
+      "Status",
+      "Destination",
+      "Departure Date",
+      "Gross Master",
+      "SINGs In",
+      "TT Customer",
+      "SINGs vs Master",
+      "SINGs vs Master Variance",
+      "SINGs vs TT",
+      "SINGs vs TT Variance",
+      "Supplier Master",
+      "TAPs Paid",
+      "TT Supplier",
+      "TAPs vs Master",
+      "TAPs vs Master Variance",
+      "TAPs vs TT",
+      "TAPs vs TT Variance",
+      "Review Status",
+      "Review Note",
+      "Manual Adjustment",
+      "Manual Adjustment Note",
+    ];
+    const csvRows = filteredRows.map((row) => [
+      row.booking_ref,
+      formatSourceLabel(row.booking_company),
+      row.customer_last_name || "",
+      row.normalised_status || "",
+      row.destination || "",
+      row.departure_date || "",
+      row.gross_booking_value ?? "",
+      row.customer_sings_total ?? "",
+      row.customer_tt_total ?? "",
+      checkLabel(row.customer_expected_check),
+      row.customer_expected_variance ?? "",
+      checkLabel(row.customer_tt_check),
+      row.customer_tt_variance ?? "",
+      row.expected_supplier_total ?? "",
+      row.supplier_taps_total ?? "",
+      row.supplier_tt_total ?? "",
+      checkLabel(row.supplier_expected_check),
+      row.supplier_expected_variance ?? "",
+      checkLabel(row.supplier_tt_check),
+      row.supplier_tt_variance ?? "",
+      checkLabel(row.review_status),
+      row.review_note || "",
+      row.has_manual_adjustment ? "Yes" : "No",
+      row.manual_adjustment_note || "",
+    ]);
+    downloadCsv("booking-checks.csv", headers, csvRows);
   }
 
   return (
@@ -725,7 +803,57 @@ function BookingChecksPage({ token }) {
         </label>
       </div>
 
-      <p className="muted-note">Showing {filteredRows.length} of {rows.length} booking check row(s).</p>
+      <div className="booking-check-actions">
+        <p className="muted-note">Showing {filteredRows.length} of {rows.length} booking check row(s).</p>
+        <button className="secondary-button" disabled={!filteredRows.length} onClick={exportBookingChecksCsv} type="button">
+          <FileSpreadsheet size={18} aria-hidden="true" />
+          Download CSV
+        </button>
+      </div>
+
+      {editingRow ? (
+        <section className="inline-editor">
+          <div>
+            <div className="section-heading">
+              <h3>Amend check values for {editingRow.booking_ref}</h3>
+              <p>These values only affect the Booking Checks page. Original imports stay unchanged.</p>
+            </div>
+            <div className="adjustment-grid">
+              {adjustmentFields.map(([fieldName, label, rawFieldName]) => (
+                <label key={fieldName}>
+                  {label}
+                  <input
+                    onChange={(event) => updateDraft(fieldName, event.target.value)}
+                    step="0.01"
+                    type="number"
+                    value={draft[fieldName] ?? ""}
+                  />
+                  <span>Original: {formatMoney(editingRow[rawFieldName])}</span>
+                </label>
+              ))}
+              <label className="adjustment-note">
+                Note
+                <input
+                  onChange={(event) => updateDraft("note", event.target.value)}
+                  placeholder="Why this value was amended"
+                  value={draft.note || ""}
+                />
+              </label>
+            </div>
+            <div className="editor-actions">
+              <button className="primary-button" disabled={isSaving} onClick={() => saveAdjustments(editingRow)} type="button">
+                Save check values
+              </button>
+              <button className="secondary-button" disabled={isSaving} onClick={() => clearAdjustments(editingRow)} type="button">
+                Clear manual values
+              </button>
+              <button className="secondary-button" disabled={isSaving} onClick={() => setEditingRef("")} type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <div className="table-wrap">
         <table className="booking-checks-table">
@@ -804,54 +932,6 @@ function BookingChecksPage({ token }) {
           </tbody>
         </table>
       </div>
-
-      {editingRef ? (
-        <section className="inline-editor">
-          {filteredRows
-            .filter((row) => row.booking_ref === editingRef)
-            .map((row) => (
-              <div key={row.booking_ref}>
-                <div className="section-heading">
-                  <h3>Amend check values for {row.booking_ref}</h3>
-                  <p>These values only affect the Booking Checks page. Original imports stay unchanged.</p>
-                </div>
-                <div className="adjustment-grid">
-                  {adjustmentFields.map(([fieldName, label, rawFieldName]) => (
-                    <label key={fieldName}>
-                      {label}
-                      <input
-                        onChange={(event) => updateDraft(fieldName, event.target.value)}
-                        step="0.01"
-                        type="number"
-                        value={draft[fieldName] ?? ""}
-                      />
-                      <span>Original: {formatMoney(row[rawFieldName])}</span>
-                    </label>
-                  ))}
-                  <label className="adjustment-note">
-                    Note
-                    <input
-                      onChange={(event) => updateDraft("note", event.target.value)}
-                      placeholder="Why this value was amended"
-                      value={draft.note || ""}
-                    />
-                  </label>
-                </div>
-                <div className="editor-actions">
-                  <button className="primary-button" disabled={isSaving} onClick={() => saveAdjustments(row)} type="button">
-                    Save check values
-                  </button>
-                  <button className="secondary-button" disabled={isSaving} onClick={() => clearAdjustments(row)} type="button">
-                    Clear manual values
-                  </button>
-                  <button className="secondary-button" disabled={isSaving} onClick={() => setEditingRef("")} type="button">
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ))}
-        </section>
-      ) : null}
     </section>
   );
 }

@@ -465,6 +465,18 @@ nav button:disabled {
   margin: 18px 0 8px;
 }
 
+.booking-check-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 14px;
+}
+
+.booking-check-actions .muted-note {
+  margin: 0;
+}
+
 .table-action-button {
   min-height: 34px;
   border: 1px solid #b8c7cd;
@@ -476,9 +488,10 @@ nav button:disabled {
 }
 
 .inline-editor {
-  margin-top: 18px;
+  margin: 14px 0 18px;
   border-top: 1px solid #d7e0e4;
-  padding-top: 4px;
+  border-bottom: 1px solid #d7e0e4;
+  padding: 4px 0 18px;
 }
 
 .adjustment-grid {
@@ -823,5 +836,10 @@ th {
 
   .booking-checks-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .booking-check-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
