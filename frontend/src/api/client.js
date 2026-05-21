@@ -150,6 +150,14 @@ export async function getBookingChecks(token) {
   return apiRequest("/api/bookings/checks", { token });
 }
 
+export async function updateBookingCheckAdjustments({ token, bookingRef, adjustments }) {
+  return apiRequest(`/api/bookings/checks/${encodeURIComponent(bookingRef)}/adjustments`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify(adjustments),
+  });
+}
+
 export async function getCustomerPayments(token) {
   return apiRequest("/api/customer-payments", { token });
 }

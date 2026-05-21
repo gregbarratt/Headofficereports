@@ -139,6 +139,25 @@ class CustomerPayment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class BookingCheckAdjustment(Base):
+    __tablename__ = "booking_check_adjustments"
+    __table_args__ = (UniqueConstraint("booking_ref", "field_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    booking_ref: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    field_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    adjusted_amount: Mapped[Decimal] = mapped_column(Money, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class BankTransaction(Base):
     __tablename__ = "bank_transactions"
 

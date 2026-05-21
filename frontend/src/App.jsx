@@ -56,6 +56,7 @@ import {
   startFellohCustomerPaymentBackfill,
   storeToken,
   syncFellohCustomerPayments,
+  updateBookingCheckAdjustments,
   updateEmailRecipient,
   updateExceptionStatus,
   uploadBatch,
@@ -452,19 +453,185 @@ function BookingsPage({ token }) {
   );
 }
 
+const adjustmentFields = [
+  ["gross_booking_value", "Gross master", "raw_gross_booking_value"],
+  ["customer_sings_total", "SINGs in", "raw_customer_sings_total"],
+  ["customer_tt_total", "TT customer", "raw_customer_tt_total"],
+  ["expected_supplier_total", "Supplier master", "raw_expected_supplier_total"],
+  ["supplier_taps_total", "TAPs paid", "raw_supplier_taps_total"],
+  ["supplier_tt_total", "TT supplier", "raw_supplier_tt_total"],
+];
+
+function moneyInputValue(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(Number(value).toFixed(2));
+}
+
+function decimalOrNull(value) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+  return Number(value);
+}
+
+function amountMatches(value, rawValue) {
+  if (value === "" || value === null || value === undefined) {
+    return rawValue === null || rawValue === undefined;
+  }
+  if (rawValue === null || rawValue === undefined) {
+    return false;
+  }
+  return Number(value).toFixed(2) === Number(rawValue).toFixed(2);
+}
+
+function groupedCheckStatus(row, area) {
+  const checks =
+    area === "supplier"
+      ? [row.supplier_expected_check, row.supplier_tt_check]
+      : [row.customer_expected_check, row.customer_tt_check];
+  if (checks.includes("mismatch")) {
+    return "mismatch";
+  }
+  if (checks.every((check) => check === "match")) {
+    return "match";
+  }
+  return "waiting";
+}
+
 function BookingChecksPage({ token }) {
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [search, setSearch] = useState("");
+  const [reviewFilter, setReviewFilter] = useState("all");
+  const [companyFilter, setCompanyFilter] = useState("all");
+  const [supplierFilter, setSupplierFilter] = useState("all");
+  const [customerFilter, setCustomerFilter] = useState("all");
+  const [editingRef, setEditingRef] = useState("");
+  const [draft, setDraft] = useState({});
+  const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    getBookingChecks(token)
+  function loadBookingChecks() {
+    return getBookingChecks(token)
       .then((data) => {
         setRows(data.bookings);
         setSummary(data.summary);
+        setError("");
       })
       .catch((loadError) => setError(loadError.message || "Booking checks could not load."));
+  }
+
+  useEffect(() => {
+    loadBookingChecks();
   }, [token]);
+
+  const filteredRows = rows.filter((row) => {
+    const searchValue = search.trim().toLowerCase();
+    if (
+      searchValue &&
+      ![row.booking_ref, row.customer_last_name, row.destination, row.normalised_status]
+        .join(" ")
+        .toLowerCase()
+        .includes(searchValue)
+    ) {
+      return false;
+    }
+    if (reviewFilter !== "all" && row.review_status !== reviewFilter) {
+      return false;
+    }
+    if (companyFilter !== "all" && row.booking_company !== companyFilter) {
+      return false;
+    }
+    if (supplierFilter !== "all" && groupedCheckStatus(row, "supplier") !== supplierFilter) {
+      return false;
+    }
+    if (customerFilter !== "all" && groupedCheckStatus(row, "customer") !== customerFilter) {
+      return false;
+    }
+    return true;
+  });
+
+  function startEditing(row) {
+    setMessage("");
+    setError("");
+    setEditingRef(row.booking_ref);
+    setDraft({
+      gross_booking_value: moneyInputValue(row.gross_booking_value),
+      customer_sings_total: moneyInputValue(row.customer_sings_total),
+      customer_tt_total: moneyInputValue(row.customer_tt_total),
+      expected_supplier_total: moneyInputValue(row.expected_supplier_total),
+      supplier_taps_total: moneyInputValue(row.supplier_taps_total),
+      supplier_tt_total: moneyInputValue(row.supplier_tt_total),
+      note: row.manual_adjustment_note || "",
+    });
+  }
+
+  function updateDraft(fieldName, value) {
+    setDraft((current) => ({ ...current, [fieldName]: value }));
+  }
+
+  async function saveAdjustments(row) {
+    setIsSaving(true);
+    setError("");
+    setMessage("");
+
+    const adjustments = { note: draft.note || null };
+    for (const [fieldName, , rawFieldName] of adjustmentFields) {
+      adjustments[fieldName] = amountMatches(draft[fieldName], row[rawFieldName])
+        ? null
+        : decimalOrNull(draft[fieldName]);
+    }
+
+    try {
+      const data = await updateBookingCheckAdjustments({
+        token,
+        bookingRef: row.booking_ref,
+        adjustments,
+      });
+      setRows(data.bookings);
+      setSummary(data.summary);
+      setEditingRef("");
+      setDraft({});
+      setMessage(`Saved manual check values for ${row.booking_ref}.`);
+    } catch (saveError) {
+      setError(saveError.message || "Manual adjustment could not be saved.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function clearAdjustments(row) {
+    setIsSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const data = await updateBookingCheckAdjustments({
+        token,
+        bookingRef: row.booking_ref,
+        adjustments: {
+          gross_booking_value: null,
+          expected_supplier_total: null,
+          supplier_taps_total: null,
+          supplier_tt_total: null,
+          customer_sings_total: null,
+          customer_tt_total: null,
+          note: null,
+        },
+      });
+      setRows(data.bookings);
+      setSummary(data.summary);
+      setEditingRef("");
+      setDraft({});
+      setMessage(`Cleared manual check values for ${row.booking_ref}.`);
+    } catch (clearError) {
+      setError(clearError.message || "Manual adjustment could not be cleared.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <section className="panel booking-checks-panel">
@@ -477,6 +644,7 @@ function BookingChecksPage({ token }) {
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
+      {message ? <p className="form-success">{message}</p> : null}
 
       <div className="summary-strip booking-checks-summary">
         <div>
@@ -484,20 +652,20 @@ function BookingChecksPage({ token }) {
           <strong>{summary?.total_bookings ?? 0}</strong>
         </div>
         <div>
-          <span>Supplier paid vs master</span>
+          <span>Full match</span>
+          <strong>{summary?.fully_matched ?? 0}</strong>
+        </div>
+        <div>
+          <span>Errors</span>
+          <strong>{summary?.error_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Awaiting imports</span>
+          <strong>{summary?.awaiting_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Supplier checks matched</span>
           <strong>{summary?.supplier_expected_matches ?? 0}</strong>
-        </div>
-        <div>
-          <span>Supplier TAPs vs TT</span>
-          <strong>{summary?.supplier_tt_matches ?? 0}</strong>
-        </div>
-        <div>
-          <span>Customer SINGs vs master</span>
-          <strong>{summary?.customer_expected_matches ?? 0}</strong>
-        </div>
-        <div>
-          <span>Customer SINGs vs TT</span>
-          <strong>{summary?.customer_tt_matches ?? 0}</strong>
         </div>
         <div>
           <span>Needs review</span>
@@ -508,6 +676,56 @@ function BookingChecksPage({ token }) {
       <p className="muted-note">
         TAPs and SINGs are treated as actual sources. TT is human input used for cross-checking.
       </p>
+
+      <div className="booking-check-filters">
+        <label>
+          Search
+          <input
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Booking ref, customer, destination or status"
+            type="search"
+            value={search}
+          />
+        </label>
+        <label>
+          Review
+          <select value={reviewFilter} onChange={(event) => setReviewFilter(event.target.value)}>
+            <option value="all">All</option>
+            <option value="match">Full match</option>
+            <option value="mismatch">Errors only</option>
+            <option value="waiting">Awaiting imports</option>
+          </select>
+        </label>
+        <label>
+          Company
+          <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)}>
+            <option value="all">All</option>
+            <option value="otc">OTC</option>
+            <option value="lemieux">LeMieux</option>
+            <option value="review">Review</option>
+          </select>
+        </label>
+        <label>
+          Supplier checks
+          <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)}>
+            <option value="all">All</option>
+            <option value="match">Matched</option>
+            <option value="mismatch">Errors</option>
+            <option value="waiting">Awaiting</option>
+          </select>
+        </label>
+        <label>
+          Customer checks
+          <select value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)}>
+            <option value="all">All</option>
+            <option value="match">Matched</option>
+            <option value="mismatch">Errors</option>
+            <option value="waiting">Awaiting</option>
+          </select>
+        </label>
+      </div>
+
+      <p className="muted-note">Showing {filteredRows.length} of {rows.length} booking check row(s).</p>
 
       <div className="table-wrap">
         <table className="booking-checks-table">
@@ -527,13 +745,19 @@ function BookingChecksPage({ token }) {
               <th>TAPs vs Master</th>
               <th>TAPs vs TT</th>
               <th>Review</th>
+              <th>Amend</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length ? (
-              rows.map((row) => (
+            {filteredRows.length ? (
+              filteredRows.map((row) => (
                 <tr key={row.booking_ref}>
-                  <td>{row.booking_ref}</td>
+                  <td>
+                    {row.booking_ref}
+                    {row.has_manual_adjustment ? (
+                      <span className="variance-note">Manual check value</span>
+                    ) : null}
+                  </td>
                   <td>{row.customer_last_name || "-"}</td>
                   <td>{row.normalised_status || "-"}</td>
                   <td>{formatMoney(row.gross_booking_value)}</td>
@@ -561,17 +785,73 @@ function BookingChecksPage({ token }) {
                   <td>
                     <CheckBadge status={row.review_status} />
                     <span className="variance-note">{row.review_note}</span>
+                    {row.manual_adjustment_note ? (
+                      <span className="variance-note">{row.manual_adjustment_note}</span>
+                    ) : null}
+                  </td>
+                  <td>
+                    <button className="table-action-button" onClick={() => startEditing(row)} type="button">
+                      Amend
+                    </button>
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan="14">No booking checks available yet. Import the master booking report first.</td>
+                <td colSpan="15">No booking checks match the current filters.</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {editingRef ? (
+        <section className="inline-editor">
+          {filteredRows
+            .filter((row) => row.booking_ref === editingRef)
+            .map((row) => (
+              <div key={row.booking_ref}>
+                <div className="section-heading">
+                  <h3>Amend check values for {row.booking_ref}</h3>
+                  <p>These values only affect the Booking Checks page. Original imports stay unchanged.</p>
+                </div>
+                <div className="adjustment-grid">
+                  {adjustmentFields.map(([fieldName, label, rawFieldName]) => (
+                    <label key={fieldName}>
+                      {label}
+                      <input
+                        onChange={(event) => updateDraft(fieldName, event.target.value)}
+                        step="0.01"
+                        type="number"
+                        value={draft[fieldName] ?? ""}
+                      />
+                      <span>Original: {formatMoney(row[rawFieldName])}</span>
+                    </label>
+                  ))}
+                  <label className="adjustment-note">
+                    Note
+                    <input
+                      onChange={(event) => updateDraft("note", event.target.value)}
+                      placeholder="Why this value was amended"
+                      value={draft.note || ""}
+                    />
+                  </label>
+                </div>
+                <div className="editor-actions">
+                  <button className="primary-button" disabled={isSaving} onClick={() => saveAdjustments(row)} type="button">
+                    Save check values
+                  </button>
+                  <button className="secondary-button" disabled={isSaving} onClick={() => clearAdjustments(row)} type="button">
+                    Clear manual values
+                  </button>
+                  <button className="secondary-button" disabled={isSaving} onClick={() => setEditingRef("")} type="button">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ))}
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -2409,7 +2689,7 @@ function SettingsPage({ token }) {
   );
 }
 
-function DashboardHome({ health, token }) {
+function DashboardHome({ dashboardStatus, health, token }) {
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
 
@@ -2423,6 +2703,7 @@ function DashboardHome({ health, token }) {
   }, [token]);
 
   const openExceptions = (summary?.open_count ?? 0) + (summary?.reviewing_count ?? 0);
+  const bookingChecks = dashboardStatus?.booking_checks || {};
 
   return (
     <>
@@ -2439,6 +2720,24 @@ function DashboardHome({ health, token }) {
           value={health?.database_configured ? "Configured" : "Not configured yet"}
         />
         <StatusCard icon={ShieldCheck} label="Access" value="Super Admin only" tone="success" />
+        <StatusCard
+          icon={CheckCircle2}
+          label="Full booking matches"
+          value={bookingChecks.fully_matched ?? 0}
+          tone="success"
+        />
+        <StatusCard
+          icon={XCircle}
+          label="Booking check errors"
+          value={bookingChecks.error_count ?? 0}
+          tone={bookingChecks.error_count ? "warning" : "success"}
+        />
+        <StatusCard
+          icon={Clock3}
+          label="Awaiting imports"
+          value={bookingChecks.awaiting_count ?? 0}
+          tone={bookingChecks.awaiting_count ? "warning" : "success"}
+        />
         <StatusCard
           icon={AlertTriangle}
           label="Open exceptions"
@@ -2655,7 +2954,7 @@ export default function App() {
         ) : activeView === "Settings" ? (
           <SettingsPage token={token} />
         ) : (
-          <DashboardHome health={health} token={token} />
+          <DashboardHome dashboardStatus={dashboardStatus} health={health} token={token} />
         )}
       </section>
     </main>

@@ -10,6 +10,7 @@ from app.models import (  # noqa: F401
     AuditLog,
     BankTransaction,
     Booking,
+    BookingCheckAdjustment,
     CustomerPayment,
     EmailRecipient,
     ExceptionRecord,

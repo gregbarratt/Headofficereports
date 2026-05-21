@@ -63,6 +63,15 @@ class BookingCheckRow(BaseModel):
     customer_tt_check: str
     review_status: str
     review_note: str
+    raw_gross_booking_value: Decimal | None
+    raw_expected_supplier_total: Decimal | None
+    raw_supplier_taps_total: Decimal
+    raw_supplier_tt_total: Decimal
+    raw_customer_sings_total: Decimal
+    raw_customer_tt_total: Decimal
+    manual_adjustments: dict[str, Decimal]
+    manual_adjustment_note: str | None
+    has_manual_adjustment: bool
 
 
 class BookingChecksSummary(BaseModel):
@@ -73,8 +82,20 @@ class BookingChecksSummary(BaseModel):
     customer_tt_matches: int
     fully_matched: int
     needs_review: int
+    error_count: int
+    awaiting_count: int
 
 
 class BookingChecksResponse(BaseModel):
     summary: BookingChecksSummary
     bookings: list[BookingCheckRow]
+
+
+class BookingCheckAdjustmentUpdate(BaseModel):
+    gross_booking_value: Decimal | None = None
+    expected_supplier_total: Decimal | None = None
+    supplier_taps_total: Decimal | None = None
+    supplier_tt_total: Decimal | None = None
+    customer_sings_total: Decimal | None = None
+    customer_tt_total: Decimal | None = None
+    note: str | None = None

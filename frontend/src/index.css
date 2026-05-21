@@ -457,6 +457,54 @@ nav button:disabled {
   white-space: nowrap;
 }
 
+.booking-check-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(140px, 190px));
+  gap: 12px;
+  align-items: end;
+  margin: 18px 0 8px;
+}
+
+.table-action-button {
+  min-height: 34px;
+  border: 1px solid #b8c7cd;
+  border-radius: 6px;
+  color: #172026;
+  background: #ffffff;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.inline-editor {
+  margin-top: 18px;
+  border-top: 1px solid #d7e0e4;
+  padding-top: 4px;
+}
+
+.adjustment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.adjustment-grid label span {
+  color: #5c6b72;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.adjustment-note {
+  grid-column: 1 / -1;
+}
+
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .variance-note {
   display: block;
   margin-top: 5px;
@@ -759,7 +807,9 @@ th {
 
   .upload-form,
   .supplier-search,
-  .customer-sync {
+  .customer-sync,
+  .booking-check-filters,
+  .adjustment-grid {
     grid-template-columns: 1fr;
   }
 
