@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agent_commissions import router as agent_commissions_router
@@ -13,6 +13,7 @@ from app.api.insurance import router as insurance_router
 from app.api.health import router as health_router
 from app.api.refunds import router as refunds_router
 from app.api.reports import router as reports_router
+from app.api.settings import router as settings_router
 from app.api.supplier_payments import router as supplier_payments_router
 from app.api.trust_reconciliation import router as trust_reconciliation_router
 from app.api.uploads import router as uploads_router
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(insurance_router)
     app.include_router(refunds_router)
     app.include_router(reports_router)
+    app.include_router(settings_router)
     app.include_router(supplier_payments_router)
     app.include_router(trust_reconciliation_router)
     app.include_router(uploads_router)
@@ -56,3 +58,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+

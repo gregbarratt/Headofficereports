@@ -1,4 +1,4 @@
-import {
+﻿import {
   Activity,
   AlertTriangle,
   Banknote,
@@ -35,6 +35,7 @@ import {
   getRefunds,
   getReportRuns,
   getReportTypes,
+  getSettingsStatus,
   getSupplierPayments,
   getStoredToken,
   getTrustReconciliation,
@@ -69,7 +70,7 @@ const navItems = [
   { label: "Trust Reconciliation", enabled: true },
   { label: "Exceptions", enabled: true },
   { label: "Weekly Reports", enabled: true },
-  { label: "Settings", enabled: false },
+  { label: "Settings", enabled: true },
 ];
 
 const FELLOH_CATCH_UP_START_DATE = "2023-01-01";
@@ -210,6 +211,17 @@ function formatSourceLabel(value) {
   return labels[value] || formatStatusLabel(value);
 }
 
+function ConfigStatus({ isConfigured, configuredLabel = "Configured", missingLabel = "Needs setting" }) {
+  if (isConfigured === null || isConfigured === undefined) {
+    return <span className="status-pill status-inactive">Loading</span>;
+  }
+
+  return (
+    <span className={`status-pill ${isConfigured ? "status-active" : "status-incomplete"}`}>
+      {isConfigured ? configuredLabel : missingLabel}
+    </span>
+  );
+}
 function UploadCentre({ token }) {
   const [uploadTypes, setUploadTypes] = useState([]);
   const [uploadType, setUploadType] = useState("");
@@ -2135,6 +2147,93 @@ function WeeklyReportsPage({ token }) {
   );
 }
 
+function SettingsPage({ token }) {
+  const [settingsStatus, setSettingsStatus] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getSettingsStatus(token)
+      .then((data) => {
+        setSettingsStatus(data);
+        setError("");
+      })
+      .catch((loadError) => setError(loadError.message || "Settings could not load."));
+  }, [token]);
+
+  const felloh = settingsStatus?.felloh || {};
+  const email = settingsStatus?.email || {};
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Settings</h2>
+          <p>Safe configuration check. Private keys and passwords are hidden.</p>
+        </div>
+        <ShieldCheck size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip summary-strip-wide">
+        <div>
+          <span>Environment</span>
+          <strong>{settingsStatus?.environment || "Loading"}</strong>
+        </div>
+        <div>
+          <span>Database</span>
+          <strong>{settingsStatus ? (settingsStatus.database_configured ? "Configured" : "Needs setting") : "Loading"}</strong>
+        </div>
+        <div>
+          <span>Felloh / SINGs API</span>
+          <strong>{settingsStatus ? (felloh.configured ? "Configured" : "Needs setting") : "Loading"}</strong>
+        </div>
+        <div>
+          <span>Outlook email</span>
+          <strong>{settingsStatus ? (email.configured ? "Configured" : "Needs setting") : "Loading"}</strong>
+        </div>
+        <div>
+          <span>Upload limit</span>
+          <strong>{settingsStatus ? `${settingsStatus.max_upload_size_mb} MB` : "Loading"}</strong>
+        </div>
+      </div>
+
+      <div className="section-heading">
+        <h3>Connection checks</h3>
+        <p>This tells you what is set up in Render without exposing secret values.</p>
+      </div>
+
+      <div className="progress-list">
+        <span>Database connection</span>
+        <strong><ConfigStatus isConfigured={settingsStatus?.database_configured} /></strong>
+        <span>Frontend URL</span>
+        <strong><ConfigStatus isConfigured={settingsStatus?.frontend_url_configured} /></strong>
+        <span>Felloh base URL</span>
+        <strong><ConfigStatus isConfigured={felloh.base_url_configured} /></strong>
+        <span>Felloh public key</span>
+        <strong><ConfigStatus isConfigured={felloh.public_key_configured} /></strong>
+        <span>Felloh private key</span>
+        <strong><ConfigStatus isConfigured={felloh.private_key_configured} /></strong>
+        <span>Felloh organisation ID</span>
+        <strong><ConfigStatus isConfigured={felloh.organisation_id_configured} /></strong>
+        <span>Outlook SMTP host</span>
+        <strong><ConfigStatus isConfigured={email.host_configured} /></strong>
+        <span>Outlook sender email</span>
+        <strong><ConfigStatus isConfigured={email.from_email_configured} /></strong>
+        <span>Outlook username</span>
+        <strong><ConfigStatus isConfigured={email.username_configured} /></strong>
+        <span>Outlook password</span>
+        <strong><ConfigStatus isConfigured={email.password_configured} /></strong>
+        <span>Email security</span>
+        <strong>{email.use_tls ? "TLS on" : "TLS off"}</strong>
+        <span>Email port</span>
+        <strong>{settingsStatus ? email.port : "Loading"}</strong>
+        <span>Login session length</span>
+        <strong>{settingsStatus ? `${settingsStatus.login_session_minutes} minutes` : "Loading"}</strong>
+      </div>
+    </section>
+  );
+}
 function DashboardHome({ health, token }) {
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
@@ -2376,6 +2475,8 @@ export default function App() {
           <ExceptionsPage token={token} />
         ) : activeView === "Weekly Reports" ? (
           <WeeklyReportsPage token={token} />
+        ) : activeView === "Settings" ? (
+          <SettingsPage token={token} />
         ) : (
           <DashboardHome health={health} token={token} />
         )}
@@ -2383,3 +2484,4 @@ export default function App() {
     </main>
   );
 }
+
