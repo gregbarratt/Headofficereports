@@ -238,3 +238,72 @@ def build_booking_checks(db: Session, limit: int = 500) -> BookingChecksResponse
         awaiting_count=sum(1 for row in rows if row.review_status == "waiting"),
     )
     return BookingChecksResponse(summary=summary, bookings=rows)
+
+
+def build_booking_checks_summary(db: Session, limit: int = 500) -> BookingChecksSummary:
+    bookings = list(db.scalars(select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(limit)))
+    supplier_totals = grouped_supplier_totals(db)
+    customer_totals = grouped_customer_totals(db)
+    insurance_totals = grouped_insurance_totals(db)
+    adjustments_by_booking = grouped_adjustments(db)
+
+    supplier_expected_matches = 0
+    supplier_tt_matches = 0
+    customer_expected_matches = 0
+    customer_tt_matches = 0
+    fully_matched = 0
+    error_count = 0
+    awaiting_count = 0
+
+    for booking in bookings:
+        raw_supplier_taps_total = supplier_totals.get((booking.booking_ref, "taps"), ZERO)
+        raw_supplier_tt_total = supplier_totals.get((booking.booking_ref, "tt"), ZERO)
+        raw_customer_sings_total = customer_totals.get((booking.booking_ref, "sings"), ZERO)
+        raw_customer_tt_total = customer_totals.get((booking.booking_ref, "tt"), ZERO)
+        insurance_cost_total = insurance_totals.get(booking.booking_ref, ZERO)
+
+        raw_expected_supplier_total = None
+        if booking.expected_supplier_nett is not None:
+            raw_expected_supplier_total = money(booking.expected_supplier_nett) + insurance_cost_total
+
+        adjustments = adjustments_by_booking.get(booking.booking_ref, {})
+        gross_booking_value = adjusted_amount(adjustments, "gross_booking_value", booking.gross_booking_value)
+        expected_supplier_total = adjusted_amount(
+            adjustments,
+            "expected_supplier_total",
+            raw_expected_supplier_total,
+        )
+        supplier_taps_total = money(adjusted_amount(adjustments, "supplier_taps_total", raw_supplier_taps_total))
+        supplier_tt_total = money(adjusted_amount(adjustments, "supplier_tt_total", raw_supplier_tt_total))
+        customer_sings_total = money(adjusted_amount(adjustments, "customer_sings_total", raw_customer_sings_total))
+        customer_tt_total = money(adjusted_amount(adjustments, "customer_tt_total", raw_customer_tt_total))
+
+        checks = (
+            trusted_vs_expected_check(expected_supplier_total, supplier_taps_total),
+            trusted_vs_human_check(supplier_taps_total, supplier_tt_total),
+            trusted_vs_expected_check(gross_booking_value, customer_sings_total),
+            trusted_vs_human_check(customer_sings_total, customer_tt_total),
+        )
+
+        supplier_expected_matches += checks[0] == "match"
+        supplier_tt_matches += checks[1] == "match"
+        customer_expected_matches += checks[2] == "match"
+        customer_tt_matches += checks[3] == "match"
+
+        row_review_status, _ = review_status(*checks)
+        fully_matched += row_review_status == "match"
+        error_count += row_review_status == "mismatch"
+        awaiting_count += row_review_status == "waiting"
+
+    total_bookings = len(bookings)
+    return BookingChecksSummary(
+        total_bookings=total_bookings,
+        supplier_expected_matches=supplier_expected_matches,
+        supplier_tt_matches=supplier_tt_matches,
+        customer_expected_matches=customer_expected_matches,
+        customer_tt_matches=customer_tt_matches,
+        fully_matched=fully_matched,
+        needs_review=total_bookings - fully_matched,
+        error_count=error_count,
+        awaiting_count=awaiting_count,
+    )

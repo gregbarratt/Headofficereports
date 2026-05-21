@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_super_admin
 from app.db.session import get_db
 from app.models.user import User
-from app.services.booking_checks import build_booking_checks
+from app.services.booking_checks import build_booking_checks_summary
 
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
@@ -15,7 +15,7 @@ def dashboard_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin),
 ) -> dict:
-    booking_checks = build_booking_checks(db).summary
+    booking_checks = build_booking_checks_summary(db)
     return {
         "status": "ok",
         "message": "Super Admin access confirmed.",
