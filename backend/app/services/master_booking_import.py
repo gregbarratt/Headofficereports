@@ -26,7 +26,6 @@ COLUMN_ALIASES = {
     "return_date": ("returned date", "return date"),
     "booking_date": ("date booked", "booking date", "booked"),
     "customer_balance_due_date": ("due date",),
-    "passenger_count": ("pax", "passengers", "passenger numbers"),
     "imported_customer_outstanding": ("outstanding", "balance", "balance due"),
     "imported_supplier_outstanding": ("outstanding supplier", "outstanding supp"),
     "gross_booking_value": ("total cost", "gross", "total sell"),
@@ -371,7 +370,6 @@ def import_master_booking_report(
                 "return_date": parse_date(get_row_value(row, column_map, "return_date")),
                 "booking_date": parse_datetime(get_row_value(row, column_map, "booking_date")),
                 "customer_balance_due_date": parse_date(get_row_value(row, column_map, "customer_balance_due_date")),
-                "passenger_count": parse_int(get_row_value(row, column_map, "passenger_count")),
                 "last_master_upload_batch_id": upload_batch.id,
                 **flags,
             }

@@ -4,9 +4,6 @@ Revision ID: 0004_master_pax
 Revises: 0003_insurance_costs
 Create Date: 2026-05-21
 """
-from alembic import op
-import sqlalchemy as sa
-
 
 revision = "0004_master_pax"
 down_revision = "0003_insurance_costs"
@@ -15,8 +12,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("bookings", sa.Column("passenger_count", sa.Integer(), nullable=True))
+    # This deployment previously timed out while waiting for a table lock on Render.
+    # Keep the revision so Alembic can move forward, but do not change the live table here.
+    pass
 
 
 def downgrade() -> None:
-    op.drop_column("bookings", "passenger_count")
+    pass

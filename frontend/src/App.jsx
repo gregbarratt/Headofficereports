@@ -388,7 +388,6 @@ function BookingsPage({ token }) {
               <th>Status</th>
               <th>Last Name</th>
               <th>Destination</th>
-              <th>Pax</th>
               <th>Departure</th>
               <th>Return</th>
               <th>Gross Value</th>
@@ -405,7 +404,6 @@ function BookingsPage({ token }) {
                   <td>{booking.normalised_status || "-"}</td>
                   <td>{booking.customer_last_name || "-"}</td>
                   <td>{booking.destination || "-"}</td>
-                  <td>{booking.passenger_count ?? "-"}</td>
                   <td>{formatDate(booking.departure_date)}</td>
                   <td>{formatDate(booking.return_date)}</td>
                   <td>{formatMoney(booking.gross_booking_value)}</td>
@@ -415,7 +413,7 @@ function BookingsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="11">No bookings imported yet.</td>
+                <td colSpan="10">No bookings imported yet.</td>
               </tr>
             )}
           </tbody>
