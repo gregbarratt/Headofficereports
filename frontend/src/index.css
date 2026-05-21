@@ -444,6 +444,27 @@ nav button:disabled {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.booking-checks-summary {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.booking-checks-table {
+  min-width: 1500px;
+}
+
+.booking-checks-table .status-pill {
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.variance-note {
+  display: block;
+  margin-top: 5px;
+  color: #5c6b72;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
 .exception-toolbar {
   align-items: end;
   display: grid;
@@ -568,6 +589,7 @@ th {
 
 .status-matched,
 .status-matched_booking_ref,
+.status-match,
 .status-booking_ref,
 .status-booking,
 .status-invoice_ref,
@@ -608,6 +630,7 @@ th {
 .status-unpaid,
 .status-overpaid,
 .status-unmatched,
+.status-mismatch,
 .status-overdue,
 .status-incomplete,
 .status-open,
@@ -620,6 +643,15 @@ th {
 .status-cancelled {
   color: #45545b;
   background: #e8eef1;
+}
+
+.status-waiting,
+.status-waiting_actual,
+.status-waiting_both,
+.status-waiting_human,
+.status-waiting_master {
+  color: #664d03;
+  background: #fff3cd;
 }
 
 .status-withheld,
@@ -736,6 +768,10 @@ th {
   }
 
   .summary-strip-wide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .booking-checks-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

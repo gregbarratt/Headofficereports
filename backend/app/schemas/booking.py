@@ -36,3 +36,45 @@ class BookingRead(BaseModel):
 class BookingListResponse(BaseModel):
     bookings: list[BookingRead]
     total: int
+
+
+class BookingCheckRow(BaseModel):
+    booking_ref: str
+    booking_company: str
+    normalised_status: str | None
+    customer_last_name: str | None
+    destination: str | None
+    departure_date: date | None
+    gross_booking_value: Decimal | None
+    expected_supplier_nett: Decimal | None
+    insurance_cost_total: Decimal
+    expected_supplier_total: Decimal | None
+    supplier_taps_total: Decimal
+    supplier_tt_total: Decimal
+    supplier_expected_variance: Decimal | None
+    supplier_tt_variance: Decimal
+    supplier_expected_check: str
+    supplier_tt_check: str
+    customer_sings_total: Decimal
+    customer_tt_total: Decimal
+    customer_expected_variance: Decimal | None
+    customer_tt_variance: Decimal
+    customer_expected_check: str
+    customer_tt_check: str
+    review_status: str
+    review_note: str
+
+
+class BookingChecksSummary(BaseModel):
+    total_bookings: int
+    supplier_expected_matches: int
+    supplier_tt_matches: int
+    customer_expected_matches: int
+    customer_tt_matches: int
+    fully_matched: int
+    needs_review: int
+
+
+class BookingChecksResponse(BaseModel):
+    summary: BookingChecksSummary
+    bookings: list[BookingCheckRow]

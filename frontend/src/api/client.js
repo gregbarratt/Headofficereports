@@ -146,6 +146,10 @@ export async function getBookings(token) {
   return apiRequest("/api/bookings", { token });
 }
 
+export async function getBookingChecks(token) {
+  return apiRequest("/api/bookings/checks", { token });
+}
+
 export async function getCustomerPayments(token) {
   return apiRequest("/api/customer-payments", { token });
 }

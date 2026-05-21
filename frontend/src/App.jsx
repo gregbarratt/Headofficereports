@@ -2,6 +2,9 @@ import {
   Activity,
   AlertTriangle,
   Banknote,
+  CheckCircle2,
+  CircleAlert,
+  Clock3,
   CreditCard,
   Database,
   FileSpreadsheet,
@@ -15,6 +18,7 @@ import {
   Search,
   ShieldCheck,
   Upload,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -25,6 +29,7 @@ import {
   getAgentCommissions,
   getApiHealth,
   getBankTransactions,
+  getBookingChecks,
   getBookings,
   getCurrentUser,
   getCustomerPayments,
@@ -58,6 +63,7 @@ import {
 
 const navItems = [
   { label: "Dashboard", enabled: true },
+  { label: "Booking Checks", enabled: true },
   { label: "Upload Centre", enabled: true },
   { label: "Bookings", enabled: true },
   { label: "Supplier Payments TAPs", enabled: true },
@@ -219,6 +225,29 @@ function ConfigStatus({ isConfigured, configuredLabel = "Configured", missingLab
   return (
     <span className={`status-pill ${isConfigured ? "status-active" : "status-incomplete"}`}>
       {isConfigured ? configuredLabel : missingLabel}
+    </span>
+  );
+}
+
+function checkLabel(value) {
+  const labels = {
+    match: "Match",
+    mismatch: "Mismatch",
+    waiting_actual: "Awaiting actual",
+    waiting_both: "Awaiting imports",
+    waiting_human: "Awaiting TT",
+    waiting_master: "Awaiting master",
+    waiting: "Awaiting imports",
+  };
+  return labels[value] || formatStatusLabel(value);
+}
+
+function CheckBadge({ status }) {
+  const Icon = status === "match" ? CheckCircle2 : status === "mismatch" ? XCircle : Clock3;
+  return (
+    <span className={`status-pill status-${status}`}>
+      <Icon size={15} aria-hidden="true" />
+      {checkLabel(status)}
     </span>
   );
 }
@@ -414,6 +443,130 @@ function BookingsPage({ token }) {
             ) : (
               <tr>
                 <td colSpan="10">No bookings imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function BookingChecksPage({ token }) {
+  const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getBookingChecks(token)
+      .then((data) => {
+        setRows(data.bookings);
+        setSummary(data.summary);
+      })
+      .catch((loadError) => setError(loadError.message || "Booking checks could not load."));
+  }, [token]);
+
+  return (
+    <section className="panel booking-checks-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Booking Checks</h2>
+          <p>Master booking values compared with actual and human-input payment imports.</p>
+        </div>
+        <CircleAlert size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip booking-checks-summary">
+        <div>
+          <span>Bookings</span>
+          <strong>{summary?.total_bookings ?? 0}</strong>
+        </div>
+        <div>
+          <span>Supplier paid vs master</span>
+          <strong>{summary?.supplier_expected_matches ?? 0}</strong>
+        </div>
+        <div>
+          <span>Supplier TAPs vs TT</span>
+          <strong>{summary?.supplier_tt_matches ?? 0}</strong>
+        </div>
+        <div>
+          <span>Customer SINGs vs master</span>
+          <strong>{summary?.customer_expected_matches ?? 0}</strong>
+        </div>
+        <div>
+          <span>Customer SINGs vs TT</span>
+          <strong>{summary?.customer_tt_matches ?? 0}</strong>
+        </div>
+        <div>
+          <span>Needs review</span>
+          <strong>{summary?.needs_review ?? 0}</strong>
+        </div>
+      </div>
+
+      <p className="muted-note">
+        TAPs and SINGs are treated as actual sources. TT is human input used for cross-checking.
+      </p>
+
+      <div className="table-wrap">
+        <table className="booking-checks-table">
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Gross Master</th>
+              <th>SINGs In</th>
+              <th>TT Customer</th>
+              <th>SINGs vs Master</th>
+              <th>SINGs vs TT</th>
+              <th>Supplier Master</th>
+              <th>TAPs Paid</th>
+              <th>TT Supplier</th>
+              <th>TAPs vs Master</th>
+              <th>TAPs vs TT</th>
+              <th>Review</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length ? (
+              rows.map((row) => (
+                <tr key={row.booking_ref}>
+                  <td>{row.booking_ref}</td>
+                  <td>{row.customer_last_name || "-"}</td>
+                  <td>{row.normalised_status || "-"}</td>
+                  <td>{formatMoney(row.gross_booking_value)}</td>
+                  <td>{formatMoney(row.customer_sings_total)}</td>
+                  <td>{formatMoney(row.customer_tt_total)}</td>
+                  <td>
+                    <CheckBadge status={row.customer_expected_check} />
+                    <span className="variance-note">{formatMoney(row.customer_expected_variance)}</span>
+                  </td>
+                  <td>
+                    <CheckBadge status={row.customer_tt_check} />
+                    <span className="variance-note">{formatMoney(row.customer_tt_variance)}</span>
+                  </td>
+                  <td>{formatMoney(row.expected_supplier_total)}</td>
+                  <td>{formatMoney(row.supplier_taps_total)}</td>
+                  <td>{formatMoney(row.supplier_tt_total)}</td>
+                  <td>
+                    <CheckBadge status={row.supplier_expected_check} />
+                    <span className="variance-note">{formatMoney(row.supplier_expected_variance)}</span>
+                  </td>
+                  <td>
+                    <CheckBadge status={row.supplier_tt_check} />
+                    <span className="variance-note">{formatMoney(row.supplier_tt_variance)}</span>
+                  </td>
+                  <td>
+                    <CheckBadge status={row.review_status} />
+                    <span className="variance-note">{row.review_note}</span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="14">No booking checks available yet. Import the master booking report first.</td>
               </tr>
             )}
           </tbody>
@@ -2473,7 +2626,9 @@ export default function App() {
           </span>
         </header>
 
-        {activeView === "Upload Centre" ? (
+        {activeView === "Booking Checks" ? (
+          <BookingChecksPage token={token} />
+        ) : activeView === "Upload Centre" ? (
           <UploadCentre token={token} />
         ) : activeView === "Bookings" ? (
           <BookingsPage token={token} />
