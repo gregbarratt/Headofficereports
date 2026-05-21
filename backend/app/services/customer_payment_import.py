@@ -23,12 +23,22 @@ COLUMN_ALIASES = {
     "booking_ref": ("booking reference", "booking ref", "booking_reference", "booking_ref"),
     "invoice_reference": ("invoice reference", "invoice ref", "invoice number", "invoice_reference"),
     "customer_name": ("customer name", "customer", "payer name", "cardholder name", "name"),
-    "payment_date": ("payment date", "transaction date", "date"),
+    "payment_date": ("payment date", "transaction date", "txn date", "date"),
     "settlement_date": ("settlement date", "settled date", "settlement_date"),
-    "gross_amount": ("gross amount", "gross", "amount", "payment amount", "customer gross payment"),
-    "fee_amount": ("fee amount", "fee", "card fee", "processing fee", "actual fee"),
+    "gross_amount": (
+        "gross amount",
+        "gross",
+        "amount",
+        "payment amount",
+        "customer gross payment",
+        "booking credit",
+        "banked",
+    ),
+    "fee_amount": ("fee amount", "fee", "card fee", "processing fee", "actual fee", "merchant fee"),
+    "handling_fee_amount": ("handling fee",),
+    "merchant_fee_amount": ("merchant fee",),
     "net_settled_amount": ("net settled amount", "net settled", "net amount", "settled amount"),
-    "payment_method": ("payment method", "method"),
+    "payment_method": ("payment method", "payment methods", "method"),
     "card_type": ("card type", "card_type"),
     "card_brand": ("card brand", "card_brand", "brand"),
     "transaction_status": ("transaction status", "status"),
@@ -180,6 +190,15 @@ def calculate_estimated_fee(gross_amount: Decimal, rule: PaymentMethodRule | Non
     return fee.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def calculate_tt_fee(row: dict[str, Any], column_map: dict[str, str]) -> Decimal | None:
+    handling_fee = parse_money(get_row_value(row, column_map, "handling_fee_amount"))
+    merchant_fee = parse_money(get_row_value(row, column_map, "merchant_fee_amount"))
+    fee_parts = [amount for amount in (handling_fee, merchant_fee) if amount is not None]
+    if not fee_parts:
+        return parse_money(get_row_value(row, column_map, "fee_amount"))
+    return sum(fee_parts, Decimal("0.00")).quantize(Decimal("0.01"))
+
+
 def import_customer_payment_report(
     db: Session,
     upload_batch: UploadBatch,
@@ -209,7 +228,10 @@ def import_customer_payment_report(
             invoice_reference = clean_text(get_row_value(row, column_map, "invoice_reference"))
             customer_name = clean_text(get_row_value(row, column_map, "customer_name"))
             payment_date = parse_date(get_row_value(row, column_map, "payment_date"))
-            fee_amount = parse_money(get_row_value(row, column_map, "fee_amount"))
+            if payment_source == "tt":
+                fee_amount = calculate_tt_fee(row, column_map)
+            else:
+                fee_amount = parse_money(get_row_value(row, column_map, "fee_amount"))
             net_settled_amount = parse_money(get_row_value(row, column_map, "net_settled_amount"))
             payment_method = clean_text(get_row_value(row, column_map, "payment_method"))
             card_type = clean_text(get_row_value(row, column_map, "card_type"))
