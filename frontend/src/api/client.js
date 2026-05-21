@@ -1,4 +1,4 @@
-﻿const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const TOKEN_STORAGE_KEY = "head_office_reporting_token";
 const AUTH_EXPIRED_EVENT = "head-office-auth-expired";
@@ -185,9 +185,6 @@ export async function generateExceptions(token) {
   });
 }
 
-export async function getSettingsStatus(token) {
-  return apiRequest("/api/settings/status", { token });
-}
 export async function getSupplierPayments(token, search = "", source = "all") {
   const query = new URLSearchParams();
   if (search.trim()) {
@@ -197,6 +194,10 @@ export async function getSupplierPayments(token, search = "", source = "all") {
     query.set("source", source);
   }
   return apiRequest(`/api/supplier-payments${query.toString() ? `?${query.toString()}` : ""}`, { token });
+}
+
+export async function getSettingsStatus(token) {
+  return apiRequest("/api/settings/status", { token });
 }
 
 export async function getTrustReconciliation(token) {
@@ -270,4 +271,3 @@ export async function downloadReportExcel({ token, reportType }) {
     filename: filenameMatch?.[1] || `${reportType}.xlsx`,
   };
 }
-

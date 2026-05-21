@@ -17,6 +17,7 @@ class BookingRead(BaseModel):
     return_date: date | None
     booking_date: datetime | None
     customer_balance_due_date: date | None
+    passenger_count: int | None
     imported_customer_outstanding: Decimal | None
     imported_supplier_outstanding: Decimal | None
     gross_booking_value: Decimal | None

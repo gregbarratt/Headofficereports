@@ -63,6 +63,7 @@ class Booking(Base):
     return_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     booking_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     customer_balance_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    passenger_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     imported_customer_outstanding: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     imported_supplier_outstanding: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     gross_booking_value: Mapped[Decimal | None] = mapped_column(Money, nullable=True)

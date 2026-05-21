@@ -1,4 +1,4 @@
-﻿# Head Office Reporting & Trust Reconciliation System
+# Head Office Reporting & Trust Reconciliation System
 
 This is the new Head Office-only reporting system. It is separate from the existing Travel Agent Onboarding Hub.
 
@@ -155,6 +155,7 @@ Backend endpoints:
 - `GET /api/reports/types`
 - `GET /api/reports/runs`
 - `POST /api/reports/{report_type}/excel`
+- `GET /api/settings/status`
 - `GET /api/supplier-payments`
 - `GET /api/trust-reconciliation`
 - `GET /api/weekly-snapshots`
@@ -272,10 +273,29 @@ Mapped trusted framework fields:
 - Returned Date
 - Date Booked
 - Due Date
+- Pax / Passengers, stored as passenger count when supplied
 - Outstanding, comparison only
 - Outstanding (Supplier), comparison only
 - Total Cost, stored as gross booking value
 - Nett, stored as expected supplier nett
+
+The shorter Head Office master export is also supported. It maps:
+
+- `Ref.` to booking reference
+- `Status` to booking status
+- `Elements` to product flags and ATOL review
+- `Destination` to destination
+- `Customer` to customer surname
+- `Booked` to booking date
+- `Depart` to departure date
+- `Pax` to passenger count
+- `Gross` to gross booking value
+- `Nett` to expected supplier nett
+- `Paid` to non-trusted customer paid comparison only
+- `Balance` to imported customer outstanding comparison only
+
+Plain numeric `Ref.` values are converted to OTC references, for example `1353` becomes `OTC-01353`.
+The importer skips guidance rows such as `KEEP`, notes rows and summary total rows.
 
 Excluded master report values are stored only as non-trusted audit fields:
 
@@ -791,4 +811,3 @@ For a step-by-step production checklist, see:
 ```text
 docs/render-deployment.md
 ```
-

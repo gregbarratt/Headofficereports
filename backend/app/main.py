@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agent_commissions import router as agent_commissions_router
@@ -58,4 +58,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

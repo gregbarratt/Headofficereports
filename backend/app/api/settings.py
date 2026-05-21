@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends
 
 from app.api.deps import get_current_super_admin
 from app.core.config import settings

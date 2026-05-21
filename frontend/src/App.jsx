@@ -1,4 +1,4 @@
-﻿import {
+import {
   Activity,
   AlertTriangle,
   Banknote,
@@ -222,6 +222,7 @@ function ConfigStatus({ isConfigured, configuredLabel = "Configured", missingLab
     </span>
   );
 }
+
 function UploadCentre({ token }) {
   const [uploadTypes, setUploadTypes] = useState([]);
   const [uploadType, setUploadType] = useState("");
@@ -387,6 +388,7 @@ function BookingsPage({ token }) {
               <th>Status</th>
               <th>Last Name</th>
               <th>Destination</th>
+              <th>Pax</th>
               <th>Departure</th>
               <th>Return</th>
               <th>Gross Value</th>
@@ -403,6 +405,7 @@ function BookingsPage({ token }) {
                   <td>{booking.normalised_status || "-"}</td>
                   <td>{booking.customer_last_name || "-"}</td>
                   <td>{booking.destination || "-"}</td>
+                  <td>{booking.passenger_count ?? "-"}</td>
                   <td>{formatDate(booking.departure_date)}</td>
                   <td>{formatDate(booking.return_date)}</td>
                   <td>{formatMoney(booking.gross_booking_value)}</td>
@@ -412,7 +415,7 @@ function BookingsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="10">No bookings imported yet.</td>
+                <td colSpan="11">No bookings imported yet.</td>
               </tr>
             )}
           </tbody>
@@ -2205,25 +2208,45 @@ function SettingsPage({ token }) {
 
       <div className="progress-list">
         <span>Database connection</span>
-        <strong><ConfigStatus isConfigured={settingsStatus?.database_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={settingsStatus?.database_configured} />
+        </strong>
         <span>Frontend URL</span>
-        <strong><ConfigStatus isConfigured={settingsStatus?.frontend_url_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={settingsStatus?.frontend_url_configured} />
+        </strong>
         <span>Felloh base URL</span>
-        <strong><ConfigStatus isConfigured={felloh.base_url_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={felloh.base_url_configured} />
+        </strong>
         <span>Felloh public key</span>
-        <strong><ConfigStatus isConfigured={felloh.public_key_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={felloh.public_key_configured} />
+        </strong>
         <span>Felloh private key</span>
-        <strong><ConfigStatus isConfigured={felloh.private_key_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={felloh.private_key_configured} />
+        </strong>
         <span>Felloh organisation ID</span>
-        <strong><ConfigStatus isConfigured={felloh.organisation_id_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={felloh.organisation_id_configured} />
+        </strong>
         <span>Outlook SMTP host</span>
-        <strong><ConfigStatus isConfigured={email.host_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={email.host_configured} />
+        </strong>
         <span>Outlook sender email</span>
-        <strong><ConfigStatus isConfigured={email.from_email_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={email.from_email_configured} />
+        </strong>
         <span>Outlook username</span>
-        <strong><ConfigStatus isConfigured={email.username_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={email.username_configured} />
+        </strong>
         <span>Outlook password</span>
-        <strong><ConfigStatus isConfigured={email.password_configured} /></strong>
+        <strong>
+          <ConfigStatus isConfigured={email.password_configured} />
+        </strong>
         <span>Email security</span>
         <strong>{email.use_tls ? "TLS on" : "TLS off"}</strong>
         <span>Email port</span>
@@ -2234,6 +2257,7 @@ function SettingsPage({ token }) {
     </section>
   );
 }
+
 function DashboardHome({ health, token }) {
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
@@ -2484,4 +2508,3 @@ export default function App() {
     </main>
   );
 }
-

@@ -18,19 +18,20 @@ from app.models.reporting import AuditLog, Booking, UploadBatch
 
 COLUMN_ALIASES = {
     "status": ("status",),
-    "customer_last_name": ("last name",),
+    "customer_last_name": ("last name", "customer"),
     "destination": ("destination",),
     "travel_elements_raw": ("elements",),
-    "booking_ref": ("booking reference", "booking ref"),
-    "departure_date": ("departure date",),
+    "booking_ref": ("booking reference", "booking ref", "ref"),
+    "departure_date": ("departure date", "depart"),
     "return_date": ("returned date", "return date"),
-    "booking_date": ("date booked", "booking date"),
+    "booking_date": ("date booked", "booking date", "booked"),
     "customer_balance_due_date": ("due date",),
-    "imported_customer_outstanding": ("outstanding",),
+    "passenger_count": ("pax", "passengers", "passenger numbers"),
+    "imported_customer_outstanding": ("outstanding", "balance", "balance due"),
     "imported_supplier_outstanding": ("outstanding supplier", "outstanding supp"),
-    "gross_booking_value": ("total cost",),
+    "gross_booking_value": ("total cost", "gross", "total sell"),
     "expected_supplier_nett": ("nett", "net"),
-    "non_trusted_total_received": ("total received",),
+    "non_trusted_total_received": ("total received", "paid", "total paid"),
     "non_trusted_paid_supplier": ("paid supp", "paid supplier"),
     "non_trusted_projected_profit": ("profit projected", "projected profit"),
 }
@@ -144,6 +145,55 @@ def clean_text(value: Any) -> str | None:
     return text or None
 
 
+def normalise_booking_ref(value: Any) -> str | None:
+    text = clean_text(value)
+    if not text:
+        return None
+
+    cleaned = text.strip().upper()
+    numeric_match = re.fullmatch(r"\d+(?:\.0+)?", cleaned)
+    if numeric_match:
+        number = int(Decimal(cleaned))
+        return f"OTC-{number:05d}"
+
+    otc_match = re.fullmatch(r"OTC[-_\s]?0*(\d+)", cleaned)
+    if otc_match:
+        return f"OTC-{int(otc_match.group(1)):05d}"
+
+    return cleaned
+
+
+def should_skip_master_row(row: dict[str, Any], column_map: dict[str, str]) -> bool:
+    raw_ref = clean_text(get_row_value(row, column_map, "booking_ref"))
+    if not raw_ref:
+        return False
+
+    normalised_ref = normalise_header(raw_ref)
+    if normalised_ref in {"keep", "summary breakdown"}:
+        return True
+    if normalised_ref.startswith(("this should", "total ", "average gross")):
+        return True
+    return False
+
+
+def parse_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+
+    text = str(value).strip()
+    if not text:
+        return None
+    cleaned = text.replace(",", "")
+    try:
+        return int(Decimal(cleaned))
+    except InvalidOperation as exc:
+        raise ValueError(f"Invalid whole number value '{value}'.") from exc
+
+
 def parse_money(value: Any) -> Decimal | None:
     if value is None:
         return None
@@ -213,12 +263,16 @@ def normalise_booking_status(status: str | None) -> str | None:
     if not cleaned:
         return None
     status_map = {
+        "chg": "amended/live",
         "changed": "amended/live",
+        "amended": "amended/live",
         "complete": "completed",
         "completed": "completed",
+        "can": "cancelled",
         "cancelled": "cancelled",
         "canceled": "cancelled",
         "open": "open",
+        "live": "open",
     }
     return status_map.get(cleaned, cleaned)
 
@@ -235,11 +289,14 @@ def determine_booking_company(booking_ref: str | None) -> str:
 def parse_elements(elements: str | None) -> dict[str, bool]:
     cleaned = (elements or "").lower()
     return {
-        "flight_included": any(term in cleaned for term in ("flight", "flights", "airline")),
-        "accommodation_included": any(term in cleaned for term in ("accommodation", "accom", "hotel")),
+        "flight_included": any(term in cleaned for term in ("flight", "flights", "airline", "flt")),
+        "accommodation_included": any(term in cleaned for term in ("accommodation", "accom", "hotel", "htl")),
         "cruise_included": "cruise" in cleaned,
-        "extras_included": any(term in cleaned for term in ("extra", "extras", "transfer", "car hire", "insurance")),
-        "package_included": any(term in cleaned for term in ("package", "packages")),
+        "extras_included": any(
+            term in cleaned
+            for term in ("extra", "extras", "transfer", "tran", "car hire", "hire", "insurance", "ticket", "tkt", "att")
+        ),
+        "package_included": any(term in cleaned for term in ("package", "packages", "multipackage")),
     }
 
 
@@ -278,17 +335,23 @@ def import_master_booking_report(
     actor_user_id: int | None,
 ) -> MasterBookingImportResult:
     headers, rows = read_tabular_rows(filename, content)
-    result = MasterBookingImportResult(row_count=len(rows))
+    result = MasterBookingImportResult()
     column_map = build_column_map(headers)
 
     if "booking_ref" not in column_map:
         result.rejected_rows = len(rows)
+        result.row_count = len(rows)
         result.errors.append("Booking Reference column is required for master booking imports.")
         return result
 
     for index, row in enumerate(rows, start=2):
+        if should_skip_master_row(row, column_map):
+            continue
+
+        result.row_count += 1
+
         try:
-            booking_ref = clean_text(get_row_value(row, column_map, "booking_ref"))
+            booking_ref = normalise_booking_ref(get_row_value(row, column_map, "booking_ref"))
             if not booking_ref:
                 raise ValueError("Booking Reference is missing.")
 
@@ -308,6 +371,7 @@ def import_master_booking_report(
                 "return_date": parse_date(get_row_value(row, column_map, "return_date")),
                 "booking_date": parse_datetime(get_row_value(row, column_map, "booking_date")),
                 "customer_balance_due_date": parse_date(get_row_value(row, column_map, "customer_balance_due_date")),
+                "passenger_count": parse_int(get_row_value(row, column_map, "passenger_count")),
                 "last_master_upload_batch_id": upload_batch.id,
                 **flags,
             }
