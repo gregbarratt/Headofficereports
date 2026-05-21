@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass, field
 from decimal import Decimal
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import Any
 
+from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.reporting import AuditLog, Booking, SupplierPayment, UploadBatch
 from app.services.master_booking_import import (
     clean_text,
+    make_unique_headers,
     normalise_header,
     parse_date,
     parse_money,
-    read_tabular_rows,
 )
 
 
@@ -67,6 +71,58 @@ def build_column_map(headers: list[str]) -> dict[str, str]:
                 column_map[target_field] = original_header
                 break
     return column_map
+
+
+def decode_csv_content(content: bytes) -> str:
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return content.decode("cp1252")
+
+
+def row_has_required_supplier_headers(row: list[Any]) -> bool:
+    headers = make_unique_headers([str(value or "") for value in row])
+    column_map = build_column_map(headers)
+    return REQUIRED_FIELDS.issubset(column_map)
+
+
+def rows_from_detected_header(raw_rows: list[list[Any]]) -> tuple[list[str], list[dict[str, Any]]]:
+    if not raw_rows:
+        return [], []
+
+    header_index = 0
+    for index, raw_row in enumerate(raw_rows):
+        if not any(str(value or "").strip() for value in raw_row):
+            continue
+        if row_has_required_supplier_headers(raw_row):
+            header_index = index
+            break
+
+    headers = make_unique_headers([str(value or "") for value in raw_rows[header_index]])
+    rows: list[dict[str, Any]] = []
+    for raw_row in raw_rows[header_index + 1 :]:
+        row_data = {headers[index]: value for index, value in enumerate(raw_row) if index < len(headers)}
+        if any(str(value or "").strip() for value in row_data.values()):
+            rows.append(row_data)
+    return headers, rows
+
+
+def read_supplier_payment_rows(filename: str, content: bytes) -> tuple[list[str], list[dict[str, Any]]]:
+    extension = Path(filename).suffix.lower()
+    if extension == ".csv":
+        reader = csv.reader(StringIO(decode_csv_content(content)))
+        return rows_from_detected_header(list(reader))
+
+    if extension == ".xlsx":
+        workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+        try:
+            sheet = workbook.active
+            raw_rows = [list(row) for row in sheet.iter_rows(values_only=True)]
+            return rows_from_detected_header(raw_rows)
+        finally:
+            workbook.close()
+
+    raise ValueError("Unsupported file type.")
 
 
 def get_row_value(row: dict[str, Any], column_map: dict[str, str], field_name: str) -> Any:
@@ -150,7 +206,7 @@ def import_supplier_payment_report(
     actor_user_id: int | None,
     payment_source: str = "taps",
 ) -> SupplierPaymentImportResult:
-    headers, rows = read_tabular_rows(filename, content)
+    headers, rows = read_supplier_payment_rows(filename, content)
     result = SupplierPaymentImportResult(row_count=len(rows))
     column_map = build_column_map(headers)
     missing_fields = sorted(field for field in REQUIRED_FIELDS if field not in column_map)
