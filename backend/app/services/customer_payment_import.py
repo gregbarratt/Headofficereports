@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.reporting import AuditLog, Booking, CustomerPayment, PaymentMethodRule, UploadBatch
 from app.services.master_booking_import import (
     clean_text,
+    normalise_booking_ref,
     normalise_header,
     parse_date,
     parse_money,
@@ -237,12 +238,13 @@ def import_customer_payment_report(
 
     booking_refs_to_match: set[str] = set()
     for row in rows:
-        booking_ref = clean_text(get_row_value(row, column_map, "booking_ref"))
+        booking_ref = normalise_booking_ref(get_row_value(row, column_map, "booking_ref"))
         invoice_reference = clean_text(get_row_value(row, column_map, "invoice_reference"))
+        invoice_match_ref = normalise_booking_ref(invoice_reference)
         if booking_ref:
             booking_refs_to_match.add(booking_ref)
-        if invoice_reference:
-            booking_refs_to_match.add(invoice_reference)
+        if invoice_match_ref:
+            booking_refs_to_match.add(invoice_match_ref)
 
     bookings_by_ref = fetch_bookings_by_ref(db, booking_refs_to_match)
     active_payment_rules = db.scalars(select(PaymentMethodRule).where(PaymentMethodRule.is_active.is_(True))).all()
@@ -254,8 +256,9 @@ def import_customer_payment_report(
             if gross_amount is None:
                 raise ValueError("Gross Amount is missing.")
 
-            booking_ref = clean_text(get_row_value(row, column_map, "booking_ref"))
+            booking_ref = normalise_booking_ref(get_row_value(row, column_map, "booking_ref"))
             invoice_reference = clean_text(get_row_value(row, column_map, "invoice_reference"))
+            invoice_match_ref = normalise_booking_ref(invoice_reference)
             customer_name = clean_text(get_row_value(row, column_map, "customer_name"))
             payment_date = parse_date(get_row_value(row, column_map, "payment_date"))
             if payment_source == "tt":
@@ -267,7 +270,7 @@ def import_customer_payment_report(
             card_type = clean_text(get_row_value(row, column_map, "card_type"))
             card_brand = clean_text(get_row_value(row, column_map, "card_brand"))
 
-            booking, match_confidence = find_booking_by_reference(bookings_by_ref, booking_ref, invoice_reference)
+            booking, match_confidence = find_booking_by_reference(bookings_by_ref, booking_ref, invoice_match_ref)
             if booking is None and payment_source == "sings":
                 booking = find_lower_confidence_booking(db, customer_name, gross_amount, payment_date)
                 if booking is not None:

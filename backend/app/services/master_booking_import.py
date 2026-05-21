@@ -150,14 +150,24 @@ def normalise_booking_ref(value: Any) -> str | None:
         return None
 
     cleaned = text.strip().upper()
+    compact = re.sub(r"[-_\s]+", "", cleaned)
+    old_otc_match = re.fullmatch(r"OTC(1\d{6,})", compact)
+    if old_otc_match:
+        return f"OTC{old_otc_match.group(1)}"
+
     numeric_match = re.fullmatch(r"\d+(?:\.0+)?", cleaned)
     if numeric_match:
         number = int(Decimal(cleaned))
+        if str(number).startswith("1") and len(str(number)) >= 7:
+            return f"OTC{number}"
         return f"OTC-{number:05d}"
 
     otc_match = re.fullmatch(r"OTC[-_\s]?0*(\d+)", cleaned)
     if otc_match:
-        return f"OTC-{int(otc_match.group(1)):05d}"
+        digits = otc_match.group(1)
+        if digits.startswith("1") and len(digits) >= 7:
+            return f"OTC{digits}"
+        return f"OTC-{int(digits):05d}"
 
     return cleaned
 

@@ -15,6 +15,7 @@ from app.models.reporting import AuditLog, Booking, SupplierPayment, UploadBatch
 from app.services.master_booking_import import (
     clean_text,
     make_unique_headers,
+    normalise_booking_ref,
     normalise_header,
     parse_date,
     parse_money,
@@ -231,7 +232,7 @@ def import_supplier_payment_report(
             if payment_amount is None:
                 raise ValueError("Payment Value is missing.")
 
-            booking_ref = clean_text(get_row_value(row, column_map, "booking_ref"))
+            booking_ref = normalise_booking_ref(get_row_value(row, column_map, "booking_ref"))
             if booking_ref:
                 booking_refs_to_match.add(booking_ref)
 

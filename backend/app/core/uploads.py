@@ -1,5 +1,6 @@
 UPLOAD_TYPES = {
     "master_booking": "Master Booking Report",
+    "old_booking": "Old Bookings",
     "supplier_payment_taps": "Supplier Payments TAPs",
     "supplier_payment_tt": "Supplier Payments TT (Human Input)",
     "customer_payment_sings": "Customer Payments SINGs",
