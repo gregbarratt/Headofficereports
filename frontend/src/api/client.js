@@ -107,6 +107,10 @@ export async function getEmailRecipients(token) {
   return apiRequest("/api/email-recipients", { token });
 }
 
+export async function getInsuranceCosts(token) {
+  return apiRequest("/api/insurance-costs", { token });
+}
+
 export async function createEmailRecipient({ token, email, name }) {
   return apiRequest("/api/email-recipients", {
     method: "POST",

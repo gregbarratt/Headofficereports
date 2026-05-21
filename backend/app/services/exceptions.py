@@ -14,9 +14,11 @@ from app.models.reporting import (
     Booking,
     CustomerPayment,
     ExceptionRecord,
+    InsuranceCost,
     Refund,
     SupplierPayment,
 )
+from app.services.insurance_import import is_active_insurance_status
 from app.services.trust_reconciliation import calculate_trust_reconciliation
 
 
@@ -30,6 +32,7 @@ MANAGED_EXCEPTION_TYPES = {
     "unmatched_supplier_payment",
     "duplicate_supplier_payment",
     "missing_supplier_reference",
+    "unmatched_insurance_cost",
     "supplier_overpaid",
     "supplier_balance_due_departed",
     "cancelled_booking_supplier_due",
@@ -181,6 +184,7 @@ def build_exception_findings(db: Session) -> list[ExceptionFinding]:
     bank_transactions = list(db.scalars(select(BankTransaction)))
     refunds = list(db.scalars(select(Refund)))
     commissions = list(db.scalars(select(AgentCommission)))
+    insurance_costs = list(db.scalars(select(InsuranceCost)))
 
     trust = calculate_trust_reconciliation(db)
     if trust.summary.actual_trust_balance is not None and money(trust.summary.trust_variance) < ZERO:
@@ -245,8 +249,29 @@ def build_exception_findings(db: Session) -> list[ExceptionFinding]:
                 )
             )
 
+    insurance_totals: dict[str, Decimal] = {}
+    for cost in insurance_costs:
+        if cost.booking_ref and is_active_insurance_status(cost.insurance_status):
+            insurance_totals[cost.booking_ref] = money(
+                insurance_totals.get(cost.booking_ref, ZERO) + money(cost.insurance_cost_amount)
+            )
+
+        if cost.booking_id is None or cost.match_status == "unmatched":
+            findings.append(
+                ExceptionFinding(
+                    exception_type="unmatched_insurance_cost",
+                    severity="medium",
+                    title="Unmatched insurance cost",
+                    detail="Insurance cost has not matched a booking reference in our database.",
+                    booking_id=cost.booking_id,
+                    booking_ref=cost.booking_ref,
+                    related_table="insurance_costs",
+                    related_record_id=cost.id,
+                )
+            )
+
     for booking in bookings:
-        expected_supplier_nett = money(booking.expected_supplier_nett)
+        expected_supplier_nett = money(booking.expected_supplier_nett) + insurance_totals.get(booking.booking_ref, ZERO)
         if expected_supplier_nett == ZERO:
             continue
 
@@ -260,7 +285,7 @@ def build_exception_findings(db: Session) -> list[ExceptionFinding]:
                     severity="high",
                     title="Supplier overpaid",
                     detail=(
-                        f"Supplier payments total {supplier_paid}, but expected supplier nett is "
+                        f"Supplier payments total {supplier_paid}, but expected booking cost is "
                         f"{expected_supplier_nett}."
                     ),
                     booking_id=booking.id,

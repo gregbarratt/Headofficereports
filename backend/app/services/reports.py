@@ -15,11 +15,13 @@ from app.models.reporting import (
     Booking,
     CustomerPayment,
     ExceptionRecord,
+    InsuranceCost,
     Refund,
     ReportRun,
     SupplierPayment,
     WeeklySnapshot,
 )
+from app.services.insurance_import import is_active_insurance_status
 from app.services.trust_reconciliation import calculate_trust_reconciliation
 from app.services.weekly_snapshots import compare_snapshots, previous_snapshot, snapshot_rows
 
@@ -32,6 +34,7 @@ REPORT_TYPES = {
     "customer_payments": "Customer Payments Report",
     "supplier_payments": "Supplier Payments Report",
     "supplier_liability": "Supplier Liability Report",
+    "insurance_costs": "Insurance Costs Report",
     "refund_liability": "Refund Liability Report",
     "agent_commission": "Agent Commission Report",
     "true_booking_profitability": "True Booking Profitability Report",
@@ -110,6 +113,14 @@ def supplier_totals(db: Session) -> dict[str, Decimal]:
         .group_by(SupplierPayment.booking_ref)
     ):
         totals[booking_ref] = money(total)
+    return totals
+
+
+def insurance_totals(db: Session) -> dict[str, Decimal]:
+    totals: dict[str, Decimal] = {}
+    for cost in db.scalars(select(InsuranceCost)):
+        if cost.booking_ref and is_active_insurance_status(cost.insurance_status):
+            totals[cost.booking_ref] = money(totals.get(cost.booking_ref, ZERO) + money(cost.insurance_cost_amount))
     return totals
 
 
@@ -297,10 +308,13 @@ def build_supplier_payments(db: Session, workbook: Workbook) -> None:
 
 def build_supplier_liability(db: Session, workbook: Workbook) -> None:
     totals = supplier_totals(db)
+    insurance_by_booking = insurance_totals(db)
     bookings = list(db.scalars(select(Booking).order_by(Booking.booking_ref)))
     rows = []
     for booking in bookings:
-        expected = money(booking.expected_supplier_nett)
+        supplier_nett = money(booking.expected_supplier_nett)
+        insurance_cost = insurance_by_booking.get(booking.booking_ref, ZERO)
+        expected = money(supplier_nett + insurance_cost)
         paid = totals.get(booking.booking_ref, ZERO)
         balance = money(expected - paid)
         if expected == ZERO and paid == ZERO:
@@ -313,12 +327,64 @@ def build_supplier_liability(db: Session, workbook: Workbook) -> None:
             status = "partially_paid"
         else:
             status = "unpaid"
-        rows.append([booking.booking_ref, booking.customer_last_name, expected, paid, balance, status])
+        rows.append([booking.booking_ref, booking.customer_last_name, supplier_nett, insurance_cost, expected, paid, balance, status])
     append_rows(
         workbook,
         "Supplier Liability",
-        ["Booking Ref", "Last Name", "Expected Supplier Nett", "Supplier Paid", "Balance Due", "Status"],
+        [
+            "Booking Ref",
+            "Last Name",
+            "Expected Supplier Nett",
+            "Insurance Cost",
+            "Total Expected Booking Cost",
+            "Supplier Paid",
+            "Balance Due",
+            "Status",
+        ],
         rows,
+    )
+
+
+def build_insurance_costs(db: Session, workbook: Workbook) -> None:
+    costs = list(db.scalars(select(InsuranceCost).order_by(InsuranceCost.created_at.desc())))
+    append_rows(
+        workbook,
+        "Insurance Costs",
+        [
+            "Booking Ref",
+            "External Reference",
+            "Trade Code",
+            "Trading Name",
+            "Lead Name",
+            "Departure Date",
+            "Supplement Type",
+            "Gross",
+            "Discount",
+            "Net",
+            "Insurance Cost",
+            "Status",
+            "Match Status",
+            "Duplicate",
+        ],
+        [
+            [
+                cost.booking_ref,
+                cost.external_reference,
+                cost.trade_code,
+                cost.trading_name,
+                cost.lead_name,
+                cost.departure_date,
+                cost.supplement_type,
+                cost.gross_amount,
+                cost.discount_amount,
+                cost.net_amount,
+                cost.insurance_cost_amount,
+                cost.insurance_status,
+                cost.match_status,
+                cost.is_duplicate,
+            ]
+            for cost in costs
+        ],
     )
 
 
@@ -397,6 +463,7 @@ def build_true_booking_profitability(db: Session, workbook: Workbook) -> None:
     payments_by_booking: dict[str, list[CustomerPayment]] = {}
     commissions_by_booking: dict[str, list[AgentCommission]] = {}
     refunds_by_booking: dict[str, list[Refund]] = {}
+    insurance_by_booking = insurance_totals(db)
 
     for payment in db.scalars(select(CustomerPayment).where(CustomerPayment.payment_source == "sings")):
         if payment.booking_ref and payment.match_confidence != "unmatched":
@@ -419,10 +486,18 @@ def build_true_booking_profitability(db: Session, workbook: Workbook) -> None:
             (money(refund.refund_amount_due) for refund in refunds_by_booking.get(booking.booking_ref, [])),
             ZERO,
         )
+        insurance_cost = insurance_by_booking.get(booking.booking_ref, ZERO)
         true_profit = None
         margin = None
         if booking.gross_booking_value is not None and booking.expected_supplier_nett is not None:
-            true_profit = money(booking.gross_booking_value) - money(booking.expected_supplier_nett) - card_fees - commission_due - refund_adjustments
+            true_profit = (
+                money(booking.gross_booking_value)
+                - money(booking.expected_supplier_nett)
+                - insurance_cost
+                - card_fees
+                - commission_due
+                - refund_adjustments
+            )
             if money(booking.gross_booking_value) != ZERO:
                 margin = (true_profit / money(booking.gross_booking_value) * Decimal("100")).quantize(Decimal("0.01"))
         rows.append(
@@ -431,6 +506,7 @@ def build_true_booking_profitability(db: Session, workbook: Workbook) -> None:
                 booking.customer_last_name,
                 booking.gross_booking_value,
                 booking.expected_supplier_nett,
+                insurance_cost,
                 card_fees,
                 commission_due,
                 refund_adjustments,
@@ -446,6 +522,7 @@ def build_true_booking_profitability(db: Session, workbook: Workbook) -> None:
             "Last Name",
             "Gross Booking Value",
             "Expected Supplier Nett",
+            "Insurance Cost",
             "Card Fees",
             "Agent Commission",
             "Refunds / Adjustments",
@@ -551,6 +628,7 @@ REPORT_BUILDERS = {
     "customer_payments": build_customer_payments,
     "supplier_payments": build_supplier_payments,
     "supplier_liability": build_supplier_liability,
+    "insurance_costs": build_insurance_costs,
     "refund_liability": build_refund_liability,
     "agent_commission": build_agent_commission,
     "true_booking_profitability": build_true_booking_profitability,

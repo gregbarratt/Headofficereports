@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
 from app.db.session import get_db
-from app.models.reporting import Booking, SupplierPayment
+from app.models.reporting import Booking, InsuranceCost, SupplierPayment
 from app.models.user import User
 from app.schemas.supplier_payment import (
     SupplierBookingReconciliationRead,
@@ -26,13 +26,13 @@ def money(value: Decimal | None) -> Decimal:
 
 
 def get_supplier_status(
-    expected_supplier_nett: Decimal | None,
+    expected_booking_cost: Decimal | None,
     supplier_payments_total: Decimal,
 ) -> tuple[str, Decimal | None, Decimal | None, str | None]:
-    if expected_supplier_nett is None:
+    if expected_booking_cost is None:
         return "awaiting_supplier_nett", None, None, "Expected supplier nett missing"
 
-    expected = money(expected_supplier_nett)
+    expected = money(expected_booking_cost)
     paid = money(supplier_payments_total)
     balance_due = money(expected - paid)
     variance = money(paid - expected)
@@ -110,6 +110,16 @@ def list_supplier_payments(
             .group_by(SupplierPayment.booking_ref, SupplierPayment.payment_source)
         )
     }
+    active_insurance_statuses = ("booking", "booked", "confirmed", "live")
+    insurance_totals_by_booking: dict[str, Decimal] = {
+        booking_ref: money(total_cost)
+        for booking_ref, total_cost in db.execute(
+            select(InsuranceCost.booking_ref, func.sum(InsuranceCost.insurance_cost_amount))
+            .where(InsuranceCost.booking_ref.is_not(None))
+            .where(InsuranceCost.insurance_status.in_(active_insurance_statuses))
+            .group_by(InsuranceCost.booking_ref)
+        )
+    }
 
     booking_refs_from_filtered_payments: set[str] = set()
     if search_term:
@@ -136,10 +146,14 @@ def list_supplier_payments(
     for booking in db.scalars(booking_statement):
         supplier_payments_taps_total = totals_by_booking_and_source.get((booking.booking_ref, "taps"), ZERO)
         supplier_payments_tt_total = totals_by_booking_and_source.get((booking.booking_ref, "tt"), ZERO)
+        insurance_cost_total = insurance_totals_by_booking.get(booking.booking_ref, ZERO)
+        total_expected_booking_cost = None
+        if booking.expected_supplier_nett is not None:
+            total_expected_booking_cost = money(booking.expected_supplier_nett) + insurance_cost_total
         supplier_payments_total = supplier_payments_taps_total
         supplier_cross_check_variance = money(supplier_payments_taps_total - supplier_payments_tt_total)
         status, balance_due, variance, supplier_exception = get_supplier_status(
-            booking.expected_supplier_nett,
+            total_expected_booking_cost,
             supplier_payments_total,
         )
         reconciliations.append(
@@ -147,6 +161,10 @@ def list_supplier_payments(
                 booking_ref=booking.booking_ref,
                 customer_last_name=booking.customer_last_name,
                 expected_supplier_nett=booking.expected_supplier_nett,
+                insurance_cost_total=money(insurance_cost_total),
+                total_expected_booking_cost=money(total_expected_booking_cost)
+                if total_expected_booking_cost is not None
+                else None,
                 supplier_payments_total=supplier_payments_total,
                 supplier_payments_taps_total=supplier_payments_taps_total,
                 supplier_payments_tt_total=supplier_payments_tt_total,

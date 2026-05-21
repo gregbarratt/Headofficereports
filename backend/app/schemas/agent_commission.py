@@ -25,6 +25,7 @@ class TrueProfitRead(BaseModel):
     customer_last_name: str | None
     gross_booking_value: Decimal | None
     expected_supplier_nett: Decimal | None
+    insurance_costs: Decimal
     payment_fees: Decimal
     estimated_payment_fees: Decimal
     agent_commission: Decimal

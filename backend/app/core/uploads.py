@@ -5,6 +5,7 @@ UPLOAD_TYPES = {
     "customer_payment_sings": "Customer Payments SINGs",
     "customer_payment_tt": "Customer Payments TT (Human Input)",
     "bank_statement": "Bank / Trust Statement",
+    "insurance": "Insurance Costs",
     "agent_commission": "Agent Commission Import",
     "refund": "Refund Import",
 }

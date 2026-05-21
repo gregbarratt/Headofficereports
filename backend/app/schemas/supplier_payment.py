@@ -29,6 +29,8 @@ class SupplierBookingReconciliationRead(BaseModel):
     booking_ref: str
     customer_last_name: str | None
     expected_supplier_nett: Decimal | None
+    insurance_cost_total: Decimal
+    total_expected_booking_cost: Decimal | None
     supplier_payments_total: Decimal
     supplier_payments_taps_total: Decimal
     supplier_payments_tt_total: Decimal

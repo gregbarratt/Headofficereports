@@ -40,6 +40,7 @@ Phase 17 adds the Felloh / SINGs API customer payment sync:
 - Overdue refund exceptions
 - Agent Commission import
 - Agent commission liability tracking
+- Insurance cost import and booking cost reconciliation
 - True booking profitability calculation
 - Automated exception scan
 - Exceptions page and dashboard summary
@@ -150,6 +151,7 @@ Backend endpoints:
 - `GET /api/exceptions`
 - `POST /api/exceptions/generate`
 - `PATCH /api/exceptions/{exception_id}`
+- `GET /api/insurance-costs`
 - `GET /api/reports/types`
 - `GET /api/reports/runs`
 - `POST /api/reports/{report_type}/excel`
@@ -237,6 +239,7 @@ Available upload types:
 - Customer Payments SINGs
 - Customer Payments TT (Human Input)
 - Bank / Trust Statement
+- Insurance Costs
 - Agent Commission Import
 - Refund Import
 
@@ -336,6 +339,42 @@ booking reference + supplier + payment supplier + transaction date + payment met
 The source is also included in duplicate checking, so a TT row and a TAPs row for the same booking are not treated as the same record.
 
 For booking `OTC-01436`, the supplier side should reconcile when the imported supplier payment rows are `300.00` and `3394.16` against expected supplier nett `3694.16`.
+
+## Insurance Cost Import
+
+Insurance reports are imported separately from supplier payments and customer receipts.
+
+Mapped fields:
+
+- Booking Reference
+- External Reference
+- Trade Code
+- Trading Name
+- Lead Name
+- Departure Date
+- Supplement Type
+- Gross
+- Discount
+- Net
+- Status
+- Created At
+- Last Update
+
+The importer skips the final total/formula line in the exported report.
+
+For active insurance rows with status `booking`, the system calculates:
+
+```text
+Insurance Cost = Gross - Discount
+```
+
+Insurance costs are then included in booking cost reconciliation:
+
+```text
+Expected Supplier Nett + Insurance Costs = Total Expected Booking Cost
+```
+
+The original insurance rows remain visible on the Insurance Costs page for audit and matching review.
 
 ## Customer Payment Import
 
@@ -565,6 +604,7 @@ True booking profit is calculated by the system:
 ```text
 Gross Booking Value
 - Expected Supplier Nett
+- Insurance costs
 - Actual card / payment fees
 - Agent commission
 - Refunds / adjustments
@@ -667,6 +707,7 @@ Available reports:
 - Customer Payments Report
 - Supplier Payments Report
 - Supplier Liability Report
+- Insurance Costs Report
 - Refund Liability Report
 - Agent Commission Report
 - True Booking Profitability Report

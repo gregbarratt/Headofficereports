@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
 from app.db.session import get_db
-from app.models.reporting import AgentCommission, Booking, CustomerPayment, Refund
+from app.models.reporting import AgentCommission, Booking, CustomerPayment, InsuranceCost, Refund
 from app.models.user import User
 from app.schemas.agent_commission import (
     AgentCommissionListResponse,
@@ -14,6 +14,7 @@ from app.schemas.agent_commission import (
     AgentCommissionSummaryRead,
     TrueProfitRead,
 )
+from app.services.insurance_import import is_active_insurance_status
 
 
 router = APIRouter(prefix="/api/agent-commissions", tags=["Agent Commissions"])
@@ -56,6 +57,7 @@ def build_true_profit_rows(
     customer_payments: list[CustomerPayment],
     commissions: list[AgentCommission],
     refunds: list[Refund],
+    insurance_costs: list[InsuranceCost],
 ) -> list[TrueProfitRead]:
     payments_by_booking: dict[str, list[CustomerPayment]] = {}
     for payment in customer_payments:
@@ -72,11 +74,17 @@ def build_true_profit_rows(
         if refund.booking_ref:
             refunds_by_booking.setdefault(refund.booking_ref, []).append(refund)
 
+    insurance_by_booking: dict[str, list[InsuranceCost]] = {}
+    for insurance in insurance_costs:
+        if insurance.booking_ref and is_active_insurance_status(insurance.insurance_status):
+            insurance_by_booking.setdefault(insurance.booking_ref, []).append(insurance)
+
     rows = []
     for booking in bookings:
         booking_payments = payments_by_booking.get(booking.booking_ref, [])
         booking_commissions = commissions_by_booking.get(booking.booking_ref, [])
         booking_refunds = refunds_by_booking.get(booking.booking_ref, [])
+        booking_insurance = insurance_by_booking.get(booking.booking_ref, [])
 
         payment_fees = sum((money(payment.fee_amount) for payment in booking_payments), ZERO)
         estimated_payment_fees = sum(
@@ -85,6 +93,7 @@ def build_true_profit_rows(
         )
         agent_commission = sum((money(commission.net_commission_due) for commission in booking_commissions), ZERO)
         refunds_adjustments = sum((money(refund.refund_amount_due) for refund in booking_refunds), ZERO)
+        insurance_cost_total = sum((money(insurance.insurance_cost_amount) for insurance in booking_insurance), ZERO)
 
         missing_items = []
         if booking.gross_booking_value is None:
@@ -103,6 +112,7 @@ def build_true_profit_rows(
             true_profit = (
                 money(booking.gross_booking_value)
                 - money(booking.expected_supplier_nett)
+                - insurance_cost_total
                 - payment_fees
                 - agent_commission
                 - refunds_adjustments
@@ -121,6 +131,7 @@ def build_true_profit_rows(
                 customer_last_name=booking.customer_last_name,
                 gross_booking_value=booking.gross_booking_value,
                 expected_supplier_nett=booking.expected_supplier_nett,
+                insurance_costs=money(insurance_cost_total),
                 payment_fees=money(payment_fees),
                 estimated_payment_fees=money(estimated_payment_fees),
                 agent_commission=money(agent_commission),
@@ -150,6 +161,7 @@ def list_agent_commissions(
     bookings = list(db.scalars(select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(500)))
     customer_payments = list(db.scalars(select(CustomerPayment).where(CustomerPayment.payment_source == "sings")))
     refunds = list(db.scalars(select(Refund)))
+    insurance_costs = list(db.scalars(select(InsuranceCost)))
 
     summary = AgentCommissionSummaryRead(
         total_rows=len(all_commissions),
@@ -169,6 +181,6 @@ def list_agent_commissions(
 
     return AgentCommissionListResponse(
         commissions=[to_commission_read(commission) for commission in commissions],
-        true_profits=build_true_profit_rows(bookings, customer_payments, all_commissions, refunds),
+        true_profits=build_true_profit_rows(bookings, customer_payments, all_commissions, refunds, insurance_costs),
         summary=summary,
     )

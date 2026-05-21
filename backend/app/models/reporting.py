@@ -175,6 +175,32 @@ class Refund(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class InsuranceCost(Base):
+    __tablename__ = "insurance_costs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    upload_batch_id: Mapped[int | None] = mapped_column(ForeignKey("upload_batches.id"), nullable=True)
+    booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), nullable=True)
+    booking_ref: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
+    external_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    trade_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    trading_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lead_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    departure_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    supplement_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    gross_amount: Mapped[Decimal] = mapped_column(Money, nullable=False)
+    discount_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    net_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    insurance_cost_amount: Mapped[Decimal] = mapped_column(Money, nullable=False)
+    insurance_status: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
+    created_at_imported: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_update_imported: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duplicate_key: Mapped[str | None] = mapped_column(String(512), index=True, nullable=True)
+    is_duplicate: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    match_status: Mapped[str] = mapped_column(String(80), default="unmatched", server_default="unmatched", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class AgentCommission(Base):
     __tablename__ = "agent_commissions"
 

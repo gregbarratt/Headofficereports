@@ -31,6 +31,7 @@ import {
   getDashboardStatus,
   getEmailRecipients,
   getExceptions,
+  getInsuranceCosts,
   getRefunds,
   getReportRuns,
   getReportTypes,
@@ -61,6 +62,7 @@ const navItems = [
   { label: "Supplier Payments TAPs", enabled: true },
   { label: "Supplier Payments TT", enabled: true },
   { label: "Customer Payments", enabled: true },
+  { label: "Insurance Costs", enabled: true },
   { label: "Refunds", enabled: true },
   { label: "Agent Commissions", enabled: true },
   { label: "Bank Transactions", enabled: true },
@@ -486,7 +488,7 @@ function SupplierPaymentsPage({ token, source = "all" }) {
 
       <div className="section-heading">
         <h3>Booking reconciliation</h3>
-        <p>Expected supplier nett minus separately imported supplier payments.</p>
+        <p>Expected supplier nett plus insurance costs, minus separately imported supplier payments.</p>
       </div>
       <div className="table-wrap">
         <table>
@@ -495,6 +497,8 @@ function SupplierPaymentsPage({ token, source = "all" }) {
               <th>Booking Ref</th>
               <th>Last Name</th>
               <th>Expected Nett</th>
+              <th>Insurance</th>
+              <th>Total Cost</th>
               <th>TAPs Paid</th>
               <th>TT Input</th>
               <th>TAPs vs TT</th>
@@ -513,6 +517,8 @@ function SupplierPaymentsPage({ token, source = "all" }) {
                   <td>{item.booking_ref}</td>
                   <td>{item.customer_last_name || "-"}</td>
                   <td>{formatMoney(item.expected_supplier_nett)}</td>
+                  <td>{formatMoney(item.insurance_cost_total)}</td>
+                  <td>{formatMoney(item.total_expected_booking_cost)}</td>
                   <td>{formatMoney(item.supplier_payments_taps_total)}</td>
                   <td>{formatMoney(item.supplier_payments_tt_total)}</td>
                   <td>{formatMoney(item.supplier_cross_check_variance)}</td>
@@ -530,7 +536,7 @@ function SupplierPaymentsPage({ token, source = "all" }) {
               ))
             ) : (
               <tr>
-                <td colSpan="12">
+                <td colSpan="14">
                   {activeSearch
                     ? "No booking reconciliation rows match this search."
                     : "No bookings are ready for supplier reconciliation yet."}
@@ -800,6 +806,113 @@ function CustomerPaymentsPage({ token }) {
             ) : (
               <tr>
                 <td colSpan="14">No customer payment rows imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function InsuranceCostsPage({ token }) {
+  const [costs, setCosts] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getInsuranceCosts(token)
+      .then((data) => {
+        setCosts(data.costs);
+        setSummary(data.summary);
+      })
+      .catch((loadError) => setError(loadError.message || "Insurance costs could not load."));
+  }, [token]);
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Insurance Costs</h2>
+          <p>Insurance rows are stored separately and added to booking cost reconciliation.</p>
+        </div>
+        <HandCoins size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip">
+        <div>
+          <span>Rows</span>
+          <strong>{summary?.total_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Active booking rows</span>
+          <strong>{summary?.active_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Active insurance cost</span>
+          <strong>{formatMoney(summary?.active_cost_total)}</strong>
+        </div>
+        <div>
+          <span>Unmatched</span>
+          <strong>{summary?.unmatched_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Duplicates</span>
+          <strong>{summary?.duplicate_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Reconciliation</span>
+          <strong>Included</strong>
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Lead Name</th>
+              <th>Departure</th>
+              <th>Supplement</th>
+              <th>Gross</th>
+              <th>Discount</th>
+              <th>Net</th>
+              <th>Insurance Cost</th>
+              <th>Status</th>
+              <th>Match</th>
+              <th>Duplicate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {costs.length ? (
+              costs.map((cost) => (
+                <tr key={cost.id}>
+                  <td>{cost.booking_ref || "-"}</td>
+                  <td>{cost.lead_name || "-"}</td>
+                  <td>{formatDate(cost.departure_date)}</td>
+                  <td>{cost.supplement_type || "-"}</td>
+                  <td>{formatMoney(cost.gross_amount)}</td>
+                  <td>{formatMoney(cost.discount_amount)}</td>
+                  <td>{formatMoney(cost.net_amount)}</td>
+                  <td>{formatMoney(cost.insurance_cost_amount)}</td>
+                  <td>
+                    <span className={`status-pill status-${cost.insurance_status || "unknown"}`}>
+                      {formatStatusLabel(cost.insurance_status)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`status-pill status-${cost.match_status}`}>
+                      {formatStatusLabel(cost.match_status)}
+                    </span>
+                  </td>
+                  <td>{cost.is_duplicate ? "Yes" : "No"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="11">No insurance costs imported yet.</td>
               </tr>
             )}
           </tbody>
@@ -1106,7 +1219,7 @@ function AgentCommissionsPage({ token }) {
 
       <div className="section-heading">
         <h3>True profitability</h3>
-        <p>Gross value minus supplier nett, payment fees, commission and refunds.</p>
+        <p>Gross value minus supplier nett, insurance, payment fees, commission and refunds.</p>
       </div>
       <div className="table-wrap">
         <table>
@@ -1116,6 +1229,7 @@ function AgentCommissionsPage({ token }) {
               <th>Last Name</th>
               <th>Gross Value</th>
               <th>Supplier Nett</th>
+              <th>Insurance</th>
               <th>Payment Fees</th>
               <th>Commission</th>
               <th>Refunds</th>
@@ -1133,6 +1247,7 @@ function AgentCommissionsPage({ token }) {
                   <td>{profit.customer_last_name || "-"}</td>
                   <td>{formatMoney(profit.gross_booking_value)}</td>
                   <td>{formatMoney(profit.expected_supplier_nett)}</td>
+                  <td>{formatMoney(profit.insurance_costs)}</td>
                   <td>{formatMoney(profit.payment_fees)}</td>
                   <td>{formatMoney(profit.agent_commission)}</td>
                   <td>{formatMoney(profit.refunds_adjustments)}</td>
@@ -1148,7 +1263,7 @@ function AgentCommissionsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="11">No bookings are ready for true profit calculation yet.</td>
+                <td colSpan="12">No bookings are ready for true profit calculation yet.</td>
               </tr>
             )}
           </tbody>
@@ -2247,6 +2362,8 @@ export default function App() {
           <SupplierPaymentsPage token={token} source="tt" />
         ) : activeView === "Customer Payments" ? (
           <CustomerPaymentsPage token={token} />
+        ) : activeView === "Insurance Costs" ? (
+          <InsuranceCostsPage token={token} />
         ) : activeView === "Refunds" ? (
           <RefundsPage token={token} />
         ) : activeView === "Agent Commissions" ? (

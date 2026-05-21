@@ -17,10 +17,12 @@ from app.models.reporting import (
     CustomerPayment,
     EmailRecipient,
     ExceptionRecord,
+    InsuranceCost,
     Refund,
     ReportRun,
     SupplierPayment,
 )
+from app.services.insurance_import import is_active_insurance_status
 from app.services.reports import REPORT_TYPES, generate_excel_report
 from app.services.trust_reconciliation import calculate_trust_reconciliation
 from app.services.weekly_snapshots import compare_snapshots, latest_snapshot, movement_summary, previous_snapshot, snapshot_rows
@@ -106,9 +108,15 @@ def supplier_payments_due(db: Session) -> Decimal:
             .group_by(SupplierPayment.booking_ref)
         )
     }
+    insurance_totals: dict[str, Decimal] = {}
+    for cost in db.scalars(select(InsuranceCost)):
+        if cost.booking_ref and is_active_insurance_status(cost.insurance_status):
+            insurance_totals[cost.booking_ref] = money(
+                insurance_totals.get(cost.booking_ref, ZERO) + money(cost.insurance_cost_amount)
+            )
     total_due = ZERO
     for booking in db.scalars(select(Booking)):
-        expected = money(booking.expected_supplier_nett)
+        expected = money(booking.expected_supplier_nett) + insurance_totals.get(booking.booking_ref, ZERO)
         if expected == ZERO:
             continue
         total_due += positive(expected - totals.get(booking.booking_ref, ZERO))

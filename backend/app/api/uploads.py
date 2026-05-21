@@ -13,6 +13,7 @@ from app.schemas.upload import UploadBatchRead, UploadTypeRead
 from app.services.agent_commission_import import import_agent_commission_report
 from app.services.bank_statement_import import import_bank_statement_report
 from app.services.customer_payment_import import import_customer_payment_report
+from app.services.insurance_import import import_insurance_report
 from app.services.master_booking_import import import_master_booking_report
 from app.services.refund_import import import_refund_report
 from app.services.supplier_payment_import import import_supplier_payment_report
@@ -143,6 +144,14 @@ async def create_upload_batch(
             )
         elif upload_type == "bank_statement":
             import_result = import_bank_statement_report(
+                db=db,
+                upload_batch=batch,
+                filename=original_filename,
+                content=content,
+                actor_user_id=current_user.id,
+            )
+        elif upload_type == "insurance":
+            import_result = import_insurance_report(
                 db=db,
                 upload_batch=batch,
                 filename=original_filename,
