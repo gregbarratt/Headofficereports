@@ -141,6 +141,12 @@ class TraveltekApiError(RuntimeError):
     pass
 
 
+def format_date_for_traveltek(value: date, style: str) -> str:
+    if style == "uk":
+        return value.strftime("%d/%m/%Y")
+    return value.isoformat()
+
+
 def local_name(tag: str) -> str:
     return tag.split("}", 1)[-1].strip().lower()
 
@@ -229,6 +235,38 @@ def values_are_equal(current_value: Any, traveltek_value: Any) -> bool:
     return str(current_value or "").strip().lower() == str(traveltek_value or "").strip().lower()
 
 
+def traveltek_error_message(root: ElementTree.Element) -> str:
+    messages: list[str] = []
+    for element in root.iter():
+        element_name = local_name(element.tag)
+        text = (element.text or "").strip()
+        if element.attrib:
+            messages.append(f"{element_name}: " + ", ".join(f"{key}={value}" for key, value in element.attrib.items()))
+        interesting_attributes = [
+            f"{key}={value}"
+            for key, value in element.attrib.items()
+            if normalise_key(key) in {"error", "errors", "message", "reason", "code", "description", "status", "success"}
+            and str(value).strip()
+        ]
+        if text and len(text) <= 300:
+            messages.append(f"{element_name}: {text}")
+        if element_name in {"error", "errors", "message", "fault", "exception"} and text:
+            messages.append(text)
+        if interesting_attributes:
+            messages.append(f"{element_name}: {', '.join(interesting_attributes)}")
+
+    deduped = []
+    for message in messages:
+        if message not in deduped:
+            deduped.append(message)
+
+    if deduped:
+        return " | ".join(deduped[:8])
+
+    root_text = ElementTree.tostring(root, encoding="unicode")
+    return root_text[:700]
+
+
 def build_request_xml(action: str, attributes: dict[str, str]) -> str:
     request = ElementTree.Element("request", xmlns=TRAVELTEK_NAMESPACE)
     ElementTree.SubElement(
@@ -273,12 +311,7 @@ def call_traveltek(action: str, attributes: dict[str, str]) -> ElementTree.Eleme
         raise TraveltekApiError("Traveltek API returned a response that was not valid XML.") from exc
 
     if root.attrib.get("success", "Y").upper() == "N":
-        error_text = " ".join(
-            (element.text or "").strip()
-            for element in root.iter()
-            if local_name(element.tag) in {"error", "message"} and (element.text or "").strip()
-        )
-        raise TraveltekApiError(error_text or "Traveltek API returned an error.")
+        raise TraveltekApiError(traveltek_error_message(root) or "Traveltek API returned an error.")
 
     return root
 
@@ -344,14 +377,26 @@ def booking_elements_from_response(root: ElementTree.Element) -> list[ElementTre
     return []
 
 
-def getbookings_attributes(start_date: date, end_date: date, date_type: str) -> dict[str, str]:
-    attributes = {
-        "datefrom": start_date.isoformat(),
-        "dateto": end_date.isoformat(),
-    }
+def getbookings_attribute_attempts(start_date: date, end_date: date, date_type: str) -> list[tuple[str, dict[str, str]]]:
+    iso_from = format_date_for_traveltek(start_date, "iso")
+    iso_to = format_date_for_traveltek(end_date, "iso")
+    uk_from = format_date_for_traveltek(start_date, "uk")
+    uk_to = format_date_for_traveltek(end_date, "uk")
+
     if date_type == "departure_date":
-        attributes["datetype"] = "departuredate"
-    return attributes
+        return [
+            ("departuredatefrom/departuredateto", {"departuredatefrom": iso_from, "departuredateto": iso_to}),
+            ("datefrom/dateto/datetype", {"datefrom": iso_from, "dateto": iso_to, "datetype": "departuredate"}),
+            ("departdatefrom/departdateto", {"departdatefrom": iso_from, "departdateto": iso_to}),
+            ("departurefrom/departureto", {"departurefrom": iso_from, "departureto": iso_to}),
+            ("UK departuredatefrom/departuredateto", {"departuredatefrom": uk_from, "departuredateto": uk_to}),
+        ]
+
+    return [
+        ("datefrom/dateto", {"datefrom": iso_from, "dateto": iso_to}),
+        ("bookingdatefrom/bookingdateto", {"bookingdatefrom": iso_from, "bookingdateto": iso_to}),
+        ("UK datefrom/dateto", {"datefrom": uk_from, "dateto": uk_to}),
+    ]
 
 
 def sort_booking_elements(elements: list[ElementTree.Element], date_type: str) -> list[ElementTree.Element]:
@@ -421,20 +466,29 @@ def import_traveltek_bookings_by_date_range(
     created_count = 0
     updated_count = 0
 
-    try:
+    root = None
+    attempt_errors: list[str] = []
+    successful_attempt = None
+    for attempt_name, attributes in getbookings_attribute_attempts(start_date, end_date, normalised_date_type):
         run.api_call_count += 1
-        root = call_traveltek(
-            "getbookings",
-            getbookings_attributes(start_date, end_date, normalised_date_type),
-        )
-        booking_elements = sort_booking_elements(booking_elements_from_response(root), normalised_date_type)[:max_limit]
-    except TraveltekApiError as exc:
+        try:
+            root = call_traveltek("getbookings", attributes)
+            successful_attempt = attempt_name
+            break
+        except TraveltekApiError as exc:
+            attempt_errors.append(f"{attempt_name}: {exc}")
+
+    if root is None:
         run.status = "failed"
-        run.error_summary = str(exc)
+        run.error_summary = "Traveltek could not import bookings with the available date filters. " + " ".join(
+            attempt_errors[:5]
+        )
         run.finished_at = datetime.now(UTC)
         db.commit()
         db.refresh(run)
         return run
+
+    booking_elements = sort_booking_elements(booking_elements_from_response(root), normalised_date_type)[:max_limit]
 
     for booking_element in booking_elements:
         flattened = flatten_xml(booking_element, {})
@@ -495,6 +549,7 @@ def import_traveltek_bookings_by_date_range(
                 "datefrom": start_date.isoformat(),
                 "dateto": end_date.isoformat(),
                 "date_type": normalised_date_type,
+                "successful_attempt": successful_attempt,
                 "created": created_count,
                 "updated": updated_count,
                 "checked": run.checked_bookings,
