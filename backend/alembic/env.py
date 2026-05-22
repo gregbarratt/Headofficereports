@@ -21,6 +21,8 @@ from app.models import (  # noqa: F401
     ReportRun,
     Setting,
     SupplierPayment,
+    TraveltekBookingUpdate,
+    TraveltekSyncRun,
     UploadBatch,
     User,
     WeeklySnapshot,

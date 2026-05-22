@@ -15,6 +15,7 @@ from app.api.refunds import router as refunds_router
 from app.api.reports import router as reports_router
 from app.api.settings import router as settings_router
 from app.api.supplier_payments import router as supplier_payments_router
+from app.api.traveltek import router as traveltek_router
 from app.api.trust_reconciliation import router as trust_reconciliation_router
 from app.api.uploads import router as uploads_router
 from app.api.weekly_snapshots import router as weekly_snapshots_router
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(reports_router)
     app.include_router(settings_router)
     app.include_router(supplier_payments_router)
+    app.include_router(traveltek_router)
     app.include_router(trust_reconciliation_router)
     app.include_router(uploads_router)
     app.include_router(weekly_snapshots_router)

@@ -482,6 +482,30 @@ The required private Render environment variables are:
 
 Do not commit API keys to GitHub.
 
+## Traveltek Booking Update Review
+
+Traveltek is used as an input source for booking facts only. It does not replace the Head Office database automatically.
+
+The Traveltek Updates page can check active bookings already in the system against Traveltek and create review suggestions when booking details look different.
+
+The first safe version:
+
+- checks existing active bookings by booking reference
+- uses one Traveltek API call per booking checked
+- creates suggested updates for review
+- shows what the system currently has and what Traveltek returned
+- does not overwrite booking records automatically
+
+The required private Render environment variables are:
+
+- `TRAVELTEK_API_BASE_URL`
+- `TRAVELTEK_USERNAME`
+- `TRAVELTEK_PASSWORD`
+- `TRAVELTEK_SITENAME` if Traveltek supplied one
+- `TRAVELTEK_MAX_CALLS_PER_RUN`
+
+Keep `TRAVELTEK_MAX_CALLS_PER_RUN` low at first because the Traveltek allowance is limited.
+
 ## Trust Reconciliation
 
 Booking-level calculation:

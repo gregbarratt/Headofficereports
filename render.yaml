@@ -51,6 +51,16 @@ services:
         sync: false
       - key: FELLOH_ORGANISATION_ID
         sync: false
+      - key: TRAVELTEK_API_BASE_URL
+        value: https://secure.traveltek.net/fusionapi/0.9/interface.pl
+      - key: TRAVELTEK_USERNAME
+        sync: false
+      - key: TRAVELTEK_PASSWORD
+        sync: false
+      - key: TRAVELTEK_SITENAME
+        sync: false
+      - key: TRAVELTEK_MAX_CALLS_PER_RUN
+        value: "25"
 
   - type: web
     name: head-office-reporting

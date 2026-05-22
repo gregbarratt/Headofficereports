@@ -48,6 +48,7 @@ import {
   getSupplierPayments,
   getStoredToken,
   getTrustReconciliation,
+  getTraveltekUpdates,
   getUploadBatches,
   getUploadTypes,
   generateExceptions,
@@ -60,9 +61,11 @@ import {
   startFellohCustomerPaymentBackfill,
   storeToken,
   syncFellohCustomerPayments,
+  syncTraveltekActiveBookings,
   updateBookingCheckAdjustments,
   updateEmailRecipient,
   updateExceptionStatus,
+  updateTraveltekUpdateStatus,
   uploadBatch,
 } from "./api/client.js";
 
@@ -71,6 +74,7 @@ const navItems = [
   { label: "Booking Checks", enabled: true },
   { label: "Upload Centre", enabled: true },
   { label: "Bookings", enabled: true },
+  { label: "Traveltek Updates", enabled: true },
   { label: "Supplier Payments TAPs", enabled: true },
   { label: "Supplier Payments TT", enabled: true },
   { label: "Customer Payments", enabled: true },
@@ -469,6 +473,206 @@ function BookingsPage({ token }) {
             ) : (
               <tr>
                 <td colSpan="10">No bookings imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function TraveltekUpdatesPage({ token }) {
+  const [updates, setUpdates] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [latestRun, setLatestRun] = useState(null);
+  const [configured, setConfigured] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("open");
+  const [syncLimit, setSyncLimit] = useState(25);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [updatingId, setUpdatingId] = useState(null);
+
+  function loadUpdates(nextStatus = statusFilter) {
+    return getTraveltekUpdates(token, nextStatus)
+      .then((data) => {
+        setUpdates(data.updates || []);
+        setSummary(data.summary);
+        setLatestRun(data.latest_run);
+        setConfigured(data.configured);
+        setError("");
+      })
+      .catch((loadError) => setError(loadError.message || "Traveltek updates could not load."));
+  }
+
+  useEffect(() => {
+    loadUpdates(statusFilter);
+  }, [token, statusFilter]);
+
+  async function handleSync() {
+    setIsSyncing(true);
+    setMessage("");
+    setError("");
+    try {
+      const run = await syncTraveltekActiveBookings({ token, limit: Number(syncLimit) });
+      setMessage(
+        `Traveltek check finished. Checked ${run.checked_bookings} booking(s), used ${run.api_call_count} API call(s), and created ${run.proposals_created} suggestion(s).`
+      );
+      await loadUpdates(statusFilter);
+    } catch (syncError) {
+      setError(syncError.message || "Traveltek check could not run.");
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
+  async function handleStatusChange(updateId, nextStatus) {
+    setUpdatingId(updateId);
+    setMessage("");
+    setError("");
+    try {
+      await updateTraveltekUpdateStatus({ token, updateId, status: nextStatus });
+      setMessage(`Traveltek suggestion marked as ${formatStatusLabel(nextStatus)}.`);
+      await loadUpdates(statusFilter);
+    } catch (updateError) {
+      setError(updateError.message || "Traveltek suggestion could not be updated.");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Traveltek Updates</h2>
+          <p>Checks active bookings against Traveltek and creates suggested changes for review.</p>
+        </div>
+        <RefreshCw size={24} aria-hidden="true" />
+      </div>
+
+      {message ? <p className="form-success">{message}</p> : null}
+        {error ? <p className="form-error">{error}</p> : null}
+        {!configured ? (
+          <p className="form-error">Traveltek API is not configured yet. Add the Traveltek username and password in Render.</p>
+        ) : null}
+
+      <div className="summary-strip summary-strip-wide">
+        <div>
+          <span>Open suggestions</span>
+          <strong>{summary?.open_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Reviewing</span>
+          <strong>{summary?.reviewing_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Resolved</span>
+          <strong>{summary?.resolved_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Ignored</span>
+          <strong>{summary?.ignored_count ?? 0}</strong>
+        </div>
+        <div>
+          <span>Last check</span>
+          <strong>{latestRun ? formatDateTime(latestRun.started_at) : "-"}</strong>
+        </div>
+      </div>
+
+      <div className="traveltek-toolbar">
+        <label>
+          Suggestions
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="open">Open</option>
+            <option value="reviewing">Reviewing</option>
+            <option value="resolved">Resolved</option>
+            <option value="ignored">Ignored</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+        <label>
+          Bookings to check
+          <input
+            max="500"
+            min="1"
+            onChange={(event) => setSyncLimit(event.target.value)}
+            type="number"
+            value={syncLimit}
+          />
+        </label>
+        <button className="primary-button" disabled={isSyncing || !configured} onClick={handleSync} type="button">
+          <RefreshCw size={18} aria-hidden="true" />
+          {isSyncing ? "Checking" : "Check Traveltek"}
+        </button>
+      </div>
+
+      <p className="muted-note">
+        This only creates suggestions. It does not overwrite the Head Office booking database.
+      </p>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking Ref</th>
+              <th>Field</th>
+              <th>Current system value</th>
+              <th>Traveltek value</th>
+              <th>Status</th>
+              <th>Detected</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {updates.length ? (
+              updates.map((update) => (
+                <tr key={update.id}>
+                  <td>{update.booking_ref}</td>
+                  <td>{update.field_label}</td>
+                  <td>{update.current_value || "-"}</td>
+                  <td>{update.traveltek_value || "-"}</td>
+                  <td>
+                    <span className={`status-pill status-${update.status}`}>{formatStatusLabel(update.status)}</span>
+                  </td>
+                  <td>{formatDateTime(update.detected_at)}</td>
+                  <td>
+                    <div className="table-actions">
+                      {update.status !== "reviewing" ? (
+                        <button
+                          disabled={updatingId === update.id}
+                          onClick={() => handleStatusChange(update.id, "reviewing")}
+                          type="button"
+                        >
+                          Review
+                        </button>
+                      ) : null}
+                      {update.status !== "resolved" ? (
+                        <button
+                          disabled={updatingId === update.id}
+                          onClick={() => handleStatusChange(update.id, "resolved")}
+                          type="button"
+                        >
+                          Resolve
+                        </button>
+                      ) : null}
+                      {update.status !== "ignored" ? (
+                        <button
+                          disabled={updatingId === update.id}
+                          onClick={() => handleStatusChange(update.id, "ignored")}
+                          type="button"
+                        >
+                          Ignore
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="7">No Traveltek update suggestions match this filter.</td>
               </tr>
             )}
           </tbody>
@@ -3560,6 +3764,7 @@ function SettingsPage({ token }) {
   }, [token]);
 
   const felloh = settingsStatus?.felloh || {};
+  const traveltek = settingsStatus?.traveltek || {};
   const email = settingsStatus?.email || {};
 
   return (
@@ -3586,6 +3791,10 @@ function SettingsPage({ token }) {
         <div>
           <span>Felloh / SINGs API</span>
           <strong>{settingsStatus ? (felloh.configured ? "Configured" : "Needs setting") : "Loading"}</strong>
+        </div>
+        <div>
+          <span>Traveltek API</span>
+          <strong>{settingsStatus ? (traveltek.configured ? "Configured" : "Needs setting") : "Loading"}</strong>
         </div>
         <div>
           <span>Outlook email</span>
@@ -3627,6 +3836,24 @@ function SettingsPage({ token }) {
         <strong>
           <ConfigStatus isConfigured={felloh.organisation_id_configured} />
         </strong>
+        <span>Traveltek base URL</span>
+        <strong>
+          <ConfigStatus isConfigured={traveltek.base_url_configured} />
+        </strong>
+        <span>Traveltek username</span>
+        <strong>
+          <ConfigStatus isConfigured={traveltek.username_configured} />
+        </strong>
+        <span>Traveltek password</span>
+        <strong>
+          <ConfigStatus isConfigured={traveltek.password_configured} />
+        </strong>
+        <span>Traveltek sitename optional</span>
+        <strong>
+          <ConfigStatus isConfigured={traveltek.sitename_configured} />
+        </strong>
+        <span>Traveltek calls per run</span>
+        <strong>{settingsStatus ? traveltek.max_calls_per_run : "Loading"}</strong>
         <span>Outlook SMTP host</span>
         <strong>
           <ConfigStatus isConfigured={email.host_configured} />
@@ -3909,6 +4136,8 @@ export default function App() {
           <UploadCentre token={token} />
         ) : activeView === "Bookings" ? (
           <BookingsPage token={token} />
+        ) : activeView === "Traveltek Updates" ? (
+          <TraveltekUpdatesPage token={token} />
         ) : activeView === "Supplier Payments TAPs" ? (
           <SupplierPaymentsPage token={token} source="taps" />
         ) : activeView === "Supplier Payments TT" ? (

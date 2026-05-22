@@ -190,6 +190,39 @@ class ManualTrustBalance(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class TraveltekSyncRun(Base):
+    __tablename__ = "traveltek_sync_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[str] = mapped_column(String(40), default="running", server_default="running", index=True, nullable=False)
+    sync_type: Mapped[str] = mapped_column(String(80), default="active_booking_check", server_default="active_booking_check", nullable=False)
+    checked_bookings: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    api_call_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    proposals_created: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TraveltekBookingUpdate(Base):
+    __tablename__ = "traveltek_booking_updates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sync_run_id: Mapped[int | None] = mapped_column(ForeignKey("traveltek_sync_runs.id"), nullable=True)
+    booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), nullable=True)
+    booking_ref: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    field_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    field_label: Mapped[str] = mapped_column(String(160), nullable=False)
+    current_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    traveltek_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="open", server_default="open", index=True, nullable=False)
+    raw_source: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
 class Refund(Base):
     __tablename__ = "refunds"
 

@@ -252,6 +252,30 @@ export async function getTrustReconciliation(token) {
   return apiRequest("/api/trust-reconciliation", { token });
 }
 
+export async function getTraveltekUpdates(token, status = "open") {
+  const query = new URLSearchParams();
+  if (status && status !== "open") {
+    query.set("status", status);
+  }
+  return apiRequest(`/api/traveltek/updates${query.toString() ? `?${query.toString()}` : ""}`, { token });
+}
+
+export async function syncTraveltekActiveBookings({ token, limit }) {
+  return apiRequest("/api/traveltek/sync-active-bookings", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ limit }),
+  });
+}
+
+export async function updateTraveltekUpdateStatus({ token, updateId, status }) {
+  return apiRequest(`/api/traveltek/updates/${updateId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ status }),
+  });
+}
+
 export async function getWeeklySnapshots(token) {
   return apiRequest("/api/weekly-snapshots", { token });
 }

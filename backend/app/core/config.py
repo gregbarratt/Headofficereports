@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     felloh_public_key: str = ""
     felloh_private_key: str = ""
     felloh_organisation_id: str = ""
+    traveltek_api_base_url: str = "https://secure.traveltek.net/fusionapi/0.9/interface.pl"
+    traveltek_username: str = ""
+    traveltek_password: str = ""
+    traveltek_sitename: str = ""
+    traveltek_max_calls_per_run: int = 25
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_DIR / ".env"),
@@ -78,6 +83,14 @@ class Settings(BaseSettings):
             and self.felloh_public_key.strip()
             and self.felloh_private_key.strip()
             and self.felloh_organisation_id.strip()
+        )
+
+    @property
+    def traveltek_api_configured(self) -> bool:
+        return bool(
+            self.traveltek_api_base_url.strip()
+            and self.traveltek_username.strip()
+            and self.traveltek_password.strip()
         )
 
 

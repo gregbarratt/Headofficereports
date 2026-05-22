@@ -434,6 +434,14 @@ nav button:disabled {
   margin-bottom: 16px;
 }
 
+.traveltek-toolbar {
+  align-items: end;
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(140px, 180px) auto;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
 .form-success {
   margin: 0 0 12px;
   color: #0f5132;
@@ -871,6 +879,7 @@ th {
   .upload-form,
   .supplier-search,
   .customer-sync,
+  .traveltek-toolbar,
   .booking-check-filters,
   .field-filter-grid,
   .adjustment-grid,
