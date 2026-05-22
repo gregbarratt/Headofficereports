@@ -2,7 +2,7 @@ services:
   - type: web
     name: head-office-reporting-api
     runtime: python
-    plan: starter
+    plan: standard
     region: frankfurt
     buildCommand: pip install -r backend/requirements.txt
     preDeployCommand: cd backend && alembic upgrade head && python -m app.db.create_initial_admin
@@ -100,4 +100,4 @@ databases:
     databaseName: head_office_reporting
     user: head_office_reporting_user
     region: frankfurt
-    plan: basic-256mb
+    plan: basic-1gb
