@@ -163,6 +163,9 @@ class BankTransaction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     upload_batch_id: Mapped[int | None] = mapped_column(ForeignKey("upload_batches.id"), nullable=True)
+    booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), nullable=True)
+    booking_ref: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
+    allocation_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     transaction_date: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     money_in: Mapped[Decimal | None] = mapped_column(Money, nullable=True)

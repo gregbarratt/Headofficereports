@@ -23,6 +23,8 @@ import {
 import { useEffect, useState } from "react";
 
 import {
+  allocateBankTransaction,
+  allocateSupplierPayment,
   clearStoredToken,
   createEmailRecipient,
   downloadReportExcel,
@@ -939,25 +941,36 @@ function BookingChecksPage({ token }) {
 function SupplierPaymentsPage({ token, source = "all" }) {
   const [payments, setPayments] = useState([]);
   const [reconciliations, setReconciliations] = useState([]);
+  const [unallocatedTapsPayments, setUnallocatedTapsPayments] = useState([]);
+  const [unallocatedTapsTotal, setUnallocatedTapsTotal] = useState(0);
   const [total, setTotal] = useState(0);
   const [filteredTotal, setFilteredTotal] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
+  const [allocationRefs, setAllocationRefs] = useState({});
+  const [allocationMessage, setAllocationMessage] = useState("");
+  const [allocatingPaymentId, setAllocatingPaymentId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  function loadSupplierPayments() {
     setIsLoading(true);
     setError("");
-    getSupplierPayments(token, activeSearch, source)
+    return getSupplierPayments(token, activeSearch, source)
       .then((data) => {
         setPayments(data.payments);
         setReconciliations(data.reconciliations);
+        setUnallocatedTapsPayments(data.unallocated_taps_payments || []);
+        setUnallocatedTapsTotal(data.unallocated_taps_total || 0);
         setTotal(data.total);
         setFilteredTotal(data.filtered_total);
       })
       .catch((loadError) => setError(loadError.message || "Supplier payments could not load."))
       .finally(() => setIsLoading(false));
+  }
+
+  useEffect(() => {
+    loadSupplierPayments();
   }, [token, activeSearch, source]);
 
   function handleSearchSubmit(event) {
@@ -968,6 +981,32 @@ function SupplierPaymentsPage({ token, source = "all" }) {
   function clearSearch() {
     setSearchText("");
     setActiveSearch("");
+  }
+
+  function setAllocationRef(paymentId, value) {
+    setAllocationRefs((current) => ({ ...current, [paymentId]: value }));
+  }
+
+  async function handleAllocatePayment(payment) {
+    const bookingRef = (allocationRefs[payment.id] || "").trim();
+    if (!bookingRef) {
+      setError("Enter the booking reference to attach this TAPs payment.");
+      return;
+    }
+
+    setAllocatingPaymentId(payment.id);
+    setError("");
+    setAllocationMessage("");
+    try {
+      const updatedPayment = await allocateSupplierPayment(token, payment.id, bookingRef);
+      setAllocationRefs((current) => ({ ...current, [payment.id]: "" }));
+      setAllocationMessage(`TAPs payment ${payment.id} is now attached to ${updatedPayment.booking_ref}.`);
+      await loadSupplierPayments();
+    } catch (allocationError) {
+      setError(allocationError.message || "Could not attach this TAPs payment.");
+    } finally {
+      setAllocatingPaymentId(null);
+    }
   }
 
   return (
@@ -983,6 +1022,7 @@ function SupplierPaymentsPage({ token, source = "all" }) {
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
+      {allocationMessage ? <p className="form-success">{allocationMessage}</p> : null}
 
       <form className="supplier-search" onSubmit={handleSearchSubmit}>
         <label>
@@ -1011,6 +1051,72 @@ function SupplierPaymentsPage({ token, source = "all" }) {
             ? "Showing TT human-input supplier rows for cross-checking against TAPs."
             : "Showing TAPs actual supplier payment rows. TT values appear in the reconciliation table for cross-checking."}
       </p>
+
+      {source === "taps" ? (
+        <>
+          <div className="section-heading">
+            <h3>Unallocated TAPs payments</h3>
+            <p>TAPs payment rows that have not been matched to a booking yet.</p>
+          </div>
+          <p className="muted-note">
+            Showing {unallocatedTapsPayments.length} of {unallocatedTapsTotal} unallocated TAPs payment row(s).
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Current Ref</th>
+                  <th>Product</th>
+                  <th>Supplier</th>
+                  <th>Payment Supplier</th>
+                  <th>Method</th>
+                  <th>Payment Value</th>
+                  <th>Attach to Booking</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unallocatedTapsPayments.length ? (
+                  unallocatedTapsPayments.map((payment) => (
+                    <tr key={payment.id}>
+                      <td>{formatDate(payment.supplier_payment_date)}</td>
+                      <td>{payment.booking_ref || "-"}</td>
+                      <td>{payment.product_type || "-"}</td>
+                      <td>{payment.supplier_name || "-"}</td>
+                      <td>{payment.payment_supplier_name || "-"}</td>
+                      <td>{payment.supplier_payment_method || "-"}</td>
+                      <td>{formatMoney(payment.supplier_payment_amount)}</td>
+                      <td>
+                        <div className="inline-action">
+                          <input
+                            aria-label={`Booking reference for TAPs payment ${payment.id}`}
+                            onChange={(event) => setAllocationRef(payment.id, event.target.value)}
+                            placeholder="OTC-01436"
+                            type="text"
+                            value={allocationRefs[payment.id] || ""}
+                          />
+                          <button
+                            className="secondary-button"
+                            disabled={allocatingPaymentId === payment.id}
+                            onClick={() => handleAllocatePayment(payment)}
+                            type="button"
+                          >
+                            Attach
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="8">No unallocated TAPs payments found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
 
       <div className="section-heading">
         <h3>Booking reconciliation</h3>
@@ -1450,17 +1556,74 @@ function InsuranceCostsPage({ token }) {
 
 function BankTransactionsPage({ token }) {
   const [transactions, setTransactions] = useState([]);
+  const [unallocatedTransactions, setUnallocatedTransactions] = useState([]);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [allocationRefs, setAllocationRefs] = useState({});
+  const [allocationTypes, setAllocationTypes] = useState({});
+  const [allocatingTransactionId, setAllocatingTransactionId] = useState(null);
 
-  useEffect(() => {
-    getBankTransactions(token)
+  function loadBankTransactions() {
+    return getBankTransactions(token)
       .then((data) => {
         setTransactions(data.transactions);
+        setUnallocatedTransactions(data.unallocated_transactions || []);
         setSummary(data.summary);
+        setError("");
       })
       .catch((loadError) => setError(loadError.message || "Bank transactions could not load."));
+  }
+
+  useEffect(() => {
+    loadBankTransactions();
   }, [token]);
+
+  function setAllocationRef(transactionId, value) {
+    setAllocationRefs((current) => ({ ...current, [transactionId]: value }));
+  }
+
+  function setAllocationType(transactionId, value) {
+    setAllocationTypes((current) => ({ ...current, [transactionId]: value }));
+  }
+
+  function defaultBankAllocationType(transaction) {
+    if (transaction.money_out && Number(transaction.money_out) > 0) {
+      return "supplier_payment";
+    }
+    if (transaction.money_in && Number(transaction.money_in) > 0) {
+      return "customer_receipt";
+    }
+    return "other";
+  }
+
+  async function handleAllocateTransaction(transaction) {
+    const bookingRef = (allocationRefs[transaction.id] || transaction.booking_ref || "").trim();
+    if (!bookingRef) {
+      setError("Enter the booking reference to attach this bank transaction.");
+      return;
+    }
+
+    const allocationType = allocationTypes[transaction.id] || defaultBankAllocationType(transaction);
+    setAllocatingTransactionId(transaction.id);
+    setError("");
+    setMessage("");
+    try {
+      const updatedTransaction = await allocateBankTransaction({
+        token,
+        transactionId: transaction.id,
+        bookingRef,
+        allocationType,
+      });
+      setAllocationRefs((current) => ({ ...current, [transaction.id]: "" }));
+      setMessage(`Bank transaction ${transaction.id} is now attached to ${updatedTransaction.booking_ref}.`);
+      await loadBankTransactions();
+    } catch (allocationError) {
+      setError(allocationError.message || "Could not attach this bank transaction.");
+    } finally {
+      setAllocatingTransactionId(null);
+    }
+  }
 
   return (
     <section className="panel">
@@ -1473,6 +1636,7 @@ function BankTransactionsPage({ token }) {
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
+      {message ? <p className="form-success">{message}</p> : null}
 
       <div className="summary-strip">
         <div>
@@ -1488,6 +1652,10 @@ function BankTransactionsPage({ token }) {
           <strong>{formatDate(summary?.latest_trust_balance_date)}</strong>
         </div>
         <div>
+          <span>Matched</span>
+          <strong>{summary?.matched_count ?? 0}</strong>
+        </div>
+        <div>
           <span>Unmatched</span>
           <strong>{summary?.unmatched_count ?? 0}</strong>
         </div>
@@ -1501,6 +1669,73 @@ function BankTransactionsPage({ token }) {
         </div>
       </div>
 
+      <div className="section-heading">
+        <h3>Unmatched bank transactions</h3>
+        <p>Attach bank rows to a booking when the description did not match automatically.</p>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Money In</th>
+              <th>Money Out</th>
+              <th>Current Ref</th>
+              <th>Attach to Booking</th>
+            </tr>
+          </thead>
+          <tbody>
+            {unallocatedTransactions.length ? (
+              unallocatedTransactions.map((transaction) => (
+                <tr key={transaction.id}>
+                  <td>{formatDate(transaction.transaction_date)}</td>
+                  <td>{transaction.description || "-"}</td>
+                  <td>{formatMoney(transaction.money_in)}</td>
+                  <td>{formatMoney(transaction.money_out)}</td>
+                  <td>{transaction.booking_ref || "-"}</td>
+                  <td>
+                    <div className="inline-action inline-action-wide">
+                      <input
+                        aria-label={`Booking reference for bank transaction ${transaction.id}`}
+                        onChange={(event) => setAllocationRef(transaction.id, event.target.value)}
+                        placeholder="OTC-01436"
+                        type="text"
+                        value={allocationRefs[transaction.id] || transaction.booking_ref || ""}
+                      />
+                      <select
+                        aria-label={`Allocation type for bank transaction ${transaction.id}`}
+                        onChange={(event) => setAllocationType(transaction.id, event.target.value)}
+                        value={allocationTypes[transaction.id] || defaultBankAllocationType(transaction)}
+                      >
+                        <option value="customer_receipt">Customer payment in</option>
+                        <option value="supplier_payment">Supplier payment out</option>
+                        <option value="refund">Refund</option>
+                        <option value="bank_charge">Bank charge</option>
+                        <option value="transfer">Transfer</option>
+                        <option value="other">Other</option>
+                      </select>
+                      <button
+                        className="secondary-button"
+                        disabled={allocatingTransactionId === transaction.id}
+                        onClick={() => handleAllocateTransaction(transaction)}
+                        type="button"
+                      >
+                        Attach
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="6">No unmatched bank transactions found.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
       <div className="table-wrap">
         <table>
           <thead>
@@ -1512,6 +1747,8 @@ function BankTransactionsPage({ token }) {
               <th>Balance</th>
               <th>Account</th>
               <th>Reference</th>
+              <th>Booking Ref</th>
+              <th>Type</th>
               <th>Match</th>
             </tr>
           </thead>
@@ -1526,6 +1763,8 @@ function BankTransactionsPage({ token }) {
                   <td>{formatMoney(transaction.balance)}</td>
                   <td>{transaction.account_type || "-"}</td>
                   <td>{transaction.transaction_reference || "-"}</td>
+                  <td>{transaction.booking_ref || "-"}</td>
+                  <td>{formatStatusLabel(transaction.allocation_type)}</td>
                   <td>
                     <span className={`status-pill status-${transaction.match_status}`}>
                       {formatStatusLabel(transaction.match_status)}
@@ -1535,7 +1774,7 @@ function BankTransactionsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="8">No bank statement rows imported yet.</td>
+                <td colSpan="10">No bank statement rows imported yet.</td>
               </tr>
             )}
           </tbody>
@@ -2784,6 +3023,7 @@ function DashboardHome({ dashboardStatus, health, token }) {
 
   const openExceptions = (summary?.open_count ?? 0) + (summary?.reviewing_count ?? 0);
   const bookingChecks = dashboardStatus?.booking_checks || {};
+  const insurance = dashboardStatus?.insurance || {};
 
   return (
     <>
@@ -2817,6 +3057,18 @@ function DashboardHome({ dashboardStatus, health, token }) {
           label="Awaiting imports"
           value={bookingChecks.awaiting_count ?? 0}
           tone={bookingChecks.awaiting_count ? "warning" : "success"}
+        />
+        <StatusCard
+          icon={HandCoins}
+          label="Active insurance cost"
+          value={formatMoney(insurance.active_cost_total)}
+          tone="neutral"
+        />
+        <StatusCard
+          icon={CircleAlert}
+          label="Insurance unmatched"
+          value={insurance.unmatched_count ?? 0}
+          tone={insurance.unmatched_count ? "warning" : "success"}
         />
         <StatusCard
           icon={AlertTriangle}

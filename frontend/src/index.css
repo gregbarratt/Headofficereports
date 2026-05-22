@@ -376,6 +376,27 @@ nav button:disabled {
   margin-bottom: 12px;
 }
 
+.inline-action {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(130px, 1fr) auto;
+  min-width: 240px;
+}
+
+.inline-action input {
+  min-height: 38px;
+}
+
+.inline-action select {
+  min-height: 38px;
+}
+
+.inline-action-wide {
+  grid-template-columns: minmax(120px, 1fr) minmax(150px, 1fr) auto;
+  min-width: 430px;
+}
+
 .customer-sync {
   align-items: end;
   display: grid;

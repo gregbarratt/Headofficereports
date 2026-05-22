@@ -77,6 +77,14 @@ export async function getBankTransactions(token) {
   return apiRequest("/api/bank-transactions", { token });
 }
 
+export async function allocateBankTransaction({ token, transactionId, bookingRef, allocationType }) {
+  return apiRequest(`/api/bank-transactions/${transactionId}/allocate`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify({ booking_ref: bookingRef, allocation_type: allocationType }),
+  });
+}
+
 export async function loginSuperAdmin({ email, password }) {
   return apiRequest("/api/auth/login", {
     method: "POST",
@@ -206,6 +214,14 @@ export async function getSupplierPayments(token, search = "", source = "all") {
     query.set("source", source);
   }
   return apiRequest(`/api/supplier-payments${query.toString() ? `?${query.toString()}` : ""}`, { token });
+}
+
+export async function allocateSupplierPayment(token, paymentId, bookingRef) {
+  return apiRequest(`/api/supplier-payments/${paymentId}/allocate`, {
+    body: JSON.stringify({ booking_ref: bookingRef }),
+    method: "PUT",
+    token,
+  });
 }
 
 export async function getSettingsStatus(token) {
