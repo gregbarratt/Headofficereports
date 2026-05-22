@@ -178,6 +178,18 @@ class BankTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class ManualTrustBalance(Base):
+    __tablename__ = "manual_trust_balances"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trust_value: Mapped[Decimal] = mapped_column(Money, nullable=False)
+    balance_date: Mapped[date] = mapped_column(Date, index=True, nullable=False)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entered_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class Refund(Base):
     __tablename__ = "refunds"
 

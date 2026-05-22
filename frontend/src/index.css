@@ -397,6 +397,14 @@ nav button:disabled {
   min-width: 430px;
 }
 
+.manual-trust-form {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(140px, 1fr) minmax(140px, 180px) minmax(120px, 160px) minmax(180px, 1.3fr) auto;
+  margin-bottom: 18px;
+}
+
 .customer-sync {
   align-items: end;
   display: grid;
@@ -843,7 +851,8 @@ th {
   .supplier-search,
   .customer-sync,
   .booking-check-filters,
-  .adjustment-grid {
+  .adjustment-grid,
+  .manual-trust-form {
     grid-template-columns: 1fr;
   }
 

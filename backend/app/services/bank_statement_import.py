@@ -143,6 +143,19 @@ def default_allocation_type(money_in: Decimal | None, money_out: Decimal | None)
     return None
 
 
+def auto_allocation_type(description: str | None) -> str | None:
+    cleaned = " ".join((description or "").strip().upper().split())
+    if "TRUSTUK PAYMENTS L" in cleaned or "TRUSTUK PAYMENTS" in cleaned:
+        return "sings_settlement"
+    if cleaned.startswith("AX"):
+        return "amex_settlement"
+    return None
+
+
+def is_accounted_for_bank_transaction(allocation_type: str | None) -> bool:
+    return allocation_type in {"sings_settlement", "amex_settlement"}
+
+
 def close_bank_exceptions(db: Session, bank_transaction_id: int) -> None:
     for exception in db.scalars(
         select(ExceptionRecord).where(
@@ -231,12 +244,18 @@ def import_bank_statement_report(
             values["duplicate_key"] = duplicate_key
             values["booking_ref"] = matched_booking_ref
             values["booking_id"] = booking_id
-            values["allocation_type"] = default_allocation_type(values["money_in"], values["money_out"])
+            values["allocation_type"] = auto_allocation_type(values["description"]) or default_allocation_type(
+                values["money_in"],
+                values["money_out"],
+            )
 
             if existing_duplicate is not None:
                 for field_name, value in values.items():
                     setattr(existing_duplicate, field_name, value)
-                if booking_id:
+                if is_accounted_for_bank_transaction(values["allocation_type"]):
+                    existing_duplicate.match_status = "accounted_for_elsewhere"
+                    close_bank_exceptions(db, existing_duplicate.id)
+                elif booking_id:
                     existing_duplicate.match_status = "matched_booking_ref"
                     close_bank_exceptions(db, existing_duplicate.id)
                 elif matched_booking_ref:
@@ -249,6 +268,8 @@ def import_bank_statement_report(
 
             if duplicate_key in duplicate_keys_in_this_upload:
                 values["match_status"] = "duplicate"
+            elif is_accounted_for_bank_transaction(values["allocation_type"]):
+                values["match_status"] = "accounted_for_elsewhere"
             elif booking_id:
                 values["match_status"] = "matched_booking_ref"
             elif matched_booking_ref:

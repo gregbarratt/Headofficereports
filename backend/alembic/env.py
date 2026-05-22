@@ -14,6 +14,8 @@ from app.models import (  # noqa: F401
     CustomerPayment,
     EmailRecipient,
     ExceptionRecord,
+    InsuranceCost,
+    ManualTrustBalance,
     PaymentMethodRule,
     Refund,
     ReportRun,

@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -9,9 +9,12 @@ from app.db.session import get_db
 from app.models.reporting import Booking, InsuranceCost, SupplierPayment
 from app.models.user import User
 from app.schemas.supplier_payment import (
+    SupplierPaymentAllocationRequest,
     SupplierBookingReconciliationRead,
     SupplierPaymentListResponse,
+    SupplierPaymentRead,
 )
+from app.services.master_booking_import import normalise_booking_ref
 
 
 router = APIRouter(prefix="/api/supplier-payments", tags=["Supplier Payments"])
@@ -178,9 +181,76 @@ def list_supplier_payments(
             )
         )
 
+    unallocated_taps_total = 0
+    unallocated_taps_payments = []
+    if source_filter == "taps":
+        unallocated_filters = [
+            SupplierPayment.payment_source == "taps",
+            or_(SupplierPayment.booking_id.is_(None), SupplierPayment.match_status == "unmatched"),
+        ]
+        if search_term:
+            unallocated_filters.append(
+                or_(
+                    SupplierPayment.booking_ref.ilike(search_pattern),
+                    SupplierPayment.product_type.ilike(search_pattern),
+                    SupplierPayment.supplier_name.ilike(search_pattern),
+                    SupplierPayment.payment_supplier_name.ilike(search_pattern),
+                    SupplierPayment.supplier_payment_method.ilike(search_pattern),
+                )
+            )
+        unallocated_taps_total = db.scalar(
+            select(func.count()).select_from(SupplierPayment).where(*unallocated_filters)
+        ) or 0
+        unallocated_taps_payments = list(
+            db.scalars(
+                select(SupplierPayment)
+                .where(*unallocated_filters)
+                .order_by(SupplierPayment.supplier_payment_date.desc().nullslast(), SupplierPayment.id.desc())
+                .limit(200)
+            )
+        )
+
     return SupplierPaymentListResponse(
         payments=payments,
         reconciliations=reconciliations,
+        unallocated_taps_payments=unallocated_taps_payments,
         total=total,
         filtered_total=filtered_total,
+        unallocated_taps_total=unallocated_taps_total,
     )
+
+
+@router.put("/{payment_id}/allocate", response_model=SupplierPaymentRead)
+def allocate_supplier_payment_to_booking(
+    payment_id: int,
+    request: SupplierPaymentAllocationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> SupplierPayment:
+    payment = db.get(SupplierPayment, payment_id)
+    if payment is None or payment.payment_source != "taps":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="TAPs supplier payment was not found.",
+        )
+
+    booking_ref = normalise_booking_ref(request.booking_ref)
+    if not booking_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Enter a booking reference.",
+        )
+
+    booking = db.scalar(select(Booking).where(Booking.booking_ref == booking_ref))
+    if booking is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Booking {booking_ref} was not found. Import the booking first, then attach the payment.",
+        )
+
+    payment.booking_id = booking.id
+    payment.booking_ref = booking.booking_ref
+    payment.match_status = "matched"
+    db.commit()
+    db.refresh(payment)
+    return payment

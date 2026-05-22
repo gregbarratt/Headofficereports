@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.models.reporting import AuditLog, Booking, InsuranceCost, UploadBatch
 from app.services.master_booking_import import (
     clean_text,
+    normalise_booking_ref,
     normalise_header,
     parse_date,
     parse_datetime,
@@ -35,7 +37,7 @@ COLUMN_ALIASES = {
     "last_update_imported": ("last update", "updated at", "last updated"),
 }
 
-REQUIRED_FIELDS = {"booking_ref", "gross_amount"}
+REQUIRED_FIELDS = {"gross_amount"}
 QUERY_CHUNK_SIZE = 500
 ACTIVE_INSURANCE_STATUSES = {"booking", "booked", "confirmed", "live"}
 
@@ -102,6 +104,26 @@ def is_total_row(row: dict[str, Any], column_map: dict[str, str]) -> bool:
     return not booking_ref and bool(gross_amount) and gross_amount.strip().startswith("=")
 
 
+def extract_booking_ref_from_external_reference(value: Any) -> str | None:
+    text = clean_text(value)
+    if not text:
+        return None
+
+    match = re.search(r"\bOTC[-_\s]?\d+\b|\bOTC\d+\b", text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return normalise_booking_ref(match.group(0))
+
+
+def resolve_insurance_booking_ref(row: dict[str, Any], column_map: dict[str, str]) -> str | None:
+    external_booking_ref = extract_booking_ref_from_external_reference(
+        get_row_value(row, column_map, "external_reference")
+    )
+    if external_booking_ref:
+        return external_booking_ref
+    return normalise_booking_ref(get_row_value(row, column_map, "booking_ref"))
+
+
 def duplicate_text(value: str | None) -> str:
     return " ".join((value or "").strip().lower().split())
 
@@ -114,7 +136,7 @@ def duplicate_decimal(value: Decimal | None) -> str:
 
 def build_duplicate_key(values: dict[str, Any]) -> str:
     parts = (
-        duplicate_text(values.get("booking_ref")),
+        duplicate_text(values.get("_source_booking_ref") or values.get("booking_ref")),
         duplicate_text(values.get("external_reference")),
         duplicate_text(values.get("supplement_type")),
         values["departure_date"].isoformat() if values.get("departure_date") else "",
@@ -142,13 +164,17 @@ def fetch_booking_ids_by_ref(db: Session, booking_refs: set[str]) -> dict[str, i
     return booking_ids
 
 
-def fetch_existing_duplicate_keys(db: Session, duplicate_keys: set[str]) -> set[str]:
-    existing_duplicate_keys: set[str] = set()
+def fetch_existing_duplicate_records_by_key(db: Session, duplicate_keys: set[str]) -> dict[str, InsuranceCost]:
+    existing_duplicate_records_by_key: dict[str, InsuranceCost] = {}
     for duplicate_key_chunk in chunk_values(duplicate_keys):
-        existing_duplicate_keys.update(
-            db.scalars(select(InsuranceCost.duplicate_key).where(InsuranceCost.duplicate_key.in_(duplicate_key_chunk))).all()
-        )
-    return existing_duplicate_keys
+        for cost in db.scalars(select(InsuranceCost).where(InsuranceCost.duplicate_key.in_(duplicate_key_chunk))).all():
+            if cost.duplicate_key:
+                existing_duplicate_records_by_key[cost.duplicate_key] = cost
+    return existing_duplicate_records_by_key
+
+
+def insurance_model_values(values: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in values.items() if not key.startswith("_")}
 
 
 def import_insurance_report(
@@ -179,9 +205,10 @@ def import_insurance_report(
             continue
 
         try:
-            booking_ref = clean_text(get_row_value(row, column_map, "booking_ref"))
+            source_booking_ref = normalise_booking_ref(get_row_value(row, column_map, "booking_ref"))
+            booking_ref = resolve_insurance_booking_ref(row, column_map)
             if not booking_ref:
-                raise ValueError("Booking Reference is missing.")
+                raise ValueError("Booking Reference or External Reference is missing.")
 
             gross_amount = parse_money(get_row_value(row, column_map, "gross_amount"))
             if gross_amount is None:
@@ -195,6 +222,7 @@ def import_insurance_report(
             values = {
                 "upload_batch_id": upload_batch.id,
                 "booking_id": None,
+                "_source_booking_ref": source_booking_ref,
                 "booking_ref": booking_ref,
                 "external_reference": clean_text(get_row_value(row, column_map, "external_reference")),
                 "trade_code": clean_text(get_row_value(row, column_map, "trade_code")),
@@ -224,22 +252,33 @@ def import_insurance_report(
             result.errors.append(f"Row {index}: {exc}")
 
     booking_ids_by_ref = fetch_booking_ids_by_ref(db, booking_refs_to_match)
-    existing_duplicate_keys = fetch_existing_duplicate_keys(db, duplicate_keys_to_check)
+    existing_duplicate_records_by_key = fetch_existing_duplicate_records_by_key(db, duplicate_keys_to_check)
     duplicate_keys_in_this_upload: set[str] = set()
 
     insurance_costs = []
+    updated_existing_rows = 0
     for values in parsed_costs:
         booking_id = booking_ids_by_ref.get(values["booking_ref"] or "")
         values["booking_id"] = booking_id
         values["match_status"] = "matched" if booking_id else "unmatched"
         duplicate_key = values["duplicate_key"]
-        values["is_duplicate"] = duplicate_key in duplicate_keys_in_this_upload or duplicate_key in existing_duplicate_keys
+        model_values = insurance_model_values(values)
+        existing_cost = existing_duplicate_records_by_key.get(duplicate_key)
+        if existing_cost is not None:
+            for field_name, value in model_values.items():
+                setattr(existing_cost, field_name, value)
+            existing_cost.is_duplicate = False
+            updated_existing_rows += 1
+            duplicate_keys_in_this_upload.add(duplicate_key)
+            continue
+
+        model_values["is_duplicate"] = duplicate_key in duplicate_keys_in_this_upload
         duplicate_keys_in_this_upload.add(duplicate_key)
-        insurance_costs.append(InsuranceCost(**values))
+        insurance_costs.append(InsuranceCost(**model_values))
 
     if insurance_costs:
         db.add_all(insurance_costs)
-        result.accepted_rows = len(insurance_costs)
+    result.accepted_rows = len(insurance_costs) + updated_existing_rows
 
     db.add(
         AuditLog(

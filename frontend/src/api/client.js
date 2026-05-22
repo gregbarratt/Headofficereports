@@ -85,6 +85,19 @@ export async function allocateBankTransaction({ token, transactionId, bookingRef
   });
 }
 
+export async function createManualTrustBalance({ token, trustValue, balanceDate, checkedAt, note }) {
+  return apiRequest("/api/bank-transactions/manual-trust-balance", {
+    method: "POST",
+    token,
+    body: JSON.stringify({
+      trust_value: trustValue,
+      balance_date: balanceDate,
+      checked_at: checkedAt,
+      note,
+    }),
+  });
+}
+
 export async function loginSuperAdmin({ email, password }) {
   return apiRequest("/api/auth/login", {
     method: "POST",

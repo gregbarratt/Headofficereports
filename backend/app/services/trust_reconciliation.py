@@ -6,7 +6,15 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.reporting import AgentCommission, BankTransaction, Booking, CustomerPayment, Refund, SupplierPayment
+from app.models.reporting import (
+    AgentCommission,
+    BankTransaction,
+    Booking,
+    CustomerPayment,
+    ManualTrustBalance,
+    Refund,
+    SupplierPayment,
+)
 from app.schemas.trust_reconciliation import (
     TrustBookingRead,
     TrustReconciliationResponse,
@@ -40,6 +48,15 @@ def trusted_supplier_payment(payment: SupplierPayment) -> bool:
 
 
 def latest_trust_bank_balance(db: Session) -> Decimal | None:
+    manual_statement = (
+        select(ManualTrustBalance)
+        .order_by(ManualTrustBalance.checked_at.desc(), ManualTrustBalance.id.desc())
+        .limit(1)
+    )
+    latest_manual_balance = db.scalar(manual_statement)
+    if latest_manual_balance is not None:
+        return money(latest_manual_balance.trust_value)
+
     trust_statement = (
         select(BankTransaction)
         .where(BankTransaction.balance.is_not(None), BankTransaction.account_type.ilike("%trust%"))
@@ -58,6 +75,10 @@ def latest_trust_bank_balance(db: Session) -> Decimal | None:
         latest_transaction = db.scalar(any_statement)
 
     return money(latest_transaction.balance) if latest_transaction else None
+
+
+def has_manual_trust_balance(db: Session) -> bool:
+    return db.scalar(select(ManualTrustBalance.id).limit(1)) is not None
 
 
 def calculate_trust_reconciliation(db: Session) -> TrustReconciliationResponse:
@@ -186,6 +207,7 @@ def calculate_trust_reconciliation(db: Session) -> TrustReconciliationResponse:
         + positive(money(unmatched_customer_receipts))
     )
     actual_trust_balance = latest_trust_bank_balance(db)
+    manual_trust_balance_entered = has_manual_trust_balance(db)
     trust_variance = money(actual_trust_balance - required_trust_balance) if actual_trust_balance is not None else None
 
     summary = TrustSummaryRead(
@@ -202,7 +224,13 @@ def calculate_trust_reconciliation(db: Session) -> TrustReconciliationResponse:
         required_trust_balance=money(required_trust_balance),
         actual_trust_balance=actual_trust_balance,
         trust_variance=trust_variance,
-        bank_status="Bank statement imported" if actual_trust_balance is not None else "Awaiting bank statement",
+        bank_status=(
+            "Manual trust balance entered"
+            if manual_trust_balance_entered
+            else "Bank statement imported"
+            if actual_trust_balance is not None
+            else "Awaiting bank statement"
+        ),
     )
 
     return TrustReconciliationResponse(

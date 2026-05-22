@@ -26,6 +26,7 @@ import {
   allocateBankTransaction,
   allocateSupplierPayment,
   clearStoredToken,
+  createManualTrustBalance,
   createEmailRecipient,
   downloadReportExcel,
   getAgentCommissions,
@@ -193,6 +194,10 @@ function formatMoney(value) {
 
 function toDateInputValue(dateValue) {
   return dateValue.toISOString().slice(0, 10);
+}
+
+function toTimeInputValue(dateValue) {
+  return `${String(dateValue.getHours()).padStart(2, "0")}:${String(dateValue.getMinutes()).padStart(2, "0")}`;
 }
 
 function defaultSyncStartDate() {
@@ -1563,6 +1568,12 @@ function BankTransactionsPage({ token }) {
   const [allocationRefs, setAllocationRefs] = useState({});
   const [allocationTypes, setAllocationTypes] = useState({});
   const [allocatingTransactionId, setAllocatingTransactionId] = useState(null);
+  const nowForTrustBalance = new Date();
+  const [manualTrustValue, setManualTrustValue] = useState("");
+  const [manualTrustDate, setManualTrustDate] = useState(toDateInputValue(nowForTrustBalance));
+  const [manualTrustTime, setManualTrustTime] = useState(toTimeInputValue(nowForTrustBalance));
+  const [manualTrustNote, setManualTrustNote] = useState("");
+  const [isSavingTrustBalance, setIsSavingTrustBalance] = useState(false);
 
   function loadBankTransactions() {
     return getBankTransactions(token)
@@ -1625,6 +1636,35 @@ function BankTransactionsPage({ token }) {
     }
   }
 
+  async function handleManualTrustBalanceSubmit(event) {
+    event.preventDefault();
+    if (!manualTrustValue || !manualTrustDate || !manualTrustTime) {
+      setError("Enter the trust value, date and time checked.");
+      return;
+    }
+
+    const checkedAt = new Date(`${manualTrustDate}T${manualTrustTime}:00`);
+    setIsSavingTrustBalance(true);
+    setError("");
+    setMessage("");
+    try {
+      const savedBalance = await createManualTrustBalance({
+        token,
+        trustValue: Number(manualTrustValue),
+        balanceDate: manualTrustDate,
+        checkedAt: checkedAt.toISOString(),
+        note: manualTrustNote,
+      });
+      setMessage(`Manual trust balance saved: ${formatMoney(savedBalance.trust_value)}.`);
+      setManualTrustNote("");
+      await loadBankTransactions();
+    } catch (saveError) {
+      setError(saveError.message || "Could not save the manual trust balance.");
+    } finally {
+      setIsSavingTrustBalance(false);
+    }
+  }
+
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -1644,12 +1684,16 @@ function BankTransactionsPage({ token }) {
           <strong>{summary?.total_rows ?? 0}</strong>
         </div>
         <div>
-          <span>Latest trust balance</span>
+          <span>Trust value</span>
           <strong>{formatMoney(summary?.latest_trust_balance)}</strong>
         </div>
         <div>
-          <span>Balance date</span>
+          <span>Trust date stamp</span>
           <strong>{formatDate(summary?.latest_trust_balance_date)}</strong>
+        </div>
+        <div>
+          <span>Trust time stamp</span>
+          <strong>{formatDateTime(summary?.latest_trust_balance_checked_at)}</strong>
         </div>
         <div>
           <span>Matched</span>
@@ -1665,9 +1709,47 @@ function BankTransactionsPage({ token }) {
         </div>
         <div>
           <span>Trust variance source</span>
-          <strong>{summary?.latest_trust_balance ? "Ready" : "Awaiting statement"}</strong>
+          <strong>{summary?.latest_trust_balance_source === "manual" ? "Manual value" : "Awaiting manual value"}</strong>
         </div>
       </div>
+
+      <div className="section-heading">
+        <h3>Manual trust balance</h3>
+        <p>Enter the actual trust account value checked by Head Office.</p>
+      </div>
+      <form className="manual-trust-form" onSubmit={handleManualTrustBalanceSubmit}>
+        <label>
+          Trust value
+          <input
+            min="0"
+            onChange={(event) => setManualTrustValue(event.target.value)}
+            placeholder="0.00"
+            step="0.01"
+            type="number"
+            value={manualTrustValue}
+          />
+        </label>
+        <label>
+          Date checked
+          <input onChange={(event) => setManualTrustDate(event.target.value)} type="date" value={manualTrustDate} />
+        </label>
+        <label>
+          Time checked
+          <input onChange={(event) => setManualTrustTime(event.target.value)} type="time" value={manualTrustTime} />
+        </label>
+        <label>
+          Note
+          <input
+            onChange={(event) => setManualTrustNote(event.target.value)}
+            placeholder="Optional"
+            type="text"
+            value={manualTrustNote}
+          />
+        </label>
+        <button className="primary-button" disabled={isSavingTrustBalance} type="submit">
+          Save trust value
+        </button>
+      </form>
 
       <div className="section-heading">
         <h3>Unmatched bank transactions</h3>
@@ -1713,6 +1795,8 @@ function BankTransactionsPage({ token }) {
                         <option value="refund">Refund</option>
                         <option value="bank_charge">Bank charge</option>
                         <option value="transfer">Transfer</option>
+                        <option value="sings_settlement">SINGs settlement</option>
+                        <option value="amex_settlement">AMEX settlement</option>
                         <option value="other">Other</option>
                       </select>
                       <button

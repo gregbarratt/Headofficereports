@@ -26,6 +26,8 @@ class BankTransactionSummaryRead(BaseModel):
     total_rows: int
     latest_trust_balance: Decimal | None
     latest_trust_balance_date: date | None
+    latest_trust_balance_checked_at: datetime | None
+    latest_trust_balance_source: str
     matched_count: int
     unmatched_count: int
     duplicate_count: int
@@ -40,3 +42,21 @@ class BankTransactionListResponse(BaseModel):
 class BankTransactionAllocationRequest(BaseModel):
     booking_ref: str
     allocation_type: str | None = None
+
+
+class ManualTrustBalanceRead(BaseModel):
+    id: int
+    trust_value: Decimal
+    balance_date: date
+    checked_at: datetime
+    note: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ManualTrustBalanceCreate(BaseModel):
+    trust_value: Decimal
+    balance_date: date
+    checked_at: datetime | None = None
+    note: str | None = None

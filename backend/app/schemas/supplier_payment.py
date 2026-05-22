@@ -46,5 +46,11 @@ class SupplierBookingReconciliationRead(BaseModel):
 class SupplierPaymentListResponse(BaseModel):
     payments: list[SupplierPaymentRead]
     reconciliations: list[SupplierBookingReconciliationRead]
+    unallocated_taps_payments: list[SupplierPaymentRead] = []
     total: int
     filtered_total: int
+    unallocated_taps_total: int = 0
+
+
+class SupplierPaymentAllocationRequest(BaseModel):
+    booking_ref: str

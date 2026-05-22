@@ -7,19 +7,31 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
 from app.db.session import get_db
-from app.models.reporting import AuditLog, BankTransaction, Booking, ExceptionRecord
+from app.models.reporting import AuditLog, BankTransaction, Booking, ExceptionRecord, ManualTrustBalance
 from app.models.user import User
 from app.schemas.bank_transaction import (
     BankTransactionAllocationRequest,
     BankTransactionListResponse,
     BankTransactionRead,
     BankTransactionSummaryRead,
+    ManualTrustBalanceCreate,
+    ManualTrustBalanceRead,
 )
 from app.services.master_booking_import import normalise_booking_ref
 
 
 router = APIRouter(prefix="/api/bank-transactions", tags=["Bank Transactions"])
-ALLOCATION_TYPES = {"customer_receipt", "supplier_payment", "refund", "bank_charge", "transfer", "other"}
+ZERO = Decimal("0.00")
+ALLOCATION_TYPES = {
+    "customer_receipt",
+    "supplier_payment",
+    "refund",
+    "bank_charge",
+    "transfer",
+    "sings_settlement",
+    "amex_settlement",
+    "other",
+}
 
 
 def money(value: Decimal | None) -> Decimal | None:
@@ -48,6 +60,14 @@ def get_latest_trust_transaction(db: Session) -> BankTransaction | None:
     return db.scalar(any_statement)
 
 
+def get_latest_manual_trust_balance(db: Session) -> ManualTrustBalance | None:
+    return db.scalar(
+        select(ManualTrustBalance)
+        .order_by(ManualTrustBalance.checked_at.desc(), ManualTrustBalance.id.desc())
+        .limit(1)
+    )
+
+
 @router.get("", response_model=BankTransactionListResponse)
 def list_bank_transactions(
     db: Session = Depends(get_db),
@@ -62,21 +82,36 @@ def list_bank_transactions(
     )
     all_transactions = list(db.scalars(select(BankTransaction)))
     latest_transaction = get_latest_trust_transaction(db)
+    latest_manual_balance = get_latest_manual_trust_balance(db)
     unallocated_transactions = [
         transaction
         for transaction in all_transactions
-        if transaction.match_status != "duplicate" and transaction.booking_id is None
+        if transaction.match_status not in {"duplicate", "accounted_for_elsewhere"} and transaction.booking_id is None
     ][:200]
 
     summary = BankTransactionSummaryRead(
         total_rows=len(all_transactions),
-        latest_trust_balance=money(latest_transaction.balance) if latest_transaction else None,
-        latest_trust_balance_date=latest_transaction.transaction_date if latest_transaction else None,
+        latest_trust_balance=(
+            money(latest_manual_balance.trust_value)
+            if latest_manual_balance
+            else money(latest_transaction.balance)
+            if latest_transaction
+            else None
+        ),
+        latest_trust_balance_date=(
+            latest_manual_balance.balance_date
+            if latest_manual_balance
+            else latest_transaction.transaction_date
+            if latest_transaction
+            else None
+        ),
+        latest_trust_balance_checked_at=latest_manual_balance.checked_at if latest_manual_balance else None,
+        latest_trust_balance_source="manual" if latest_manual_balance else "bank_statement" if latest_transaction else "missing",
         matched_count=sum(1 for transaction in all_transactions if transaction.booking_id is not None),
         unmatched_count=sum(
             1
             for transaction in all_transactions
-            if transaction.match_status != "duplicate" and transaction.booking_id is None
+            if transaction.match_status not in {"duplicate", "accounted_for_elsewhere"} and transaction.booking_id is None
         ),
         duplicate_count=sum(1 for transaction in all_transactions if transaction.match_status == "duplicate"),
     )
@@ -86,6 +121,45 @@ def list_bank_transactions(
         unallocated_transactions=unallocated_transactions,
         summary=summary,
     )
+
+
+@router.post("/manual-trust-balance", response_model=ManualTrustBalanceRead, status_code=status.HTTP_201_CREATED)
+def create_manual_trust_balance(
+    request: ManualTrustBalanceCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> ManualTrustBalance:
+    checked_at = request.checked_at or datetime.now(UTC)
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=UTC)
+
+    balance = ManualTrustBalance(
+        trust_value=money(request.trust_value),
+        balance_date=request.balance_date,
+        checked_at=checked_at,
+        note=(request.note or "").strip() or None,
+        entered_by_user_id=current_user.id,
+    )
+    db.add(balance)
+    db.flush()
+    db.add(
+        AuditLog(
+            actor_user_id=current_user.id,
+            action="manual_trust_balance_created",
+            table_name="manual_trust_balances",
+            record_id=balance.id,
+            description=f"Manual trust balance entered for {balance.balance_date}.",
+            after_data={
+                "trust_value": str(balance.trust_value),
+                "balance_date": balance.balance_date.isoformat(),
+                "checked_at": balance.checked_at.isoformat(),
+                "note": balance.note,
+            },
+        )
+    )
+    db.commit()
+    db.refresh(balance)
+    return balance
 
 
 def resolve_bank_transaction_exceptions(db: Session, transaction_id: int, user_id: int) -> None:
