@@ -10,6 +10,7 @@ from app.schemas.booking import BookingCheckRow, BookingChecksResponse, BookingC
 
 
 ZERO = Decimal("0.00")
+BOOKING_CHECK_ROW_LIMIT = 5000
 ADJUSTABLE_FIELDS = {
     "gross_booking_value",
     "expected_supplier_total",
@@ -138,7 +139,7 @@ def adjustment_note(adjustments: dict[str, BookingCheckAdjustment]) -> str | Non
     return " | ".join(notes) if notes else None
 
 
-def build_booking_checks(db: Session, limit: int = 500) -> BookingChecksResponse:
+def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> BookingChecksResponse:
     bookings = list(db.scalars(select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(limit)))
     supplier_totals = grouped_supplier_totals(db)
     customer_totals = grouped_customer_totals(db)
@@ -240,7 +241,7 @@ def build_booking_checks(db: Session, limit: int = 500) -> BookingChecksResponse
     return BookingChecksResponse(summary=summary, bookings=rows)
 
 
-def build_booking_checks_summary(db: Session, limit: int = 500) -> BookingChecksSummary:
+def build_booking_checks_summary(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> BookingChecksSummary:
     bookings = list(db.scalars(select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(limit)))
     supplier_totals = grouped_supplier_totals(db)
     customer_totals = grouped_customer_totals(db)
