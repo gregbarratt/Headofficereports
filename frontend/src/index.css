@@ -371,7 +371,7 @@ nav button:disabled {
 .supplier-search {
   align-items: end;
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto auto;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, 190px) auto auto;
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -403,6 +403,27 @@ nav button:disabled {
   gap: 12px;
   grid-template-columns: minmax(140px, 1fr) minmax(140px, 180px) minmax(120px, 160px) minmax(180px, 1.3fr) auto;
   margin-bottom: 18px;
+}
+
+.field-filter-grid {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(6, minmax(120px, 1fr)) auto;
+  margin: 12px 0;
+}
+
+.bank-transaction-filters {
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+}
+
+.field-filter-grid label {
+  min-width: 0;
+}
+
+.field-filter-grid input,
+.field-filter-grid select {
+  min-height: 38px;
 }
 
 .customer-sync {
@@ -851,6 +872,7 @@ th {
   .supplier-search,
   .customer-sync,
   .booking-check-filters,
+  .field-filter-grid,
   .adjustment-grid,
   .manual-trust-form {
     grid-template-columns: 1fr;

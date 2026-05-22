@@ -14,6 +14,8 @@ from app.schemas.bank_transaction import (
     BankTransactionListResponse,
     BankTransactionRead,
     BankTransactionSummaryRead,
+    HeadOfficeCostListResponse,
+    HeadOfficeCostSummaryRead,
     ManualTrustBalanceCreate,
     ManualTrustBalanceRead,
 )
@@ -27,6 +29,7 @@ ALLOCATION_TYPES = {
     "supplier_payment",
     "refund",
     "bank_charge",
+    "head_office_cost",
     "transfer",
     "sings_settlement",
     "amex_settlement",
@@ -68,6 +71,17 @@ def get_latest_manual_trust_balance(db: Session) -> ManualTrustBalance | None:
     )
 
 
+def is_unmatched_bank_transaction(transaction: BankTransaction) -> bool:
+    if transaction.match_status in {
+        "duplicate",
+        "accounted_for_elsewhere",
+        "matched_booking_ref",
+        "matched_manual",
+    }:
+        return False
+    return transaction.booking_id is None
+
+
 @router.get("", response_model=BankTransactionListResponse)
 def list_bank_transactions(
     db: Session = Depends(get_db),
@@ -86,7 +100,7 @@ def list_bank_transactions(
     unallocated_transactions = [
         transaction
         for transaction in all_transactions
-        if transaction.match_status not in {"duplicate", "accounted_for_elsewhere"} and transaction.booking_id is None
+        if is_unmatched_bank_transaction(transaction)
     ][:200]
 
     summary = BankTransactionSummaryRead(
@@ -107,12 +121,12 @@ def list_bank_transactions(
         ),
         latest_trust_balance_checked_at=latest_manual_balance.checked_at if latest_manual_balance else None,
         latest_trust_balance_source="manual" if latest_manual_balance else "bank_statement" if latest_transaction else "missing",
-        matched_count=sum(1 for transaction in all_transactions if transaction.booking_id is not None),
-        unmatched_count=sum(
+        matched_count=sum(
             1
             for transaction in all_transactions
-            if transaction.match_status not in {"duplicate", "accounted_for_elsewhere"} and transaction.booking_id is None
+            if transaction.booking_id is not None or transaction.match_status == "matched_manual"
         ),
+        unmatched_count=sum(1 for transaction in all_transactions if is_unmatched_bank_transaction(transaction)),
         duplicate_count=sum(1 for transaction in all_transactions if transaction.match_status == "duplicate"),
     )
 
@@ -120,6 +134,35 @@ def list_bank_transactions(
         transactions=transactions,
         unallocated_transactions=unallocated_transactions,
         summary=summary,
+    )
+
+
+@router.get("/head-office-costs", response_model=HeadOfficeCostListResponse)
+def list_head_office_costs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> HeadOfficeCostListResponse:
+    all_costs = list(
+        db.scalars(
+            select(BankTransaction)
+            .where(BankTransaction.allocation_type == "head_office_cost")
+            .order_by(BankTransaction.transaction_date.desc(), BankTransaction.id.desc())
+        )
+    )
+    total_money_in = sum((cost.money_in or ZERO) for cost in all_costs)
+    total_money_out = sum((cost.money_out or ZERO) for cost in all_costs)
+    dates = [cost.transaction_date for cost in all_costs if cost.transaction_date]
+
+    return HeadOfficeCostListResponse(
+        costs=all_costs[:1000],
+        summary=HeadOfficeCostSummaryRead(
+            total_rows=len(all_costs),
+            total_money_in=money(total_money_in) or ZERO,
+            total_money_out=money(total_money_out) or ZERO,
+            net_spend=money(total_money_out - total_money_in) or ZERO,
+            first_date=min(dates) if dates else None,
+            last_date=max(dates) if dates else None,
+        ),
     )
 
 
@@ -189,20 +232,6 @@ def allocate_bank_transaction_to_booking(
             detail="Bank transaction was not found.",
         )
 
-    booking_ref = normalise_booking_ref(request.booking_ref)
-    if not booking_ref:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Enter a booking reference.",
-        )
-
-    booking = db.scalar(select(Booking).where(Booking.booking_ref == booking_ref))
-    if booking is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Booking {booking_ref} was not found. Import the booking first, then attach the bank transaction.",
-        )
-
     allocation_type = (request.allocation_type or "").strip().lower() or None
     if allocation_type and allocation_type not in ALLOCATION_TYPES:
         raise HTTPException(
@@ -223,6 +252,45 @@ def allocate_bank_transaction_to_booking(
         "allocation_type": transaction.allocation_type,
         "match_status": transaction.match_status,
     }
+
+    if allocation_type == "head_office_cost":
+        transaction.booking_id = None
+        transaction.booking_ref = None
+        transaction.allocation_type = allocation_type
+        transaction.match_status = "matched_manual"
+        resolve_bank_transaction_exceptions(db, transaction.id, current_user.id)
+        db.add(
+            AuditLog(
+                actor_user_id=current_user.id,
+                action="bank_transaction_head_office_cost",
+                table_name="bank_transactions",
+                record_id=transaction.id,
+                description=f"Marked bank transaction {transaction.id} as a Head Office cost.",
+                before_data=before_data,
+                after_data={
+                    "booking_ref": None,
+                    "allocation_type": allocation_type,
+                    "match_status": transaction.match_status,
+                },
+            )
+        )
+        db.commit()
+        db.refresh(transaction)
+        return transaction
+
+    booking_ref = normalise_booking_ref(request.booking_ref)
+    if not booking_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Enter a booking reference.",
+        )
+
+    booking = db.scalar(select(Booking).where(Booking.booking_ref == booking_ref))
+    if booking is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Booking {booking_ref} was not found. Import the booking first, then attach the bank transaction.",
+        )
 
     transaction.booking_id = booking.id
     transaction.booking_ref = booking.booking_ref

@@ -39,6 +39,7 @@ import {
   getDashboardStatus,
   getEmailRecipients,
   getExceptions,
+  getHeadOfficeCosts,
   getInsuranceCosts,
   getRefunds,
   getReportRuns,
@@ -77,6 +78,7 @@ const navItems = [
   { label: "Refunds", enabled: true },
   { label: "Agent Commissions", enabled: true },
   { label: "Bank Transactions", enabled: true },
+  { label: "Head Office Costs", enabled: true },
   { label: "Trust Reconciliation", enabled: true },
   { label: "Exceptions", enabled: true },
   { label: "Weekly Reports", enabled: true },
@@ -190,6 +192,22 @@ function formatMoney(value) {
     style: "currency",
     currency: "GBP",
   }).format(Number(value));
+}
+
+function textMatches(value, search) {
+  const searchValue = search.trim().toLowerCase();
+  if (!searchValue) {
+    return true;
+  }
+  return String(value ?? "").toLowerCase().includes(searchValue);
+}
+
+function dateMatches(value, search) {
+  return textMatches(value, search) || textMatches(formatDate(value), search);
+}
+
+function moneyMatches(value, search) {
+  return textMatches(value, search) || textMatches(formatMoney(value), search);
 }
 
 function toDateInputValue(dateValue) {
@@ -952,6 +970,7 @@ function SupplierPaymentsPage({ token, source = "all" }) {
   const [filteredTotal, setFilteredTotal] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
+  const [matchFilter, setMatchFilter] = useState("all");
   const [allocationRefs, setAllocationRefs] = useState({});
   const [allocationMessage, setAllocationMessage] = useState("");
   const [allocatingPaymentId, setAllocatingPaymentId] = useState(null);
@@ -961,7 +980,7 @@ function SupplierPaymentsPage({ token, source = "all" }) {
   function loadSupplierPayments() {
     setIsLoading(true);
     setError("");
-    return getSupplierPayments(token, activeSearch, source)
+    return getSupplierPayments(token, activeSearch, source, matchFilter)
       .then((data) => {
         setPayments(data.payments);
         setReconciliations(data.reconciliations);
@@ -976,7 +995,7 @@ function SupplierPaymentsPage({ token, source = "all" }) {
 
   useEffect(() => {
     loadSupplierPayments();
-  }, [token, activeSearch, source]);
+  }, [token, activeSearch, source, matchFilter]);
 
   function handleSearchSubmit(event) {
     event.preventDefault();
@@ -993,9 +1012,9 @@ function SupplierPaymentsPage({ token, source = "all" }) {
   }
 
   async function handleAllocatePayment(payment) {
-    const bookingRef = (allocationRefs[payment.id] || "").trim();
+    const bookingRef = ((allocationRefs[payment.id] ?? payment.booking_ref) || "").trim();
     if (!bookingRef) {
-      setError("Enter the booking reference to attach this TAPs payment.");
+      setError("Enter the booking reference to attach this supplier payment.");
       return;
     }
 
@@ -1005,10 +1024,10 @@ function SupplierPaymentsPage({ token, source = "all" }) {
     try {
       const updatedPayment = await allocateSupplierPayment(token, payment.id, bookingRef);
       setAllocationRefs((current) => ({ ...current, [payment.id]: "" }));
-      setAllocationMessage(`TAPs payment ${payment.id} is now attached to ${updatedPayment.booking_ref}.`);
+      setAllocationMessage(`Supplier payment ${payment.id} is now attached to ${updatedPayment.booking_ref}.`);
       await loadSupplierPayments();
     } catch (allocationError) {
-      setError(allocationError.message || "Could not attach this TAPs payment.");
+      setError(allocationError.message || "Could not attach this supplier payment.");
     } finally {
       setAllocatingPaymentId(null);
     }
@@ -1039,6 +1058,14 @@ function SupplierPaymentsPage({ token, source = "all" }) {
             value={searchText}
           />
         </label>
+        <label>
+          Match status
+          <select onChange={(event) => setMatchFilter(event.target.value)} value={matchFilter}>
+            <option value="all">All rows</option>
+            <option value="unmatched">Unmatched only</option>
+            <option value="matched">Matched only</option>
+          </select>
+        </label>
         <button className="primary-button" disabled={isLoading} type="submit">
           <Search size={18} aria-hidden="true" />
           Search
@@ -1052,6 +1079,8 @@ function SupplierPaymentsPage({ token, source = "all" }) {
       <p className="muted-note">
         {activeSearch
           ? `Showing ${filteredTotal} matching supplier payment row(s) out of ${total}.`
+          : matchFilter !== "all"
+            ? `Showing ${filteredTotal} ${matchFilter} supplier payment row(s) out of ${total}.`
           : source === "tt"
             ? "Showing TT human-input supplier rows for cross-checking against TAPs."
             : "Showing TAPs actual supplier payment rows. TT values appear in the reconciliation table for cross-checking."}
@@ -1098,7 +1127,7 @@ function SupplierPaymentsPage({ token, source = "all" }) {
                             onChange={(event) => setAllocationRef(payment.id, event.target.value)}
                             placeholder="OTC-01436"
                             type="text"
-                            value={allocationRefs[payment.id] || ""}
+                            value={allocationRefs[payment.id] ?? payment.booking_ref ?? ""}
                           />
                           <button
                             className="secondary-button"
@@ -1203,6 +1232,7 @@ function SupplierPaymentsPage({ token, source = "all" }) {
               <th>VAT</th>
               <th>Match</th>
               <th>Duplicate</th>
+              <th>Attach</th>
             </tr>
           </thead>
           <tbody>
@@ -1224,11 +1254,34 @@ function SupplierPaymentsPage({ token, source = "all" }) {
                     </span>
                   </td>
                   <td>{payment.is_duplicate ? "Yes" : "No"}</td>
+                  <td>
+                    {payment.match_status === "matched" ? (
+                      payment.booking_ref || "-"
+                    ) : (
+                      <div className="inline-action">
+                        <input
+                          aria-label={`Booking reference for supplier payment ${payment.id}`}
+                          onChange={(event) => setAllocationRef(payment.id, event.target.value)}
+                          placeholder="OTC-01436"
+                          type="text"
+                          value={allocationRefs[payment.id] ?? payment.booking_ref ?? ""}
+                        />
+                        <button
+                          className="secondary-button"
+                          disabled={allocatingPaymentId === payment.id}
+                          onClick={() => handleAllocatePayment(payment)}
+                          type="button"
+                        >
+                          Attach
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan="11">
+                <td colSpan="12">
                   {activeSearch ? "No supplier payment rows match this search." : "No supplier payment rows imported yet."}
                 </td>
               </tr>
@@ -1559,6 +1612,67 @@ function InsuranceCostsPage({ token }) {
   );
 }
 
+const bankAllocationOptions = [
+  { value: "customer_receipt", label: "Customer payment in" },
+  { value: "supplier_payment", label: "Supplier payment out" },
+  { value: "head_office_cost", label: "Head Office cost" },
+  { value: "refund", label: "Refund" },
+  { value: "bank_charge", label: "Bank charge" },
+  { value: "transfer", label: "Transfer" },
+  { value: "sings_settlement", label: "SINGs settlement" },
+  { value: "amex_settlement", label: "AMEX settlement" },
+  { value: "other", label: "Other" },
+];
+
+const emptyBankUnmatchedFilters = {
+  date: "",
+  description: "",
+  moneyIn: "",
+  moneyOut: "",
+  currentRef: "",
+  suggestedType: "all",
+};
+
+const emptyBankTransactionFilters = {
+  date: "",
+  description: "",
+  moneyIn: "",
+  moneyOut: "",
+  balance: "",
+  account: "",
+  reference: "",
+  bookingRef: "",
+  type: "all",
+  match: "all",
+};
+
+const emptyHeadOfficeCostFilters = {
+  date: "",
+  description: "",
+  moneyIn: "",
+  moneyOut: "",
+  account: "",
+  reference: "",
+  match: "all",
+};
+
+function bankMatchGroup(transaction) {
+  if (transaction.match_status === "duplicate") {
+    return "duplicate";
+  }
+  if (transaction.match_status === "accounted_for_elsewhere") {
+    return "accounted_for_elsewhere";
+  }
+  if (
+    transaction.match_status === "matched_manual" ||
+    transaction.match_status === "matched_booking_ref" ||
+    transaction.booking_ref
+  ) {
+    return "matched";
+  }
+  return "unmatched";
+}
+
 function BankTransactionsPage({ token }) {
   const [transactions, setTransactions] = useState([]);
   const [unallocatedTransactions, setUnallocatedTransactions] = useState([]);
@@ -1568,6 +1682,8 @@ function BankTransactionsPage({ token }) {
   const [allocationRefs, setAllocationRefs] = useState({});
   const [allocationTypes, setAllocationTypes] = useState({});
   const [allocatingTransactionId, setAllocatingTransactionId] = useState(null);
+  const [unmatchedFilters, setUnmatchedFilters] = useState(emptyBankUnmatchedFilters);
+  const [transactionFilters, setTransactionFilters] = useState(emptyBankTransactionFilters);
   const nowForTrustBalance = new Date();
   const [manualTrustValue, setManualTrustValue] = useState("");
   const [manualTrustDate, setManualTrustDate] = useState(toDateInputValue(nowForTrustBalance));
@@ -1598,6 +1714,14 @@ function BankTransactionsPage({ token }) {
     setAllocationTypes((current) => ({ ...current, [transactionId]: value }));
   }
 
+  function setUnmatchedFilter(fieldName, value) {
+    setUnmatchedFilters((current) => ({ ...current, [fieldName]: value }));
+  }
+
+  function setTransactionFilter(fieldName, value) {
+    setTransactionFilters((current) => ({ ...current, [fieldName]: value }));
+  }
+
   function defaultBankAllocationType(transaction) {
     if (transaction.money_out && Number(transaction.money_out) > 0) {
       return "supplier_payment";
@@ -1608,14 +1732,73 @@ function BankTransactionsPage({ token }) {
     return "other";
   }
 
+  const filteredUnallocatedTransactions = unallocatedTransactions.filter((transaction) => {
+    if (!dateMatches(transaction.transaction_date, unmatchedFilters.date)) {
+      return false;
+    }
+    if (!textMatches(transaction.description, unmatchedFilters.description)) {
+      return false;
+    }
+    if (!moneyMatches(transaction.money_in, unmatchedFilters.moneyIn)) {
+      return false;
+    }
+    if (!moneyMatches(transaction.money_out, unmatchedFilters.moneyOut)) {
+      return false;
+    }
+    if (!textMatches(transaction.booking_ref, unmatchedFilters.currentRef)) {
+      return false;
+    }
+    if (
+      unmatchedFilters.suggestedType !== "all" &&
+      defaultBankAllocationType(transaction) !== unmatchedFilters.suggestedType
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const filteredTransactions = transactions.filter((transaction) => {
+    if (!dateMatches(transaction.transaction_date, transactionFilters.date)) {
+      return false;
+    }
+    if (!textMatches(transaction.description, transactionFilters.description)) {
+      return false;
+    }
+    if (!moneyMatches(transaction.money_in, transactionFilters.moneyIn)) {
+      return false;
+    }
+    if (!moneyMatches(transaction.money_out, transactionFilters.moneyOut)) {
+      return false;
+    }
+    if (!moneyMatches(transaction.balance, transactionFilters.balance)) {
+      return false;
+    }
+    if (!textMatches(transaction.account_type, transactionFilters.account)) {
+      return false;
+    }
+    if (!textMatches(transaction.transaction_reference, transactionFilters.reference)) {
+      return false;
+    }
+    if (!textMatches(transaction.booking_ref, transactionFilters.bookingRef)) {
+      return false;
+    }
+    if (transactionFilters.type !== "all" && transaction.allocation_type !== transactionFilters.type) {
+      return false;
+    }
+    if (transactionFilters.match !== "all" && bankMatchGroup(transaction) !== transactionFilters.match) {
+      return false;
+    }
+    return true;
+  });
+
   async function handleAllocateTransaction(transaction) {
-    const bookingRef = (allocationRefs[transaction.id] || transaction.booking_ref || "").trim();
-    if (!bookingRef) {
+    const allocationType = allocationTypes[transaction.id] || defaultBankAllocationType(transaction);
+    const bookingRef = allocationType === "head_office_cost" ? "" : (allocationRefs[transaction.id] || transaction.booking_ref || "").trim();
+    if (allocationType !== "head_office_cost" && !bookingRef) {
       setError("Enter the booking reference to attach this bank transaction.");
       return;
     }
 
-    const allocationType = allocationTypes[transaction.id] || defaultBankAllocationType(transaction);
     setAllocatingTransactionId(transaction.id);
     setError("");
     setMessage("");
@@ -1627,7 +1810,11 @@ function BankTransactionsPage({ token }) {
         allocationType,
       });
       setAllocationRefs((current) => ({ ...current, [transaction.id]: "" }));
-      setMessage(`Bank transaction ${transaction.id} is now attached to ${updatedTransaction.booking_ref}.`);
+      setMessage(
+        allocationType === "head_office_cost"
+          ? `Bank transaction ${transaction.id} is now marked as a Head Office cost.`
+          : `Bank transaction ${transaction.id} is now attached to ${updatedTransaction.booking_ref}.`
+      );
       await loadBankTransactions();
     } catch (allocationError) {
       setError(allocationError.message || "Could not attach this bank transaction.");
@@ -1755,6 +1942,71 @@ function BankTransactionsPage({ token }) {
         <h3>Unmatched bank transactions</h3>
         <p>Attach bank rows to a booking when the description did not match automatically.</p>
       </div>
+      <div className="field-filter-grid bank-unmatched-filters">
+        <label>
+          Date
+          <input
+            onChange={(event) => setUnmatchedFilter("date", event.target.value)}
+            placeholder="27 Feb 2026"
+            type="search"
+            value={unmatchedFilters.date}
+          />
+        </label>
+        <label>
+          Description
+          <input
+            onChange={(event) => setUnmatchedFilter("description", event.target.value)}
+            placeholder="Supplier or reference"
+            type="search"
+            value={unmatchedFilters.description}
+          />
+        </label>
+        <label>
+          Money in
+          <input
+            onChange={(event) => setUnmatchedFilter("moneyIn", event.target.value)}
+            placeholder="Amount"
+            type="search"
+            value={unmatchedFilters.moneyIn}
+          />
+        </label>
+        <label>
+          Money out
+          <input
+            onChange={(event) => setUnmatchedFilter("moneyOut", event.target.value)}
+            placeholder="Amount"
+            type="search"
+            value={unmatchedFilters.moneyOut}
+          />
+        </label>
+        <label>
+          Current ref
+          <input
+            onChange={(event) => setUnmatchedFilter("currentRef", event.target.value)}
+            placeholder="OTC-01436"
+            type="search"
+            value={unmatchedFilters.currentRef}
+          />
+        </label>
+        <label>
+          Suggested type
+          <select
+            onChange={(event) => setUnmatchedFilter("suggestedType", event.target.value)}
+            value={unmatchedFilters.suggestedType}
+          >
+            <option value="all">All</option>
+            <option value="customer_receipt">Customer payment in</option>
+            <option value="supplier_payment">Supplier payment out</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <button className="secondary-button" onClick={() => setUnmatchedFilters(emptyBankUnmatchedFilters)} type="button">
+          Clear filters
+        </button>
+      </div>
+      <p className="muted-note">
+        Showing {filteredUnallocatedTransactions.length} of {unallocatedTransactions.length} unmatched row(s).
+      </p>
       <div className="table-wrap">
         <table>
           <thead>
@@ -1768,49 +2020,51 @@ function BankTransactionsPage({ token }) {
             </tr>
           </thead>
           <tbody>
-            {unallocatedTransactions.length ? (
-              unallocatedTransactions.map((transaction) => (
-                <tr key={transaction.id}>
-                  <td>{formatDate(transaction.transaction_date)}</td>
-                  <td>{transaction.description || "-"}</td>
-                  <td>{formatMoney(transaction.money_in)}</td>
-                  <td>{formatMoney(transaction.money_out)}</td>
-                  <td>{transaction.booking_ref || "-"}</td>
-                  <td>
-                    <div className="inline-action inline-action-wide">
-                      <input
-                        aria-label={`Booking reference for bank transaction ${transaction.id}`}
-                        onChange={(event) => setAllocationRef(transaction.id, event.target.value)}
-                        placeholder="OTC-01436"
-                        type="text"
-                        value={allocationRefs[transaction.id] || transaction.booking_ref || ""}
-                      />
-                      <select
-                        aria-label={`Allocation type for bank transaction ${transaction.id}`}
-                        onChange={(event) => setAllocationType(transaction.id, event.target.value)}
-                        value={allocationTypes[transaction.id] || defaultBankAllocationType(transaction)}
-                      >
-                        <option value="customer_receipt">Customer payment in</option>
-                        <option value="supplier_payment">Supplier payment out</option>
-                        <option value="refund">Refund</option>
-                        <option value="bank_charge">Bank charge</option>
-                        <option value="transfer">Transfer</option>
-                        <option value="sings_settlement">SINGs settlement</option>
-                        <option value="amex_settlement">AMEX settlement</option>
-                        <option value="other">Other</option>
-                      </select>
-                      <button
-                        className="secondary-button"
-                        disabled={allocatingTransactionId === transaction.id}
-                        onClick={() => handleAllocateTransaction(transaction)}
-                        type="button"
-                      >
-                        Attach
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+            {filteredUnallocatedTransactions.length ? (
+              filteredUnallocatedTransactions.map((transaction) => {
+                const selectedType = allocationTypes[transaction.id] || defaultBankAllocationType(transaction);
+                const isHeadOfficeCost = selectedType === "head_office_cost";
+                return (
+                  <tr key={transaction.id}>
+                    <td>{formatDate(transaction.transaction_date)}</td>
+                    <td>{transaction.description || "-"}</td>
+                    <td>{formatMoney(transaction.money_in)}</td>
+                    <td>{formatMoney(transaction.money_out)}</td>
+                    <td>{transaction.booking_ref || "-"}</td>
+                    <td>
+                      <div className="inline-action inline-action-wide">
+                        <input
+                          aria-label={`Booking reference for bank transaction ${transaction.id}`}
+                          disabled={isHeadOfficeCost}
+                          onChange={(event) => setAllocationRef(transaction.id, event.target.value)}
+                          placeholder={isHeadOfficeCost ? "No booking needed" : "OTC-01436"}
+                          type="text"
+                          value={isHeadOfficeCost ? "" : allocationRefs[transaction.id] || transaction.booking_ref || ""}
+                        />
+                        <select
+                          aria-label={`Allocation type for bank transaction ${transaction.id}`}
+                          onChange={(event) => setAllocationType(transaction.id, event.target.value)}
+                          value={selectedType}
+                        >
+                          {bankAllocationOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="secondary-button"
+                          disabled={allocatingTransactionId === transaction.id}
+                          onClick={() => handleAllocateTransaction(transaction)}
+                          type="button"
+                        >
+                          {isHeadOfficeCost ? "Save" : "Attach"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             ) : (
               <tr>
                 <td colSpan="6">No unmatched bank transactions found.</td>
@@ -1819,6 +2073,117 @@ function BankTransactionsPage({ token }) {
           </tbody>
         </table>
       </div>
+
+      <div className="section-heading">
+        <h3>Imported bank rows</h3>
+        <p>Search each bank statement field and filter by type or match status.</p>
+      </div>
+      <div className="field-filter-grid bank-transaction-filters">
+        <label>
+          Date
+          <input
+            onChange={(event) => setTransactionFilter("date", event.target.value)}
+            placeholder="27 Feb 2026"
+            type="search"
+            value={transactionFilters.date}
+          />
+        </label>
+        <label>
+          Description
+          <input
+            onChange={(event) => setTransactionFilter("description", event.target.value)}
+            placeholder="Text"
+            type="search"
+            value={transactionFilters.description}
+          />
+        </label>
+        <label>
+          Money in
+          <input
+            onChange={(event) => setTransactionFilter("moneyIn", event.target.value)}
+            placeholder="Amount"
+            type="search"
+            value={transactionFilters.moneyIn}
+          />
+        </label>
+        <label>
+          Money out
+          <input
+            onChange={(event) => setTransactionFilter("moneyOut", event.target.value)}
+            placeholder="Amount"
+            type="search"
+            value={transactionFilters.moneyOut}
+          />
+        </label>
+        <label>
+          Balance
+          <input
+            onChange={(event) => setTransactionFilter("balance", event.target.value)}
+            placeholder="Amount"
+            type="search"
+            value={transactionFilters.balance}
+          />
+        </label>
+        <label>
+          Account
+          <input
+            onChange={(event) => setTransactionFilter("account", event.target.value)}
+            placeholder="Trust"
+            type="search"
+            value={transactionFilters.account}
+          />
+        </label>
+        <label>
+          Reference
+          <input
+            onChange={(event) => setTransactionFilter("reference", event.target.value)}
+            placeholder="Bank ref"
+            type="search"
+            value={transactionFilters.reference}
+          />
+        </label>
+        <label>
+          Booking ref
+          <input
+            onChange={(event) => setTransactionFilter("bookingRef", event.target.value)}
+            placeholder="OTC-01436"
+            type="search"
+            value={transactionFilters.bookingRef}
+          />
+        </label>
+        <label>
+          Type
+          <select onChange={(event) => setTransactionFilter("type", event.target.value)} value={transactionFilters.type}>
+            <option value="all">All</option>
+            {bankAllocationOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Match
+          <select
+            onChange={(event) => setTransactionFilter("match", event.target.value)}
+            value={transactionFilters.match}
+          >
+            <option value="all">All</option>
+            <option value="matched">Matched</option>
+            <option value="unmatched">Unmatched</option>
+            <option value="accounted_for_elsewhere">Accounted elsewhere</option>
+            <option value="duplicate">Duplicate</option>
+          </select>
+        </label>
+        <button
+          className="secondary-button"
+          onClick={() => setTransactionFilters(emptyBankTransactionFilters)}
+          type="button"
+        >
+          Clear filters
+        </button>
+      </div>
+      <p className="muted-note">Showing {filteredTransactions.length} of {transactions.length} imported bank row(s).</p>
 
       <div className="table-wrap">
         <table>
@@ -1837,8 +2202,8 @@ function BankTransactionsPage({ token }) {
             </tr>
           </thead>
           <tbody>
-            {transactions.length ? (
-              transactions.map((transaction) => (
+            {filteredTransactions.length ? (
+              filteredTransactions.map((transaction) => (
                 <tr key={transaction.id}>
                   <td>{formatDate(transaction.transaction_date)}</td>
                   <td>{transaction.description || "-"}</td>
@@ -1858,7 +2223,204 @@ function BankTransactionsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="10">No bank statement rows imported yet.</td>
+                <td colSpan="10">No bank statement rows match the current filters.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function HeadOfficeCostsPage({ token }) {
+  const [costs, setCosts] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [filters, setFilters] = useState(emptyHeadOfficeCostFilters);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getHeadOfficeCosts(token)
+      .then((data) => {
+        setCosts(data.costs || []);
+        setSummary(data.summary);
+        setError("");
+      })
+      .catch((loadError) => setError(loadError.message || "Head Office costs could not load."));
+  }, [token]);
+
+  function setCostFilter(fieldName, value) {
+    setFilters((current) => ({ ...current, [fieldName]: value }));
+  }
+
+  const filteredCosts = costs.filter((cost) => {
+    if (!dateMatches(cost.transaction_date, filters.date)) {
+      return false;
+    }
+    if (!textMatches(cost.description, filters.description)) {
+      return false;
+    }
+    if (!moneyMatches(cost.money_in, filters.moneyIn)) {
+      return false;
+    }
+    if (!moneyMatches(cost.money_out, filters.moneyOut)) {
+      return false;
+    }
+    if (!textMatches(cost.account_type, filters.account)) {
+      return false;
+    }
+    if (!textMatches(cost.transaction_reference, filters.reference)) {
+      return false;
+    }
+    if (filters.match !== "all" && bankMatchGroup(cost) !== filters.match) {
+      return false;
+    }
+    return true;
+  });
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Head Office Costs</h2>
+          <p>Bank transactions manually marked as Head Office costs.</p>
+        </div>
+        <Banknote size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip summary-strip-wide">
+        <div>
+          <span>Cost rows</span>
+          <strong>{summary?.total_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Money out</span>
+          <strong>{formatMoney(summary?.total_money_out)}</strong>
+        </div>
+        <div>
+          <span>Money in</span>
+          <strong>{formatMoney(summary?.total_money_in)}</strong>
+        </div>
+        <div>
+          <span>Net spend</span>
+          <strong>{formatMoney(summary?.net_spend)}</strong>
+        </div>
+        <div>
+          <span>Date range</span>
+          <strong>
+            {summary?.first_date || summary?.last_date
+              ? `${formatDate(summary?.first_date)} to ${formatDate(summary?.last_date)}`
+              : "-"}
+          </strong>
+        </div>
+      </div>
+
+      <div className="field-filter-grid bank-transaction-filters">
+        <label>
+          Date
+          <input
+            onChange={(event) => setCostFilter("date", event.target.value)}
+            placeholder="27 Feb 2026"
+            type="search"
+            value={filters.date}
+          />
+        </label>
+        <label>
+          Description
+          <input
+            onChange={(event) => setCostFilter("description", event.target.value)}
+            placeholder="Text"
+            type="search"
+            value={filters.description}
+          />
+        </label>
+        <label>
+          Money in
+          <input
+            onChange={(event) => setCostFilter("moneyIn", event.target.value)}
+            placeholder="Amount"
+            type="search"
+            value={filters.moneyIn}
+          />
+        </label>
+        <label>
+          Money out
+          <input
+            onChange={(event) => setCostFilter("moneyOut", event.target.value)}
+            placeholder="Amount"
+            type="search"
+            value={filters.moneyOut}
+          />
+        </label>
+        <label>
+          Account
+          <input
+            onChange={(event) => setCostFilter("account", event.target.value)}
+            placeholder="Trust"
+            type="search"
+            value={filters.account}
+          />
+        </label>
+        <label>
+          Reference
+          <input
+            onChange={(event) => setCostFilter("reference", event.target.value)}
+            placeholder="Bank ref"
+            type="search"
+            value={filters.reference}
+          />
+        </label>
+        <label>
+          Match
+          <select onChange={(event) => setCostFilter("match", event.target.value)} value={filters.match}>
+            <option value="all">All</option>
+            <option value="matched">Matched</option>
+            <option value="unmatched">Unmatched</option>
+          </select>
+        </label>
+        <button className="secondary-button" onClick={() => setFilters(emptyHeadOfficeCostFilters)} type="button">
+          Clear filters
+        </button>
+      </div>
+      <p className="muted-note">Showing {filteredCosts.length} of {costs.length} Head Office cost row(s).</p>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Money In</th>
+              <th>Money Out</th>
+              <th>Balance</th>
+              <th>Account</th>
+              <th>Reference</th>
+              <th>Match</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredCosts.length ? (
+              filteredCosts.map((cost) => (
+                <tr key={cost.id}>
+                  <td>{formatDate(cost.transaction_date)}</td>
+                  <td>{cost.description || "-"}</td>
+                  <td>{formatMoney(cost.money_in)}</td>
+                  <td>{formatMoney(cost.money_out)}</td>
+                  <td>{formatMoney(cost.balance)}</td>
+                  <td>{cost.account_type || "-"}</td>
+                  <td>{cost.transaction_reference || "-"}</td>
+                  <td>
+                    <span className={`status-pill status-${cost.match_status}`}>
+                      {formatStatusLabel(cost.match_status)}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="8">No Head Office costs match the current filters.</td>
               </tr>
             )}
           </tbody>
@@ -3361,6 +3923,8 @@ export default function App() {
           <AgentCommissionsPage token={token} />
         ) : activeView === "Bank Transactions" ? (
           <BankTransactionsPage token={token} />
+        ) : activeView === "Head Office Costs" ? (
+          <HeadOfficeCostsPage token={token} />
         ) : activeView === "Trust Reconciliation" ? (
           <TrustReconciliationPage token={token} />
         ) : activeView === "Exceptions" ? (

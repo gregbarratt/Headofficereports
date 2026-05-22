@@ -40,8 +40,22 @@ class BankTransactionListResponse(BaseModel):
 
 
 class BankTransactionAllocationRequest(BaseModel):
-    booking_ref: str
+    booking_ref: str | None = None
     allocation_type: str | None = None
+
+
+class HeadOfficeCostSummaryRead(BaseModel):
+    total_rows: int
+    total_money_in: Decimal
+    total_money_out: Decimal
+    net_spend: Decimal
+    first_date: date | None
+    last_date: date | None
+
+
+class HeadOfficeCostListResponse(BaseModel):
+    costs: list[BankTransactionRead]
+    summary: HeadOfficeCostSummaryRead
 
 
 class ManualTrustBalanceRead(BaseModel):

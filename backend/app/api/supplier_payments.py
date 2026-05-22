@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
 from app.db.session import get_db
-from app.models.reporting import Booking, InsuranceCost, SupplierPayment
+from app.models.reporting import AuditLog, Booking, InsuranceCost, SupplierPayment
 from app.models.user import User
 from app.schemas.supplier_payment import (
     SupplierPaymentAllocationRequest,
@@ -53,6 +53,7 @@ def get_supplier_status(
 def list_supplier_payments(
     search: str = "",
     source: str = "all",
+    match: str = "all",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin),
 ) -> SupplierPaymentListResponse:
@@ -61,10 +62,22 @@ def list_supplier_payments(
     source_filter = source.strip().lower()
     if source_filter not in {"all", "taps", "tt"}:
         source_filter = "all"
+    match_filter = match.strip().lower()
+    if match_filter not in {"all", "matched", "unmatched"}:
+        match_filter = "all"
     payment_filters = []
     booking_filters = []
     if source_filter != "all":
         payment_filters.append(SupplierPayment.payment_source == source_filter)
+    if match_filter == "matched":
+        payment_filters.append(SupplierPayment.match_status == "matched")
+    elif match_filter == "unmatched":
+        payment_filters.append(
+            or_(
+                SupplierPayment.booking_id.is_(None),
+                SupplierPayment.match_status != "matched",
+            )
+        )
     total_statement = select(func.count()).select_from(SupplierPayment)
     if source_filter != "all":
         total_statement = total_statement.where(SupplierPayment.payment_source == source_filter)
@@ -228,10 +241,10 @@ def allocate_supplier_payment_to_booking(
     current_user: User = Depends(get_current_super_admin),
 ) -> SupplierPayment:
     payment = db.get(SupplierPayment, payment_id)
-    if payment is None or payment.payment_source != "taps":
+    if payment is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="TAPs supplier payment was not found.",
+            detail="Supplier payment was not found.",
         )
 
     booking_ref = normalise_booking_ref(request.booking_ref)
@@ -248,9 +261,30 @@ def allocate_supplier_payment_to_booking(
             detail=f"Booking {booking_ref} was not found. Import the booking first, then attach the payment.",
         )
 
+    before_data = {
+        "booking_ref": payment.booking_ref,
+        "booking_id": payment.booking_id,
+        "match_status": payment.match_status,
+    }
+
     payment.booking_id = booking.id
     payment.booking_ref = booking.booking_ref
     payment.match_status = "matched"
+    db.add(
+        AuditLog(
+            actor_user_id=current_user.id,
+            action="supplier_payment_allocation",
+            table_name="supplier_payments",
+            record_id=payment.id,
+            description=f"Attached supplier payment {payment.id} to {booking.booking_ref}.",
+            before_data=before_data,
+            after_data={
+                "booking_ref": booking.booking_ref,
+                "booking_id": booking.id,
+                "match_status": payment.match_status,
+            },
+        )
+    )
     db.commit()
     db.refresh(payment)
     return payment

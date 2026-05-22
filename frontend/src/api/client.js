@@ -77,6 +77,10 @@ export async function getBankTransactions(token) {
   return apiRequest("/api/bank-transactions", { token });
 }
 
+export async function getHeadOfficeCosts(token) {
+  return apiRequest("/api/bank-transactions/head-office-costs", { token });
+}
+
 export async function allocateBankTransaction({ token, transactionId, bookingRef, allocationType }) {
   return apiRequest(`/api/bank-transactions/${transactionId}/allocate`, {
     method: "PUT",
@@ -218,13 +222,16 @@ export async function generateExceptions(token) {
   });
 }
 
-export async function getSupplierPayments(token, search = "", source = "all") {
+export async function getSupplierPayments(token, search = "", source = "all", match = "all") {
   const query = new URLSearchParams();
   if (search.trim()) {
     query.set("search", search.trim());
   }
   if (source && source !== "all") {
     query.set("source", source);
+  }
+  if (match && match !== "all") {
+    query.set("match", match);
   }
   return apiRequest(`/api/supplier-payments${query.toString() ? `?${query.toString()}` : ""}`, { token });
 }
