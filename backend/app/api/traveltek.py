@@ -10,15 +10,16 @@ from app.db.session import get_db
 from app.models.reporting import AuditLog, TraveltekBookingUpdate, TraveltekSyncRun
 from app.models.user import User
 from app.schemas.traveltek import (
+    TraveltekBookingImportRequest,
+    TraveltekBookingUpdateRead,
     TraveltekStatusResponse,
     TraveltekSyncRequest,
     TraveltekSyncRunRead,
     TraveltekUpdateStatusRequest,
     TraveltekUpdateSummary,
     TraveltekUpdatesResponse,
-    TraveltekBookingUpdateRead,
 )
-from app.services.traveltek_service import scan_active_bookings_for_traveltek_updates
+from app.services.traveltek_service import import_traveltek_bookings_by_date_range, scan_active_bookings_for_traveltek_updates
 
 
 router = APIRouter(prefix="/api/traveltek", tags=["Traveltek"])
@@ -97,6 +98,26 @@ def sync_active_bookings(
 ) -> TraveltekSyncRun:
     limit = min(request.limit, settings.traveltek_max_calls_per_run)
     return scan_active_bookings_for_traveltek_updates(db, limit=limit, actor_user_id=current_user.id)
+
+
+@router.post("/import-bookings", response_model=TraveltekSyncRunRead)
+def import_bookings_from_traveltek(
+    request: TraveltekBookingImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> TraveltekSyncRun:
+    if request.end_date < request.start_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End date must be after start date.")
+
+    limit = min(request.limit, settings.traveltek_max_calls_per_run)
+    return import_traveltek_bookings_by_date_range(
+        db=db,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        date_type=request.date_type,
+        limit=limit,
+        actor_user_id=current_user.id,
+    )
 
 
 @router.patch("/updates/{update_id}", response_model=TraveltekBookingUpdateRead)

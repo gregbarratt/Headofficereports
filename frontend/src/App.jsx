@@ -49,6 +49,7 @@ import {
   getStoredToken,
   getTrustReconciliation,
   getTraveltekUpdates,
+  importTraveltekBookings,
   getUploadBatches,
   getUploadTypes,
   generateExceptions,
@@ -259,16 +260,16 @@ function ConfigStatus({ isConfigured, configuredLabel = "Configured", missingLab
   );
 }
 
-function checkLabel(value) {
-  const labels = {
-    match: "Match",
-    mismatch: "Mismatch",
-    waiting_actual: "Awaiting actual",
-    waiting_both: "Awaiting imports",
-    waiting_human: "Awaiting TT",
-    waiting_master: "Awaiting master",
-    waiting: "Awaiting imports",
-  };
+  function checkLabel(value) {
+    const labels = {
+      match: "Match",
+      mismatch: "Mismatch",
+      waiting_actual: "Awaiting actual",
+      waiting_both: "Awaiting imports",
+      waiting_human: "Awaiting Traveltek",
+      waiting_master: "Awaiting Traveltek",
+      waiting: "Awaiting imports",
+    };
   return labels[value] || formatStatusLabel(value);
 }
 
@@ -444,13 +445,15 @@ function BookingsPage({ token }) {
             <tr>
               <th>Booking Ref</th>
               <th>Company</th>
-              <th>Status</th>
-              <th>Last Name</th>
-              <th>Destination</th>
-              <th>Departure</th>
-              <th>Return</th>
-              <th>Gross Value</th>
-              <th>Supplier Nett</th>
+                <th>Status</th>
+                <th>Customer / Lead</th>
+                <th>Agent</th>
+                <th>Destination</th>
+                <th>Departure</th>
+                <th>Return</th>
+                <th>Pax</th>
+                <th>Gross Value</th>
+                <th>Supplier Nett</th>
               <th>ATOL</th>
             </tr>
           </thead>
@@ -459,20 +462,22 @@ function BookingsPage({ token }) {
               bookings.map((booking) => (
                 <tr key={booking.id}>
                   <td>{booking.booking_ref}</td>
-                  <td>{formatSourceLabel(booking.booking_company)}</td>
-                  <td>{booking.normalised_status || "-"}</td>
-                  <td>{booking.customer_last_name || "-"}</td>
-                  <td>{booking.destination || "-"}</td>
-                  <td>{formatDate(booking.departure_date)}</td>
-                  <td>{formatDate(booking.return_date)}</td>
-                  <td>{formatMoney(booking.gross_booking_value)}</td>
+                    <td>{formatSourceLabel(booking.booking_company)}</td>
+                    <td>{booking.normalised_status || "-"}</td>
+                    <td>{booking.customer_last_name || "-"}</td>
+                    <td>{booking.agent_in_charge || "-"}</td>
+                    <td>{booking.destination || "-"}</td>
+                    <td>{formatDate(booking.departure_date)}</td>
+                    <td>{formatDate(booking.return_date)}</td>
+                    <td>{booking.passenger_count ?? "-"}</td>
+                    <td>{formatMoney(booking.gross_booking_value)}</td>
                   <td>{formatMoney(booking.expected_supplier_nett)}</td>
                   <td>{booking.atol_review_status || "-"}</td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan="10">No bookings imported yet.</td>
+                  <td colSpan="12">No bookings imported yet.</td>
               </tr>
             )}
           </tbody>
@@ -483,15 +488,22 @@ function BookingsPage({ token }) {
 }
 
 function TraveltekUpdatesPage({ token }) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const [updates, setUpdates] = useState([]);
   const [summary, setSummary] = useState(null);
   const [latestRun, setLatestRun] = useState(null);
   const [configured, setConfigured] = useState(false);
   const [statusFilter, setStatusFilter] = useState("open");
   const [syncLimit, setSyncLimit] = useState(25);
+  const [importStartDate, setImportStartDate] = useState(defaultStartDate);
+  const [importEndDate, setImportEndDate] = useState(todayIso);
+  const [importDateType, setImportDateType] = useState("departure_date");
+  const [importLimit, setImportLimit] = useState(25);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
 
   function loadUpdates(nextStatus = statusFilter) {
@@ -514,16 +526,45 @@ function TraveltekUpdatesPage({ token }) {
     setIsSyncing(true);
     setMessage("");
     setError("");
-    try {
-      const run = await syncTraveltekActiveBookings({ token, limit: Number(syncLimit) });
-      setMessage(
-        `Traveltek check finished. Checked ${run.checked_bookings} booking(s), used ${run.api_call_count} API call(s), and created ${run.proposals_created} suggestion(s).`
-      );
-      await loadUpdates(statusFilter);
-    } catch (syncError) {
-      setError(syncError.message || "Traveltek check could not run.");
+      try {
+        const run = await syncTraveltekActiveBookings({ token, limit: Number(syncLimit) });
+        setMessage(
+          `Traveltek check finished. Traveltek calls attempted: ${run.api_call_count}. Successfully checked: ${run.checked_bookings}. Suggestions created: ${run.proposals_created}.`
+        );
+        if (run.error_summary) {
+          setError(`Traveltek returned an issue: ${run.error_summary}`);
+        }
+        await loadUpdates(statusFilter);
+      } catch (syncError) {
+        setError(syncError.message || "Traveltek check could not run.");
     } finally {
       setIsSyncing(false);
+    }
+  }
+
+  async function handleBookingImport() {
+    setIsImporting(true);
+    setMessage("");
+    setError("");
+    try {
+      const run = await importTraveltekBookings({
+          token,
+          startDate: importStartDate,
+          endDate: importEndDate,
+          dateType: importDateType,
+          limit: Number(importLimit),
+        });
+      setMessage(
+          `Traveltek booking import finished. Date basis: ${importDateType === "departure_date" ? "departure date" : "booking date"}. API calls attempted: ${run.api_call_count}. Booking records checked: ${run.checked_bookings}. New or changed bookings: ${run.proposals_created}.`
+      );
+      if (run.error_summary) {
+        setError(`Traveltek returned an issue: ${run.error_summary}`);
+      }
+      await loadUpdates(statusFilter);
+    } catch (importError) {
+      setError(importError.message || "Traveltek booking import could not run.");
+    } finally {
+      setIsImporting(false);
     }
   }
 
@@ -575,16 +616,70 @@ function TraveltekUpdatesPage({ token }) {
           <span>Ignored</span>
           <strong>{summary?.ignored_count ?? 0}</strong>
         </div>
-        <div>
-          <span>Last check</span>
-          <strong>{latestRun ? formatDateTime(latestRun.started_at) : "-"}</strong>
+          <div>
+            <span>Last check</span>
+            <strong>{latestRun ? formatDateTime(latestRun.started_at) : "-"}</strong>
+          </div>
+          <div>
+            <span>Last Traveltek status</span>
+            <strong>{latestRun ? formatStatusLabel(latestRun.status) : "-"}</strong>
+          </div>
         </div>
-      </div>
 
-      <div className="traveltek-toolbar">
-        <label>
-          Suggestions
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+        {latestRun?.error_summary ? (
+          <p className="form-error">Last Traveltek issue: {latestRun.error_summary}</p>
+        ) : null}
+
+        <div className="traveltek-toolbar">
+          <label>
+            Import by
+            <select value={importDateType} onChange={(event) => setImportDateType(event.target.value)}>
+              <option value="departure_date">Departure date, newest first</option>
+              <option value="booking_date">Booking date, newest first</option>
+            </select>
+          </label>
+          <label>
+            Date from
+            <input
+              onChange={(event) => setImportStartDate(event.target.value)}
+              type="date"
+              value={importStartDate}
+            />
+          </label>
+          <label>
+            Date to
+            <input
+              onChange={(event) => setImportEndDate(event.target.value)}
+              type="date"
+              value={importEndDate}
+            />
+          </label>
+          <label>
+            Bookings to import
+            <input
+              max="500"
+              min="1"
+              onChange={(event) => setImportLimit(event.target.value)}
+              type="number"
+              value={importLimit}
+            />
+          </label>
+          <button className="primary-button" disabled={isImporting || !configured} onClick={handleBookingImport} type="button">
+            <RefreshCw size={18} aria-hidden="true" />
+            {isImporting ? "Importing" : "Import Bookings"}
+          </button>
+        </div>
+
+        <p className="muted-note">
+          Traveltek can now replace the master booking CSV. Traveltek paid and projected profit figures are imported
+          for checking, while actual receipts, supplier payments, bank entries, refunds and commissions still come
+          from their separate sources. Imports are processed newest first so Head Office can work backwards.
+        </p>
+
+        <div className="traveltek-toolbar">
+          <label>
+            Suggestions
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
             <option value="open">Open</option>
             <option value="reviewing">Reviewing</option>
             <option value="resolved">Resolved</option>
@@ -683,12 +778,12 @@ function TraveltekUpdatesPage({ token }) {
 }
 
 const adjustmentFields = [
-  ["gross_booking_value", "Gross master", "raw_gross_booking_value"],
+  ["gross_booking_value", "Gross Traveltek", "raw_gross_booking_value"],
   ["customer_sings_total", "SINGs in", "raw_customer_sings_total"],
-  ["customer_tt_total", "TT customer", "raw_customer_tt_total"],
-  ["expected_supplier_total", "Supplier master", "raw_expected_supplier_total"],
+  ["customer_tt_total", "Traveltek customer paid", "raw_customer_tt_total"],
+  ["expected_supplier_total", "Expected supplier cost", "raw_expected_supplier_total"],
   ["supplier_taps_total", "TAPs paid", "raw_supplier_taps_total"],
-  ["supplier_tt_total", "TT supplier", "raw_supplier_tt_total"],
+  ["supplier_tt_total", "Traveltek supplier paid", "raw_supplier_tt_total"],
 ];
 
 function moneyInputValue(value) {
@@ -782,7 +877,14 @@ function BookingChecksPage({ token }) {
     const searchValue = search.trim().toLowerCase();
     if (
       searchValue &&
-      ![row.booking_ref, row.customer_last_name, row.destination, row.normalised_status]
+      ![
+        row.booking_ref,
+        row.customer_last_name,
+        row.agent_in_charge,
+        row.destination,
+        row.travel_elements_raw,
+        row.normalised_status,
+      ]
         .join(" ")
         .toLowerCase()
         .includes(searchValue)
@@ -888,24 +990,29 @@ function BookingChecksPage({ token }) {
     const headers = [
       "Booking Ref",
       "Company",
-      "Customer",
+      "Customer / Lead",
+      "Agent",
       "Status",
       "Destination",
+      "Booking Elements",
       "Departure Date",
-      "Gross Master",
+      "Return Date",
+      "Passenger Count",
+      "Gross Traveltek",
       "SINGs In",
-      "TT Customer",
-      "SINGs vs Master",
-      "SINGs vs Master Variance",
-      "SINGs vs TT",
-      "SINGs vs TT Variance",
-      "Supplier Master",
+      "Traveltek Customer Paid",
+      "SINGs vs Traveltek",
+      "SINGs vs Traveltek Variance",
+      "SINGs vs Traveltek Paid",
+      "SINGs vs Traveltek Paid Variance",
+      "Expected Supplier Cost",
       "TAPs Paid",
-      "TT Supplier",
-      "TAPs vs Master",
-      "TAPs vs Master Variance",
-      "TAPs vs TT",
-      "TAPs vs TT Variance",
+      "Traveltek Supplier Paid",
+      "TAPs vs Expected Cost",
+      "TAPs vs Expected Cost Variance",
+      "TAPs vs Traveltek Supplier Paid",
+      "TAPs vs Traveltek Supplier Paid Variance",
+      "Traveltek Projected Profit",
       "Review Status",
       "Review Note",
       "Manual Adjustment",
@@ -915,9 +1022,13 @@ function BookingChecksPage({ token }) {
       row.booking_ref,
       formatSourceLabel(row.booking_company),
       row.customer_last_name || "",
+      row.agent_in_charge || "",
       row.normalised_status || "",
       row.destination || "",
+      row.travel_elements_raw || "",
       row.departure_date || "",
+      row.return_date || "",
+      row.passenger_count ?? "",
       row.gross_booking_value ?? "",
       row.customer_sings_total ?? "",
       row.customer_tt_total ?? "",
@@ -932,6 +1043,7 @@ function BookingChecksPage({ token }) {
       row.supplier_expected_variance ?? "",
       checkLabel(row.supplier_tt_check),
       row.supplier_tt_variance ?? "",
+      row.traveltek_projected_profit ?? "",
       checkLabel(row.review_status),
       row.review_note || "",
       row.has_manual_adjustment ? "Yes" : "No",
@@ -945,7 +1057,7 @@ function BookingChecksPage({ token }) {
       <div className="panel-heading">
         <div>
           <h2>Booking Checks</h2>
-          <p>Master booking values compared with actual and human-input payment imports.</p>
+          <p>Booking values compared with actual payments and Traveltek cross-check figures.</p>
         </div>
         <CircleAlert size={24} aria-hidden="true" />
       </div>
@@ -981,7 +1093,7 @@ function BookingChecksPage({ token }) {
       </div>
 
       <p className="muted-note">
-        TAPs and SINGs are treated as actual sources. TT is human input used for cross-checking.
+          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. Traveltek paid and projected profit values are imported for cross-checking.
       </p>
 
       <div className="booking-check-filters">
@@ -989,7 +1101,7 @@ function BookingChecksPage({ token }) {
           Search
           <input
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Booking ref, customer, destination or status"
+            placeholder="Booking ref, customer, agent, destination or status"
             type="search"
             value={search}
           />
@@ -1089,20 +1201,27 @@ function BookingChecksPage({ token }) {
           <thead>
             <tr>
               <th>Booking Ref</th>
-              <th>Customer</th>
+              <th>Customer / Lead</th>
+              <th>Agent</th>
               <th>Status</th>
-              <th>Gross Master</th>
+              <th>Destination</th>
+              <th>Elements</th>
+              <th>Depart</th>
+              <th>Return</th>
+              <th>Pax</th>
+              <th>Gross Traveltek</th>
               <th>SINGs In</th>
-              <th>TT Customer</th>
-              <th>SINGs vs Master</th>
-              <th>SINGs vs TT</th>
-              <th>Supplier Master</th>
+              <th>Traveltek Customer Paid</th>
+              <th>SINGs vs Traveltek</th>
+              <th>SINGs vs Traveltek Paid</th>
+              <th>Expected Supplier Cost</th>
               <th>TAPs Paid</th>
-              <th>TT Supplier</th>
-              <th>TAPs vs Master</th>
-              <th>TAPs vs TT</th>
-              <th>Review</th>
-              <th>Amend</th>
+              <th>Traveltek Supplier Paid</th>
+                <th>TAPs vs Expected</th>
+                <th>TAPs vs Traveltek Paid</th>
+                <th>Traveltek Profit</th>
+                <th>Review</th>
+                <th>Amend</th>
             </tr>
           </thead>
           <tbody>
@@ -1116,7 +1235,13 @@ function BookingChecksPage({ token }) {
                     ) : null}
                   </td>
                   <td>{row.customer_last_name || "-"}</td>
+                  <td>{row.agent_in_charge || "-"}</td>
                   <td>{row.normalised_status || "-"}</td>
+                  <td>{row.destination || "-"}</td>
+                  <td>{row.travel_elements_raw || "-"}</td>
+                  <td>{formatDate(row.departure_date)}</td>
+                  <td>{formatDate(row.return_date)}</td>
+                  <td>{row.passenger_count ?? "-"}</td>
                   <td>{formatMoney(row.gross_booking_value)}</td>
                   <td>{formatMoney(row.customer_sings_total)}</td>
                   <td>{formatMoney(row.customer_tt_total)}</td>
@@ -1135,11 +1260,12 @@ function BookingChecksPage({ token }) {
                     <CheckBadge status={row.supplier_expected_check} />
                     <span className="variance-note">{formatMoney(row.supplier_expected_variance)}</span>
                   </td>
-                  <td>
-                    <CheckBadge status={row.supplier_tt_check} />
-                    <span className="variance-note">{formatMoney(row.supplier_tt_variance)}</span>
-                  </td>
-                  <td>
+                    <td>
+                      <CheckBadge status={row.supplier_tt_check} />
+                      <span className="variance-note">{formatMoney(row.supplier_tt_variance)}</span>
+                    </td>
+                    <td>{formatMoney(row.traveltek_projected_profit)}</td>
+                    <td>
                     <CheckBadge status={row.review_status} />
                     <span className="variance-note">{row.review_note}</span>
                     {row.manual_adjustment_note ? (
@@ -1155,7 +1281,7 @@ function BookingChecksPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="15">No booking checks match the current filters.</td>
+                  <td colSpan="22">No booking checks match the current filters.</td>
               </tr>
             )}
           </tbody>
@@ -2834,7 +2960,7 @@ function AgentCommissionsPage({ token }) {
 
       <div className="section-heading">
         <h3>True profitability</h3>
-        <p>Gross value minus supplier nett, insurance, payment fees, commission and refunds.</p>
+          <p>Gross value minus supplier nett, insurance, payment fees, commission and refunds, cross-checked against Traveltek profit.</p>
       </div>
       <div className="table-wrap">
         <table>
@@ -2847,10 +2973,12 @@ function AgentCommissionsPage({ token }) {
               <th>Insurance</th>
               <th>Payment Fees</th>
               <th>Commission</th>
-              <th>Refunds</th>
-              <th>True Profit</th>
-              <th>Margin</th>
-              <th>Status</th>
+                <th>Refunds</th>
+                <th>True Profit</th>
+                <th>TT Profit</th>
+                <th>Profit Variance</th>
+                <th>Margin</th>
+                <th>Status</th>
               <th>Missing Data</th>
             </tr>
           </thead>
@@ -2865,9 +2993,11 @@ function AgentCommissionsPage({ token }) {
                   <td>{formatMoney(profit.insurance_costs)}</td>
                   <td>{formatMoney(profit.payment_fees)}</td>
                   <td>{formatMoney(profit.agent_commission)}</td>
-                  <td>{formatMoney(profit.refunds_adjustments)}</td>
-                  <td>{formatMoney(profit.true_booking_profit)}</td>
-                  <td>{profit.true_margin_percentage === null ? "-" : `${profit.true_margin_percentage}%`}</td>
+                    <td>{formatMoney(profit.refunds_adjustments)}</td>
+                    <td>{formatMoney(profit.true_booking_profit)}</td>
+                    <td>{formatMoney(profit.traveltek_projected_profit)}</td>
+                    <td>{formatMoney(profit.profit_variance_vs_traveltek)}</td>
+                    <td>{profit.true_margin_percentage === null ? "-" : `${profit.true_margin_percentage}%`}</td>
                   <td>
                     <span className={`status-pill status-${profit.true_profit_status}`}>
                       {formatStatusLabel(profit.true_profit_status)}
@@ -2878,7 +3008,7 @@ function AgentCommissionsPage({ token }) {
               ))
             ) : (
               <tr>
-                <td colSpan="12">No bookings are ready for true profit calculation yet.</td>
+                  <td colSpan="14">No bookings are ready for true profit calculation yet.</td>
               </tr>
             )}
           </tbody>

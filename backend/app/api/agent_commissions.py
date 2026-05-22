@@ -108,6 +108,7 @@ def build_true_profit_rows(
             missing_items.append("Awaiting commission data")
 
         true_profit = None
+        profit_variance_vs_traveltek = None
         if booking.gross_booking_value is not None and booking.expected_supplier_nett is not None:
             true_profit = (
                 money(booking.gross_booking_value)
@@ -117,6 +118,8 @@ def build_true_profit_rows(
                 - agent_commission
                 - refunds_adjustments
             )
+            if booking.non_trusted_projected_profit is not None:
+                profit_variance_vs_traveltek = true_profit - money(booking.non_trusted_projected_profit)
 
         if missing_items:
             status = "incomplete"
@@ -137,6 +140,10 @@ def build_true_profit_rows(
                 agent_commission=money(agent_commission),
                 refunds_adjustments=money(refunds_adjustments),
                 true_booking_profit=money(true_profit) if true_profit is not None else None,
+                traveltek_projected_profit=booking.non_trusted_projected_profit,
+                profit_variance_vs_traveltek=money(profit_variance_vs_traveltek)
+                if profit_variance_vs_traveltek is not None
+                else None,
                 true_margin_percentage=margin_percentage(true_profit, booking.gross_booking_value),
                 true_profit_status=status,
                 missing_items=missing_items,

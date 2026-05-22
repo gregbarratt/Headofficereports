@@ -268,6 +268,14 @@ export async function syncTraveltekActiveBookings({ token, limit }) {
   });
 }
 
+export async function importTraveltekBookings({ token, startDate, endDate, dateType, limit }) {
+  return apiRequest("/api/traveltek/import-bookings", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ start_date: startDate, end_date: endDate, date_type: dateType, limit }),
+  });
+}
+
 export async function updateTraveltekUpdateStatus({ token, updateId, status }) {
   return apiRequest(`/api/traveltek/updates/${updateId}`, {
     method: "PATCH",

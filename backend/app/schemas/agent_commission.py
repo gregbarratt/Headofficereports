@@ -31,6 +31,8 @@ class TrueProfitRead(BaseModel):
     agent_commission: Decimal
     refunds_adjustments: Decimal
     true_booking_profit: Decimal | None
+    traveltek_projected_profit: Decimal | None
+    profit_variance_vs_traveltek: Decimal | None
     true_margin_percentage: Decimal | None
     true_profit_status: str
     missing_items: list[str]

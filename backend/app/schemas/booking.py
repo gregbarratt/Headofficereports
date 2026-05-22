@@ -11,10 +11,12 @@ class BookingRead(BaseModel):
     imported_booking_status: str | None
     normalised_status: str | None
     customer_last_name: str | None
+    agent_in_charge: str | None
     destination: str | None
     travel_elements_raw: str | None
     departure_date: date | None
     return_date: date | None
+    passenger_count: int | None
     booking_date: datetime | None
     customer_balance_due_date: date | None
     imported_customer_outstanding: Decimal | None
@@ -43,8 +45,12 @@ class BookingCheckRow(BaseModel):
     booking_company: str
     normalised_status: str | None
     customer_last_name: str | None
+    agent_in_charge: str | None
     destination: str | None
+    travel_elements_raw: str | None
     departure_date: date | None
+    return_date: date | None = None
+    passenger_count: int | None = None
     gross_booking_value: Decimal | None
     expected_supplier_nett: Decimal | None
     insurance_cost_total: Decimal
@@ -69,6 +75,7 @@ class BookingCheckRow(BaseModel):
     raw_supplier_tt_total: Decimal
     raw_customer_sings_total: Decimal
     raw_customer_tt_total: Decimal
+    traveltek_projected_profit: Decimal | None
     manual_adjustments: dict[str, Decimal]
     manual_adjustment_note: str | None
     has_manual_adjustment: bool

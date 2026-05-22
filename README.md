@@ -482,19 +482,39 @@ The required private Render environment variables are:
 
 Do not commit API keys to GitHub.
 
-## Traveltek Booking Update Review
+## Traveltek Booking Data Import and Update Review
 
-Traveltek is used as an input source for booking facts only. It does not replace the Head Office database automatically.
+Traveltek can now replace the manual master booking CSV for booking data.
 
-The Traveltek Updates page can check active bookings already in the system against Traveltek and create review suggestions when booking details look different.
+The Traveltek Updates page has two actions:
 
-The first safe version:
+- Import bookings from Traveltek for a selected date range
+- Check existing active bookings by booking reference and create review suggestions
 
-- checks existing active bookings by booking reference
-- uses one Traveltek API call per booking checked
-- creates suggested updates for review
-- shows what the system currently has and what Traveltek returned
-- does not overwrite booking records automatically
+The import control can work backwards by:
+
+- departure date, newest first
+- booking date, newest first
+
+Use departure date when Head Office wants to reconcile upcoming or recently travelled bookings first. Use booking date when the Traveltek account only returns bookings by created/booked date.
+
+The booking import stores Traveltek booking framework fields including status, customer name, destination, elements, departure date, return date, booking date, due date, gross booking value, expected supplier nett, customer paid, supplier paid and projected profit.
+
+Traveltek customer paid, supplier paid and projected profit are stored as cross-check figures. They are shown against SINGs customer receipts, TAPs supplier payments and calculated true profit, but they do not silently replace those actual sources.
+
+Traveltek is the main source for these booking framework fields:
+
+- booking reference
+- customer / lead name
+- agent in charge, if Traveltek returns it
+- booking status
+- destination
+- departure date
+- return date
+- passenger count
+- booking elements
+- gross booking value
+- expected supplier cost, cross-checked with supplier reports
 
 The required private Render environment variables are:
 

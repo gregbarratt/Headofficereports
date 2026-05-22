@@ -140,7 +140,13 @@ def adjustment_note(adjustments: dict[str, BookingCheckAdjustment]) -> str | Non
 
 
 def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> BookingChecksResponse:
-    bookings = list(db.scalars(select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(limit)))
+    bookings = list(
+        db.scalars(
+            select(Booking)
+            .order_by(Booking.departure_date.desc().nullslast(), Booking.updated_at.desc(), Booking.id.desc())
+            .limit(limit)
+        )
+    )
     supplier_totals = grouped_supplier_totals(db)
     customer_totals = grouped_customer_totals(db)
     insurance_totals = grouped_insurance_totals(db)
@@ -149,9 +155,15 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
     rows: list[BookingCheckRow] = []
     for booking in bookings:
         raw_supplier_taps_total = supplier_totals.get((booking.booking_ref, "taps"), ZERO)
-        raw_supplier_tt_total = supplier_totals.get((booking.booking_ref, "tt"), ZERO)
+        raw_supplier_tt_total = supplier_totals.get(
+            (booking.booking_ref, "tt"),
+            money(booking.non_trusted_paid_supplier) if booking.non_trusted_paid_supplier is not None else ZERO,
+        )
         raw_customer_sings_total = customer_totals.get((booking.booking_ref, "sings"), ZERO)
-        raw_customer_tt_total = customer_totals.get((booking.booking_ref, "tt"), ZERO)
+        raw_customer_tt_total = customer_totals.get(
+            (booking.booking_ref, "tt"),
+            money(booking.non_trusted_total_received) if booking.non_trusted_total_received is not None else ZERO,
+        )
         insurance_cost_total = insurance_totals.get(booking.booking_ref, ZERO)
 
         raw_expected_supplier_total = None
@@ -195,8 +207,12 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
                 booking_company=booking.booking_company,
                 normalised_status=booking.normalised_status,
                 customer_last_name=booking.customer_last_name,
+                agent_in_charge=booking.agent_in_charge,
                 destination=booking.destination,
+                travel_elements_raw=booking.travel_elements_raw,
                 departure_date=booking.departure_date,
+                return_date=booking.return_date,
+                passenger_count=booking.passenger_count,
                 gross_booking_value=gross_booking_value,
                 expected_supplier_nett=booking.expected_supplier_nett,
                 insurance_cost_total=money(insurance_cost_total),
@@ -221,6 +237,7 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
                 raw_supplier_tt_total=money(raw_supplier_tt_total),
                 raw_customer_sings_total=money(raw_customer_sings_total),
                 raw_customer_tt_total=money(raw_customer_tt_total),
+                traveltek_projected_profit=booking.non_trusted_projected_profit,
                 manual_adjustments=adjustment_values(adjustments),
                 manual_adjustment_note=adjustment_note(adjustments),
                 has_manual_adjustment=bool(adjustments),
@@ -242,7 +259,13 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
 
 
 def build_booking_checks_summary(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> BookingChecksSummary:
-    bookings = list(db.scalars(select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(limit)))
+    bookings = list(
+        db.scalars(
+            select(Booking)
+            .order_by(Booking.departure_date.desc().nullslast(), Booking.updated_at.desc(), Booking.id.desc())
+            .limit(limit)
+        )
+    )
     supplier_totals = grouped_supplier_totals(db)
     customer_totals = grouped_customer_totals(db)
     insurance_totals = grouped_insurance_totals(db)
@@ -258,9 +281,15 @@ def build_booking_checks_summary(db: Session, limit: int = BOOKING_CHECK_ROW_LIM
 
     for booking in bookings:
         raw_supplier_taps_total = supplier_totals.get((booking.booking_ref, "taps"), ZERO)
-        raw_supplier_tt_total = supplier_totals.get((booking.booking_ref, "tt"), ZERO)
+        raw_supplier_tt_total = supplier_totals.get(
+            (booking.booking_ref, "tt"),
+            money(booking.non_trusted_paid_supplier) if booking.non_trusted_paid_supplier is not None else ZERO,
+        )
         raw_customer_sings_total = customer_totals.get((booking.booking_ref, "sings"), ZERO)
-        raw_customer_tt_total = customer_totals.get((booking.booking_ref, "tt"), ZERO)
+        raw_customer_tt_total = customer_totals.get(
+            (booking.booking_ref, "tt"),
+            money(booking.non_trusted_total_received) if booking.non_trusted_total_received is not None else ZERO,
+        )
         insurance_cost_total = insurance_totals.get(booking.booking_ref, ZERO)
 
         raw_expected_supplier_total = None

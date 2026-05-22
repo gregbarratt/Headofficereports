@@ -1,9 +1,16 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
 
 class TraveltekSyncRequest(BaseModel):
+    limit: int = Field(default=25, ge=1, le=500)
+
+
+class TraveltekBookingImportRequest(BaseModel):
+    start_date: date
+    end_date: date
+    date_type: str = Field(default="departure_date", pattern="^(departure_date|booking_date)$")
     limit: int = Field(default=25, ge=1, le=500)
 
 

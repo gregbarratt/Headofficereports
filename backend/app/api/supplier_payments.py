@@ -161,7 +161,10 @@ def list_supplier_payments(
     reconciliations = []
     for booking in db.scalars(booking_statement):
         supplier_payments_taps_total = totals_by_booking_and_source.get((booking.booking_ref, "taps"), ZERO)
-        supplier_payments_tt_total = totals_by_booking_and_source.get((booking.booking_ref, "tt"), ZERO)
+        supplier_payments_tt_total = totals_by_booking_and_source.get(
+            (booking.booking_ref, "tt"),
+            money(booking.non_trusted_paid_supplier) if booking.non_trusted_paid_supplier is not None else ZERO,
+        )
         insurance_cost_total = insurance_totals_by_booking.get(booking.booking_ref, ZERO)
         total_expected_booking_cost = None
         if booking.expected_supplier_nett is not None:
