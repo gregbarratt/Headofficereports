@@ -91,6 +91,7 @@ class Settings(BaseSettings):
             self.traveltek_api_base_url.strip()
             and self.traveltek_username.strip()
             and self.traveltek_password.strip()
+            and self.traveltek_sitename.strip()
         )
 
 

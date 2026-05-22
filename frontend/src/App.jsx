@@ -596,7 +596,7 @@ function TraveltekUpdatesPage({ token }) {
       {message ? <p className="form-success">{message}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
         {!configured ? (
-          <p className="form-error">Traveltek API is not configured yet. Add the Traveltek username and password in Render.</p>
+          <p className="form-error">Traveltek API is not configured yet. Add the Traveltek username, password and sitename in Render.</p>
         ) : null}
 
       <div className="summary-strip summary-strip-wide">
@@ -3978,7 +3978,7 @@ function SettingsPage({ token }) {
         <strong>
           <ConfigStatus isConfigured={traveltek.password_configured} />
         </strong>
-        <span>Traveltek sitename optional</span>
+        <span>Traveltek sitename</span>
         <strong>
           <ConfigStatus isConfigured={traveltek.sitename_configured} />
         </strong>
