@@ -1561,7 +1561,7 @@ function BookingChecksPage({ token }) {
       "Last Booking Update",
       "Traveltek Total Cost",
       "Traveltek Total Amount Paid",
-      "Traveltek Outstanding",
+      "Customer Outstanding (Travel Tek)",
       "SINGs In",
       "SINGs vs Traveltek Paid",
       "SINGs vs Traveltek Paid Variance",
@@ -1783,7 +1783,7 @@ function BookingChecksPage({ token }) {
               <th>Last Booking Update</th>
               <th>Traveltek Total Cost</th>
               <th>Traveltek Total Amount Paid</th>
-              <th>Traveltek Outstanding</th>
+              <th>Customer Outstanding (Travel Tek)</th>
               <th>SINGs In</th>
               <th>SINGs vs Traveltek Paid</th>
               <th>Traveltek Total Due</th>

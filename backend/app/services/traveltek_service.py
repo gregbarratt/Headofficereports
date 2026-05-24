@@ -82,12 +82,37 @@ FIELD_DEFINITIONS = {
     },
     "return_date": {
         "label": "Return date",
-        "candidates": ("returndate", "returneddate", "enddate"),
+        "candidates": (
+            "returndate",
+            "returneddate",
+            "retdate",
+            "returningdate",
+            "dateback",
+            "dateofreturn",
+            "holidayenddate",
+            "enddate",
+            "todate",
+            "arrivaldate",
+            "checkoutdate",
+            "check_out_date",
+        ),
         "parser": "date",
     },
     "passenger_count": {
         "label": "Passenger count",
-        "candidates": ("pax", "paxcount", "passengercount", "totalpax", "numberofpassengers", "noofpassengers"),
+        "candidates": (
+            "pax",
+            "paxcount",
+            "passengercount",
+            "passengers",
+            "totalpax",
+            "totalpassengers",
+            "passengertotal",
+            "numberofpassengers",
+            "noofpassengers",
+            "numberofpax",
+            "noofpax",
+        ),
         "parser": "int",
     },
     "booking_date": {
@@ -177,7 +202,7 @@ FIELD_DEFINITIONS = {
         "parser": "money",
     },
 }
-AUTO_APPLY_FIELD_NAMES = {"non_trusted_total_due"}
+AUTO_APPLY_FIELD_NAMES = {"non_trusted_total_due", "passenger_count", "return_date"}
 REVIEW_FIELD_NAMES = set(FIELD_DEFINITIONS) - AUTO_APPLY_FIELD_NAMES - {"non_trusted_projected_profit"}
 BOOKING_REFERENCE_CANDIDATES = (
     "bookingreference",
@@ -202,6 +227,80 @@ SUPPLIER_REFERENCE_KEYS = {
     "supplierconfirmationreference",
     "providerreference",
     "providerref",
+}
+RETURN_DATE_KEY_HINTS = {
+    "returndate",
+    "returneddate",
+    "retdate",
+    "returningdate",
+    "dateback",
+    "dateofreturn",
+    "holidayenddate",
+    "enddate",
+    "todate",
+    "arrivaldate",
+    "checkoutdate",
+    "checkout",
+}
+RETURN_DATE_EXCLUDED_KEY_HINTS = {
+    "birth",
+    "booked",
+    "booking",
+    "created",
+    "customerbalance",
+    "deposit",
+    "due",
+    "method",
+    "payment",
+    "request",
+    "startdate",
+    "supplier",
+}
+PASSENGER_TOTAL_KEYS = {
+    "pax",
+    "paxcount",
+    "passengercount",
+    "passengers",
+    "totalpax",
+    "totalpassengers",
+    "passengertotal",
+    "numberofpassengers",
+    "noofpassengers",
+    "numberofpax",
+    "noofpax",
+}
+PASSENGER_PART_KEYS = {
+    "adult",
+    "adults",
+    "adultcount",
+    "numberofadults",
+    "noofadults",
+    "children",
+    "child",
+    "childcount",
+    "numberofchildren",
+    "noofchildren",
+    "infant",
+    "infants",
+    "infantcount",
+    "numberofinfants",
+    "noofinfants",
+}
+PASSENGER_ROW_NAMES = {"passenger", "passengerrow", "passengerdetail", "pax", "paxrow"}
+PASSENGER_CONTAINER_NAMES = {"passengers", "passengerlist", "passengerdetails", "paxlist"}
+PASSENGER_PERSON_KEYS = {
+    "firstname",
+    "forename",
+    "lastname",
+    "surname",
+    "passengername",
+    "name",
+    "title",
+    "dob",
+    "dateofbirth",
+    "lead",
+    "passengertype",
+    "type",
 }
 
 
@@ -400,14 +499,129 @@ def parse_traveltek_value(value: str | None, parser: str) -> Any:
     if parser == "money":
         return parse_money(value)
     if parser == "date":
-        return parse_date(value)
+        try:
+            return parse_date(value)
+        except ValueError:
+            text = str(value).strip().replace("Z", "+00:00")
+            return datetime.fromisoformat(text).date()
     if parser == "datetime":
-        return parse_datetime(value)
+        try:
+            return parse_datetime(value)
+        except ValueError:
+            text = str(value).strip().replace("Z", "+00:00")
+            return datetime.fromisoformat(text)
     if parser == "int":
         return parse_int(value)
     if parser == "status":
         return value.strip()
     return value.strip() or None
+
+
+def parse_optional_traveltek_date(value: str | None) -> date | None:
+    try:
+        parsed = parse_traveltek_value(value, "date")
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, date) else None
+
+
+def parse_optional_traveltek_int(value: str | None) -> int | None:
+    try:
+        parsed = parse_traveltek_value(value, "int")
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, int) else None
+
+
+def derive_return_date(flattened: dict[str, str], departure_date: date | None) -> date | None:
+    candidates: list[date] = []
+    for key, value in flattened.items():
+        normalised_key = normalise_key(key)
+        if not any(hint in normalised_key for hint in RETURN_DATE_KEY_HINTS):
+            continue
+        if any(hint in normalised_key for hint in RETURN_DATE_EXCLUDED_KEY_HINTS):
+            continue
+
+        parsed_date = parse_optional_traveltek_date(value)
+        if parsed_date is None:
+            continue
+        if departure_date and parsed_date < departure_date:
+            continue
+        candidates.append(parsed_date)
+
+    if not candidates:
+        return None
+    return max(candidates)
+
+
+def derive_passenger_count_from_values(flattened: dict[str, str]) -> int | None:
+    normalised_values = {
+        normalise_key(key): value
+        for key, value in flattened.items()
+        if value not in {None, ""}
+    }
+
+    for key in PASSENGER_TOTAL_KEYS:
+        parsed_value = parse_optional_traveltek_int(normalised_values.get(key))
+        if is_plausible_traveltek_value("passenger_count", parsed_value):
+            return parsed_value
+
+    passenger_parts: list[int] = []
+    for key, value in normalised_values.items():
+        if key not in PASSENGER_PART_KEYS:
+            continue
+        parsed_value = parse_optional_traveltek_int(value)
+        if parsed_value is not None and 0 <= parsed_value <= 99:
+            passenger_parts.append(parsed_value)
+
+    total = sum(passenger_parts)
+    if passenger_parts and is_plausible_traveltek_value("passenger_count", total):
+        return total
+    return None
+
+
+def element_has_nested_passenger_rows(element: ElementTree.Element) -> bool:
+    for child in element.iter():
+        if child is element:
+            continue
+        child_name = normalise_key(local_name(child.tag))
+        if child_name in PASSENGER_ROW_NAMES:
+            return True
+    return False
+
+
+def element_looks_like_passenger_row(element: ElementTree.Element) -> bool:
+    element_name = normalise_key(local_name(element.tag))
+    if element_name in PASSENGER_CONTAINER_NAMES:
+        return False
+    if element_name not in PASSENGER_ROW_NAMES and "passenger" not in element_name:
+        return False
+    if element_has_nested_passenger_rows(element):
+        return False
+
+    flattened = flatten_xml(element, {})
+    element_keys = {normalise_key(key) for key in element.attrib}
+    element_keys.update(normalise_key(key) for key in flattened)
+    element_keys.update(normalise_key(local_name(child.tag)) for child in element)
+    if element_keys.intersection(PASSENGER_PERSON_KEYS):
+        return True
+
+    text = direct_text(element)
+    return element_name in {"passenger", "pax"} and bool(text and any(character.isalpha() for character in text))
+
+
+def derive_passenger_count_from_xml(root: ElementTree.Element | None) -> int | None:
+    if root is None:
+        return None
+
+    count = sum(1 for element in root.iter() if element_looks_like_passenger_row(element))
+    if is_plausible_traveltek_value("passenger_count", count):
+        return count
+    return None
+
+
+def derive_passenger_count(flattened: dict[str, str], root: ElementTree.Element | None) -> int | None:
+    return derive_passenger_count_from_values(flattened) or derive_passenger_count_from_xml(root)
 
 
 def is_plausible_traveltek_value(field_name: str, value: Any) -> bool:
@@ -563,7 +777,7 @@ def call_traveltek(action: str, attributes: dict[str, str], *, secure_endpoint: 
 def fetch_booking_detail(attributes: dict[str, str]) -> TraveltekBookingData:
     root = call_traveltek("getportfolio", attributes, secure_endpoint=True)
     flattened = flatten_xml(root)
-    values = extract_booking_values(flattened)
+    values = extract_booking_values(flattened, root)
     supplier_references = collect_supplier_references(root, flattened)
     if supplier_references:
         values["supplier_references_raw"] = " | ".join(supplier_references)
@@ -590,7 +804,7 @@ def fetch_booking_for_existing_booking(booking: Booking) -> TraveltekBookingData
     return fetch_booking_by_reference(booking.booking_ref)
 
 
-def extract_booking_values(flattened: dict[str, str]) -> dict[str, Any]:
+def extract_booking_values(flattened: dict[str, str], root: ElementTree.Element | None = None) -> dict[str, Any]:
     booking_ref = normalise_booking_ref(value_from_candidates(flattened, BOOKING_REF_CANDIDATES))
     booking_id = value_from_candidates(flattened, BOOKING_ID_CANDIDATES)
     values: dict[str, Any] = {}
@@ -608,6 +822,16 @@ def extract_booking_values(flattened: dict[str, str]) -> dict[str, Any]:
             parsed_value = None
         if is_plausible_traveltek_value(field_name, parsed_value):
             values[field_name] = parsed_value
+
+    if "return_date" not in values:
+        derived_return_date = derive_return_date(flattened, values.get("departure_date"))
+        if is_plausible_traveltek_value("return_date", derived_return_date):
+            values["return_date"] = derived_return_date
+
+    if "passenger_count" not in values:
+        derived_passenger_count = derive_passenger_count(flattened, root)
+        if is_plausible_traveltek_value("passenger_count", derived_passenger_count):
+            values["passenger_count"] = derived_passenger_count
 
     imported_status = values.get("imported_booking_status")
     if imported_status is not None:
@@ -679,7 +903,7 @@ def sort_booking_elements(elements: list[ElementTree.Element], date_type: str) -
     sort_field = "departure_date" if date_type == "departure_date" else "booking_date"
 
     def sort_key(element: ElementTree.Element) -> tuple[date, str]:
-        values = extract_booking_values(flatten_xml(element, {}))
+        values = extract_booking_values(flatten_xml(element, {}), element)
         date_value = values.get(sort_field)
         if isinstance(date_value, datetime):
             return date_value.date(), str(values.get("booking_ref") or "")
@@ -819,7 +1043,7 @@ def import_traveltek_bookings_by_date_range(
 
     for booking_element in booking_elements:
         flattened = flatten_xml(booking_element, {})
-        values = extract_booking_values(flattened)
+        values = extract_booking_values(flattened, booking_element)
         lookup_attributes = booking_detail_lookup_attributes(flattened)
         lookup_label = values.get("booking_ref") or lookup_attributes.get("bookingreference") or lookup_attributes.get("bookingid")
         if lookup_attributes and run.api_call_count < max_api_calls:
