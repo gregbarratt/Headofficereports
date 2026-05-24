@@ -491,12 +491,7 @@ The Traveltek Updates page has two actions:
 - Import bookings from Traveltek for a selected date range
 - Check existing active bookings by booking reference and create review suggestions
 
-The Traveltek `getbookings` document says the import date range is a booking date range. That means the system should import by booking date, store the Traveltek departure and return dates, then let Head Office work backwards by departure date inside Booking Checks.
-
-The import control can order the imported results by:
-
-- booking date from Traveltek
-- newest departure dates first, after Traveltek has returned the bookings
+The Traveltek `getbookings` document says the import date range is a booking date range. The Traveltek Updates page therefore searches by booking date only. The system stores Traveltek departure and return dates on the booking record, then Head Office can review by travel date inside Booking Checks.
 
 The booking import stores Traveltek booking framework fields including status, customer name, destination, elements, departure date, return date, booking date, due date, gross booking value, expected supplier nett, customer paid, supplier paid and projected profit.
 

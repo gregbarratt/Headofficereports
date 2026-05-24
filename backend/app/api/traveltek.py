@@ -115,7 +115,7 @@ def import_bookings_from_traveltek(
         db=db,
         start_date=request.start_date,
         end_date=request.end_date,
-        date_type=request.date_type,
+        date_type="booking_date",
         limit=limit,
         actor_user_id=current_user.id,
     )

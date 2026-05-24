@@ -229,6 +229,10 @@ function defaultSyncStartDate() {
   return toDateInputValue(dateValue);
 }
 
+function isTraveltekNoRowsMessage(value) {
+  return String(value || "").toLowerCase().includes("returned no booking rows");
+}
+
   function formatStatusLabel(value) {
     if (!value) {
       return "-";
@@ -509,7 +513,6 @@ function TraveltekUpdatesPage({ token }) {
   const [syncLimit, setSyncLimit] = useState(25);
   const [importStartDate, setImportStartDate] = useState(defaultStartDate);
   const [importEndDate, setImportEndDate] = useState(todayIso);
-  const [importDateType, setImportDateType] = useState("booking_date");
   const [importLimit, setImportLimit] = useState(25);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -562,14 +565,20 @@ function TraveltekUpdatesPage({ token }) {
           token,
           startDate: importStartDate,
           endDate: importEndDate,
-          dateType: importDateType,
           limit: Number(importLimit),
         });
       setMessage(
-          `Traveltek booking import finished. Traveltek search: booking date. Display order: ${importDateType === "departure_date" ? "newest departures first" : "newest booking dates first"}. API calls attempted: ${run.api_call_count}. Booking records checked: ${run.checked_bookings}. New or changed bookings: ${run.proposals_created}.`
+          `Traveltek booking-date search finished. API calls attempted: ${run.api_call_count}. Booking records checked: ${run.checked_bookings}. New or changed bookings: ${run.proposals_created}.`
         );
         if (run.error_summary) {
-          setError(`Traveltek returned an issue: ${redactSensitiveText(run.error_summary)}`);
+          const safeSummary = redactSensitiveText(run.error_summary);
+          if (isTraveltekNoRowsMessage(safeSummary)) {
+            setMessage(
+              `Traveltek booking-date search finished. No booking rows were returned for ${formatDate(importStartDate)} to ${formatDate(importEndDate)}. Try a wider booking-date range if needed.`
+            );
+          } else {
+            setError(`Traveltek returned an issue: ${safeSummary}`);
+          }
         }
       await loadUpdates(statusFilter);
     } catch (importError) {
@@ -635,22 +644,31 @@ function TraveltekUpdatesPage({ token }) {
             <span>Last Traveltek status</span>
             <strong>{latestRun ? formatStatusLabel(latestRun.status) : "-"}</strong>
           </div>
+          <div>
+            <span>Search basis</span>
+            <strong>Booking date</strong>
+          </div>
+          <div>
+            <span>Detail lookup</span>
+            <strong>Secure portfolio</strong>
+          </div>
         </div>
 
         {latestRun?.error_summary ? (
-          <p className="form-error">Last Traveltek issue: {redactSensitiveText(latestRun.error_summary)}</p>
+          isTraveltekNoRowsMessage(latestRun.error_summary) ? (
+            <p className="muted-note">Last Traveltek note: {redactSensitiveText(latestRun.error_summary)}</p>
+          ) : (
+            <p className="form-error">Last Traveltek issue: {redactSensitiveText(latestRun.error_summary)}</p>
+          )
         ) : null}
 
         <div className="traveltek-toolbar">
           <label>
-            Import and order by
-            <select value={importDateType} onChange={(event) => setImportDateType(event.target.value)}>
-              <option value="booking_date">Booking date from Traveltek</option>
-              <option value="departure_date">Booking date search, newest departures first</option>
-            </select>
+            Traveltek search
+            <input readOnly value="Booking date" />
           </label>
           <label>
-            Date from
+            Booking date from
             <input
               onChange={(event) => setImportStartDate(event.target.value)}
               type="date"
@@ -658,7 +676,7 @@ function TraveltekUpdatesPage({ token }) {
             />
           </label>
           <label>
-            Date to
+            Booking date to
             <input
               onChange={(event) => setImportEndDate(event.target.value)}
               type="date"
@@ -682,11 +700,8 @@ function TraveltekUpdatesPage({ token }) {
         </div>
 
         <p className="muted-note">
-          Traveltek can now replace the master booking CSV. The Traveltek API document says booking imports search by
-          booking date, then the system stores departure and return dates so Head Office can work backwards from the
-          newest travel dates inside Booking Checks. Traveltek paid and projected profit figures are imported for
-          checking, while actual receipts, supplier payments, bank entries, refunds and commissions still come from
-          their separate sources.
+          Traveltek searches by booking date. Departure and return dates are stored on each booking, so Booking Checks
+          can still be reviewed by travel date after the booking data has been imported.
         </p>
 
         <div className="traveltek-toolbar">

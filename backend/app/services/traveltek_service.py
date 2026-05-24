@@ -477,7 +477,7 @@ def import_traveltek_bookings_by_date_range(
     limit: int,
     actor_user_id: int | None,
 ) -> TraveltekSyncRun:
-    normalised_date_type = date_type if date_type in {"booking_date", "departure_date"} else "departure_date"
+    normalised_date_type = "booking_date"
     run = TraveltekSyncRun(sync_type=f"booking_import_{normalised_date_type}", requested_by_user_id=actor_user_id)
     db.add(run)
     db.flush()
@@ -515,8 +515,7 @@ def import_traveltek_bookings_by_date_range(
     if not booking_elements:
         no_rows_message = (
             "Traveltek accepted the request but returned no booking rows. "
-            "The Traveltek getbookings document says this search uses booking date, not departure date. "
-            "Try a wider booking-date range, then use Booking Checks to work by departure date."
+            "This search uses Traveltek booking date. Try a wider booking-date range if you expected results."
         )
         if any("returned no booking rows" in error for error in attempt_errors):
             run.status = "completed"
