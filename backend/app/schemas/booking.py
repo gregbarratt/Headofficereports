@@ -92,6 +92,7 @@ class BookingCheckRow(BaseModel):
     manual_adjustments: dict[str, Decimal]
     manual_adjustment_note: str | None
     has_manual_adjustment: bool
+    updated_at: datetime
 
 
 class BookingChecksSummary(BaseModel):

@@ -155,14 +155,16 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
     rows: list[BookingCheckRow] = []
     for booking in bookings:
         raw_supplier_taps_total = supplier_totals.get((booking.booking_ref, "taps"), ZERO)
-        raw_supplier_tt_total = supplier_totals.get(
-            (booking.booking_ref, "tt"),
-            money(booking.non_trusted_paid_supplier) if booking.non_trusted_paid_supplier is not None else ZERO,
+        raw_supplier_tt_total = (
+            money(booking.non_trusted_paid_supplier)
+            if booking.non_trusted_paid_supplier is not None
+            else supplier_totals.get((booking.booking_ref, "tt"), ZERO)
         )
         raw_customer_sings_total = customer_totals.get((booking.booking_ref, "sings"), ZERO)
-        raw_customer_tt_total = customer_totals.get(
-            (booking.booking_ref, "tt"),
-            money(booking.non_trusted_total_received) if booking.non_trusted_total_received is not None else ZERO,
+        raw_customer_tt_total = (
+            money(booking.non_trusted_total_received)
+            if booking.non_trusted_total_received is not None
+            else customer_totals.get((booking.booking_ref, "tt"), ZERO)
         )
         insurance_cost_total = insurance_totals.get(booking.booking_ref, ZERO)
 
@@ -187,7 +189,6 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
         customer_expected_check = "not_checked"
         customer_tt_check = trusted_vs_human_check(customer_sings_total, customer_tt_total)
         row_review_status, row_review_note = review_status(
-            supplier_expected_check,
             supplier_tt_check,
             customer_tt_check,
         )
@@ -245,6 +246,7 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
                 manual_adjustments=adjustment_values(adjustments),
                 manual_adjustment_note=adjustment_note(adjustments),
                 has_manual_adjustment=bool(adjustments),
+                updated_at=booking.updated_at,
             )
         )
 
@@ -285,14 +287,16 @@ def build_booking_checks_summary(db: Session, limit: int = BOOKING_CHECK_ROW_LIM
 
     for booking in bookings:
         raw_supplier_taps_total = supplier_totals.get((booking.booking_ref, "taps"), ZERO)
-        raw_supplier_tt_total = supplier_totals.get(
-            (booking.booking_ref, "tt"),
-            money(booking.non_trusted_paid_supplier) if booking.non_trusted_paid_supplier is not None else ZERO,
+        raw_supplier_tt_total = (
+            money(booking.non_trusted_paid_supplier)
+            if booking.non_trusted_paid_supplier is not None
+            else supplier_totals.get((booking.booking_ref, "tt"), ZERO)
         )
         raw_customer_sings_total = customer_totals.get((booking.booking_ref, "sings"), ZERO)
-        raw_customer_tt_total = customer_totals.get(
-            (booking.booking_ref, "tt"),
-            money(booking.non_trusted_total_received) if booking.non_trusted_total_received is not None else ZERO,
+        raw_customer_tt_total = (
+            money(booking.non_trusted_total_received)
+            if booking.non_trusted_total_received is not None
+            else customer_totals.get((booking.booking_ref, "tt"), ZERO)
         )
         insurance_cost_total = insurance_totals.get(booking.booking_ref, ZERO)
 
@@ -312,17 +316,15 @@ def build_booking_checks_summary(db: Session, limit: int = BOOKING_CHECK_ROW_LIM
         customer_sings_total = money(adjusted_amount(adjustments, "customer_sings_total", raw_customer_sings_total))
         customer_tt_total = money(adjusted_amount(adjustments, "customer_tt_total", raw_customer_tt_total))
 
-        checks = (
-            trusted_vs_expected_check(expected_supplier_total, supplier_taps_total),
-            trusted_vs_human_check(supplier_taps_total, supplier_tt_total),
-            trusted_vs_human_check(customer_sings_total, customer_tt_total),
-        )
+        supplier_expected_check = trusted_vs_expected_check(expected_supplier_total, supplier_taps_total)
+        supplier_tt_check = trusted_vs_human_check(supplier_taps_total, supplier_tt_total)
+        customer_tt_check = trusted_vs_human_check(customer_sings_total, customer_tt_total)
 
-        supplier_expected_matches += checks[0] == "match"
-        supplier_tt_matches += checks[1] == "match"
-        customer_tt_matches += checks[2] == "match"
+        supplier_expected_matches += supplier_expected_check == "match"
+        supplier_tt_matches += supplier_tt_check == "match"
+        customer_tt_matches += customer_tt_check == "match"
 
-        row_review_status, _ = review_status(*checks)
+        row_review_status, _ = review_status(supplier_tt_check, customer_tt_check)
         fully_matched += row_review_status == "match"
         error_count += row_review_status == "mismatch"
         awaiting_count += row_review_status == "waiting"

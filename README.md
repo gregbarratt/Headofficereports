@@ -497,12 +497,17 @@ The booking import stores Traveltek booking framework fields including Traveltek
 
 Traveltek total amount paid, outstanding, total due, due to suppliers, paid to supplier and profit are stored as cross-check figures. SINGs customer receipts are compared only with Traveltek total amount paid because SINGs does not hold the full amount due. TAPs supplier payments and calculated true profit are checked separately, and Traveltek values do not silently replace those actual sources.
 
+Traveltek Total Due is the one Traveltek finance value that is automatically refreshed on the booking record when Traveltek is checked. It appears in Booking Checks, but it does not create a separate review suggestion. Traveltek projected profit is kept for reporting/cross-checking, but it no longer creates a Traveltek Updates review item.
+
+Booking Checks now labels PAX as Passenger Count so it matches Traveltek wording. Each row also shows the last booking update date and time, so Head Office can see when a booking was last changed by an import, Traveltek refresh, or manual booking check amendment.
+
+On Booking Checks, the main supplier payment match is TAPs Paid compared with Traveltek Paid To Supplier. Expected Supplier Cost remains visible as a balance guide, but it does not create the red supplier payment mismatch badge on Booking Checks.
+
 Traveltek is the main source for these booking framework fields:
 
 - booking reference
 - Traveltek booking ID
 - customer / lead name
-- agent in charge, if Traveltek returns it
 - booking status
 - destination
 - departure date

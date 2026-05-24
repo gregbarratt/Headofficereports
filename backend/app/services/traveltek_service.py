@@ -177,7 +177,8 @@ FIELD_DEFINITIONS = {
         "parser": "money",
     },
 }
-REVIEW_FIELD_NAMES = set(FIELD_DEFINITIONS)
+AUTO_APPLY_FIELD_NAMES = {"non_trusted_total_due"}
+REVIEW_FIELD_NAMES = set(FIELD_DEFINITIONS) - AUTO_APPLY_FIELD_NAMES - {"non_trusted_projected_profit"}
 BOOKING_REFERENCE_CANDIDATES = (
     "bookingreference",
     "bookingref",
@@ -914,7 +915,7 @@ def create_update_proposal(
 
 
 def apply_traveltek_update_to_booking(db: Session, update: TraveltekBookingUpdate) -> dict[str, Any] | None:
-    if update.field_name not in REVIEW_FIELD_NAMES:
+    if update.field_name not in REVIEW_FIELD_NAMES and update.field_name not in AUTO_APPLY_FIELD_NAMES:
         return None
 
     definition = FIELD_DEFINITIONS[update.field_name]
@@ -953,6 +954,28 @@ def apply_traveltek_update_to_booking(db: Session, update: TraveltekBookingUpdat
     return {"before": before_data, "after": after_data}
 
 
+def apply_traveltek_value_to_booking(
+    booking: Booking,
+    field_name: str,
+    traveltek_value: Any,
+) -> dict[str, Any] | None:
+    if field_name not in AUTO_APPLY_FIELD_NAMES or not hasattr(booking, field_name):
+        return None
+    if values_are_equal(getattr(booking, field_name), traveltek_value):
+        return None
+
+    before_data = {
+        "booking_ref": booking.booking_ref,
+        field_name: display_value(getattr(booking, field_name)),
+    }
+    setattr(booking, field_name, traveltek_value)
+    after_data = {
+        "booking_ref": booking.booking_ref,
+        field_name: display_value(traveltek_value),
+    }
+    return {"before": before_data, "after": after_data}
+
+
 def scan_active_bookings_for_traveltek_updates(
     db: Session,
     limit: int,
@@ -982,6 +1005,22 @@ def scan_active_bookings_for_traveltek_updates(
             run.checked_bookings += 1
 
             for field_name, traveltek_value in traveltek_booking.values.items():
+                if field_name in AUTO_APPLY_FIELD_NAMES:
+                    applied_data = apply_traveltek_value_to_booking(booking, field_name, traveltek_value)
+                    if applied_data:
+                        db.add(
+                            AuditLog(
+                                actor_user_id=actor_user_id,
+                                action="traveltek_auto_booking_update",
+                                table_name="bookings",
+                                record_id=booking.id,
+                                description=f"Traveltek automatically updated {field_name} for {booking.booking_ref}.",
+                                before_data=applied_data["before"],
+                                after_data=applied_data["after"],
+                            )
+                        )
+                    continue
+
                 if field_name not in REVIEW_FIELD_NAMES:
                     continue
 

@@ -474,7 +474,7 @@ function BookingsPage({ token }) {
                 <th>Supplier refs</th>
                 <th>Departure</th>
                 <th>Return</th>
-                <th>Pax</th>
+                <th>Passenger Count</th>
                 <th>Gross Value</th>
                 <th>Supplier Nett</th>
               <th>ATOL</th>
@@ -1049,7 +1049,7 @@ function downloadCsv(filename, headers, rows) {
 function groupedCheckStatus(row, area) {
   const checks =
     area === "supplier"
-      ? [row.supplier_expected_check, row.supplier_tt_check]
+      ? [row.supplier_tt_check]
       : [row.customer_tt_check];
   if (checks.includes("mismatch")) {
     return "mismatch";
@@ -1058,6 +1058,13 @@ function groupedCheckStatus(row, area) {
     return "match";
   }
   return "waiting";
+}
+
+function supplierBalanceDue(row) {
+  if (row.expected_supplier_total === null || row.expected_supplier_total === undefined) {
+    return null;
+  }
+  return Number(row.expected_supplier_total) - Number(row.supplier_taps_total || 0);
 }
 
 function BookingChecksPage({ token }) {
@@ -1213,6 +1220,7 @@ function BookingChecksPage({ token }) {
       "Departure Date",
       "Return Date",
       "Passenger Count",
+      "Last Booking Update",
       "Traveltek Total Cost",
       "Traveltek Total Amount Paid",
       "Traveltek Outstanding",
@@ -1224,10 +1232,9 @@ function BookingChecksPage({ token }) {
       "Expected Supplier Cost",
       "TAPs Paid",
       "Traveltek Paid To Supplier",
-      "TAPs vs Expected Cost",
-      "TAPs vs Expected Cost Variance",
       "TAPs vs Traveltek Supplier Paid",
       "TAPs vs Traveltek Supplier Paid Variance",
+      "Expected Supplier Balance",
       "Traveltek Projected Profit",
       "Review Status",
       "Review Note",
@@ -1245,6 +1252,7 @@ function BookingChecksPage({ token }) {
       row.departure_date || "",
       row.return_date || "",
       row.passenger_count ?? "",
+      formatDateTime(row.updated_at),
       row.gross_booking_value ?? "",
       row.customer_tt_total ?? "",
       row.traveltek_customer_outstanding ?? "",
@@ -1256,10 +1264,9 @@ function BookingChecksPage({ token }) {
       row.expected_supplier_total ?? "",
       row.supplier_taps_total ?? "",
       row.supplier_tt_total ?? "",
-      checkLabel(row.supplier_expected_check),
-      row.supplier_expected_variance ?? "",
       checkLabel(row.supplier_tt_check),
       row.supplier_tt_variance ?? "",
+      supplierBalanceDue(row) ?? "",
       row.traveltek_projected_profit ?? "",
       checkLabel(row.review_status),
       row.review_note || "",
@@ -1300,8 +1307,8 @@ function BookingChecksPage({ token }) {
           <strong>{summary?.awaiting_count ?? 0}</strong>
         </div>
         <div>
-          <span>Supplier checks matched</span>
-          <strong>{summary?.supplier_expected_matches ?? 0}</strong>
+          <span>Supplier payments matched</span>
+          <strong>{summary?.supplier_tt_matches ?? 0}</strong>
         </div>
         <div>
           <span>Needs review</span>
@@ -1310,7 +1317,7 @@ function BookingChecksPage({ token }) {
       </div>
 
       <p className="muted-note">
-          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. SINGs is compared only against Traveltek Total Amount Paid, not the full booking value.
+          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. Supplier payment matching compares TAPs Paid against Traveltek Paid To Supplier.
       </p>
 
       <div className="booking-check-filters">
@@ -1425,7 +1432,8 @@ function BookingChecksPage({ token }) {
               <th>Elements</th>
               <th>Depart</th>
               <th>Return</th>
-              <th>Pax</th>
+              <th>Passenger Count</th>
+              <th>Last Booking Update</th>
               <th>Traveltek Total Cost</th>
               <th>Traveltek Total Amount Paid</th>
               <th>Traveltek Outstanding</th>
@@ -1436,8 +1444,8 @@ function BookingChecksPage({ token }) {
               <th>Expected Supplier Cost</th>
               <th>TAPs Paid</th>
               <th>Traveltek Paid To Supplier</th>
-                <th>TAPs vs Expected</th>
                 <th>TAPs vs Traveltek Paid</th>
+                <th>Expected Supplier Balance</th>
                 <th>Traveltek Profit</th>
                 <th>Review</th>
                 <th>Amend</th>
@@ -1461,6 +1469,7 @@ function BookingChecksPage({ token }) {
                   <td>{formatDate(row.departure_date)}</td>
                   <td>{formatDate(row.return_date)}</td>
                   <td>{row.passenger_count ?? "-"}</td>
+                  <td>{formatDateTime(row.updated_at)}</td>
                   <td>{formatMoney(row.gross_booking_value)}</td>
                   <td>{formatMoney(row.customer_tt_total)}</td>
                   <td>{formatMoney(row.traveltek_customer_outstanding)}</td>
@@ -1474,14 +1483,11 @@ function BookingChecksPage({ token }) {
                   <td>{formatMoney(row.expected_supplier_total)}</td>
                   <td>{formatMoney(row.supplier_taps_total)}</td>
                   <td>{formatMoney(row.supplier_tt_total)}</td>
-                  <td>
-                    <CheckBadge status={row.supplier_expected_check} />
-                    <span className="variance-note">{formatMoney(row.supplier_expected_variance)}</span>
-                  </td>
                     <td>
                       <CheckBadge status={row.supplier_tt_check} />
                       <span className="variance-note">{formatMoney(row.supplier_tt_variance)}</span>
                     </td>
+                    <td>{formatMoney(supplierBalanceDue(row))}</td>
                     <td>{formatMoney(row.traveltek_projected_profit)}</td>
                     <td>
                     <CheckBadge status={row.review_status} />
@@ -1499,7 +1505,7 @@ function BookingChecksPage({ token }) {
               ))
             ) : (
               <tr>
-                  <td colSpan="24">No booking checks match the current filters.</td>
+                  <td colSpan="25">No booking checks match the current filters.</td>
               </tr>
             )}
           </tbody>
