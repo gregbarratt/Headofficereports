@@ -442,6 +442,15 @@ nav button:disabled {
   margin-bottom: 12px;
 }
 
+.booking-page-actions {
+  align-items: end;
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) auto;
+  gap: 12px;
+  justify-content: start;
+  margin-bottom: 14px;
+}
+
 .traveltek-simple-update {
   display: flex;
   align-items: center;
@@ -470,6 +479,27 @@ nav button:disabled {
 
 .traveltek-simple-update button {
   flex: 0 0 auto;
+}
+
+.traveltek-update-log {
+  margin: 8px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid #d7e0e4;
+  background: #f8fafb;
+}
+
+.traveltek-update-log strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.traveltek-update-log ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: #45545b;
+  font-size: 0.9rem;
 }
 
 .checkbox-label {
@@ -1046,6 +1076,7 @@ th {
   .supplier-search,
   .customer-sync,
   .traveltek-toolbar,
+  .booking-page-actions,
   .booking-check-filters,
   .field-filter-grid,
   .adjustment-grid,

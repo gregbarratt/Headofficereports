@@ -192,8 +192,9 @@ export async function getReportRuns(token) {
   return apiRequest("/api/reports/runs", { token });
 }
 
-export async function getBookings(token) {
-  return apiRequest("/api/bookings", { token });
+export async function getBookings(token, limit = 10000) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  return apiRequest(`/api/bookings?${query.toString()}`, { token });
 }
 
 export async function getBookingChecks(token) {

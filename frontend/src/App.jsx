@@ -223,6 +223,17 @@ function toDateInputValue(dateValue) {
   return dateValue.toISOString().slice(0, 10);
 }
 
+function dateInputToUtcDate(value) {
+  const [year, month, day] = String(value).split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function addUtcDays(dateValue, days) {
+  const nextDate = new Date(dateValue);
+  nextDate.setUTCDate(nextDate.getUTCDate() + days);
+  return nextDate;
+}
+
 function toTimeInputValue(dateValue) {
   return `${String(dateValue.getHours()).padStart(2, "0")}:${String(dateValue.getMinutes()).padStart(2, "0")}`;
 }
@@ -442,15 +453,62 @@ function BookingsPage({ token }) {
   const [bookings, setBookings] = useState([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
+  const [bookingRefSort, setBookingRefSort] = useState("asc");
 
   useEffect(() => {
-    getBookings(token)
+    getBookings(token, 10000)
       .then((data) => {
         setBookings(data.bookings);
         setTotal(data.total);
       })
       .catch((loadError) => setError(loadError.message || "Bookings could not load."));
   }, [token]);
+
+  const sortedBookings = [...bookings].sort((left, right) => {
+    const comparison = String(left.booking_ref || "").localeCompare(String(right.booking_ref || ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+    return bookingRefSort === "desc" ? -comparison : comparison;
+  });
+
+  function exportBookingsCsv() {
+    const headers = [
+      "Booking Ref",
+      "Traveltek ID",
+      "Company",
+      "Status",
+      "Customer / Lead",
+      "Agent",
+      "Destination",
+      "Supplier Refs",
+      "Departure",
+      "Return",
+      "Passenger Count",
+      "Gross Value",
+      "Supplier Nett",
+      "ATOL",
+      "Last Updated",
+    ];
+    const rows = sortedBookings.map((booking) => [
+      booking.booking_ref,
+      booking.traveltek_booking_id || "",
+      formatSourceLabel(booking.booking_company),
+      booking.normalised_status || "",
+      booking.customer_last_name || "",
+      booking.agent_in_charge || "",
+      booking.destination || "",
+      booking.supplier_references_raw || "",
+      booking.departure_date || "",
+      booking.return_date || "",
+      booking.passenger_count ?? "",
+      booking.gross_booking_value ?? "",
+      booking.expected_supplier_nett ?? "",
+      booking.atol_review_status || "",
+      booking.updated_at || "",
+    ]);
+    downloadCsv("bookings.csv", headers, rows);
+  }
 
   return (
     <section className="panel">
@@ -463,6 +521,20 @@ function BookingsPage({ token }) {
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="booking-page-actions">
+        <label>
+          Booking ref order
+          <select value={bookingRefSort} onChange={(event) => setBookingRefSort(event.target.value)}>
+            <option value="asc">Lowest to highest</option>
+            <option value="desc">Highest to lowest</option>
+          </select>
+        </label>
+        <button className="secondary-button" disabled={!sortedBookings.length} onClick={exportBookingsCsv} type="button">
+          <FileSpreadsheet size={18} aria-hidden="true" />
+          Download CSV
+        </button>
+      </div>
 
       <div className="table-wrap">
         <table>
@@ -485,8 +557,8 @@ function BookingsPage({ token }) {
             </tr>
           </thead>
           <tbody>
-            {bookings.length ? (
-              bookings.map((booking) => (
+            {sortedBookings.length ? (
+              sortedBookings.map((booking) => (
                 <tr key={booking.id}>
                   <td>{booking.booking_ref}</td>
                     <td>{booking.traveltek_booking_id || "-"}</td>
@@ -636,6 +708,7 @@ function TraveltekUpdatesPage({ token }) {
   const [isCatchUpRunning, setIsCatchUpRunning] = useState(false);
   const [isAutoCatchUpRunning, setIsAutoCatchUpRunning] = useState(false);
   const [autoCatchUpStatus, setAutoCatchUpStatus] = useState("");
+  const [autoCatchUpLog, setAutoCatchUpLog] = useState([]);
   const [autoCatchUpBatchesRun, setAutoCatchUpBatchesRun] = useState(0);
   const [autoCatchUpCallsUsed, setAutoCatchUpCallsUsed] = useState(0);
   const [isActiveMaintenanceRunning, setIsActiveMaintenanceRunning] = useState(false);
@@ -653,6 +726,10 @@ function TraveltekUpdatesPage({ token }) {
       setCatchUpLimit(limit);
     }
     return { batchDays, limit };
+  }
+
+  function addAutoCatchUpLog(line) {
+    setAutoCatchUpLog((currentLog) => [line, ...currentLog].slice(0, 10));
   }
 
   function normalisedCatchUpRunValues({ batchDays = catchUpBatchDays, limit = catchUpLimit } = {}) {
@@ -785,11 +862,13 @@ function TraveltekUpdatesPage({ token }) {
     setMessage("");
     setError("");
     setAutoCatchUpStatus(startMessage);
+    setAutoCatchUpLog([]);
     setAutoCatchUpBatchesRun(0);
     setAutoCatchUpCallsUsed(0);
 
     let batchesRun = 0;
     let callsUsed = 0;
+    let stoppedForError = false;
     let resetProgressOnNextBatch = resetProgress;
     const safetyBatchLimit = 1500;
 
@@ -820,6 +899,9 @@ function TraveltekUpdatesPage({ token }) {
           result.complete
             ? "Automatic catch-up complete."
             : `Last batch: ${formatDate(result.batch_start_date)} to ${formatDate(result.batch_end_date)}. Next batch starts ${formatDate(result.next_start_date)}.`
+        );
+        addAutoCatchUpLog(
+          `${formatDate(result.batch_start_date)} to ${formatDate(result.batch_end_date)}: checked ${result.run?.checked_bookings ?? 0}, changed ${result.run?.proposals_created ?? 0}, calls ${result.run?.api_call_count ?? 0}.`
         );
 
         if (result.run?.status === "failed") {
@@ -858,23 +940,92 @@ function TraveltekUpdatesPage({ token }) {
     return runAutomaticCatchUp();
   }
 
+  async function runUpdateEverythingBackwards({
+    startDate = TRAVELTEK_FULL_CATCH_UP_START_DATE,
+    endDate = todayIso,
+    batchDays = 1,
+    limit = 500,
+  } = {}) {
+    const safeBatchDays = boundedNumber(batchDays, 1, 1, 31);
+    const safeLimit = boundedNumber(limit, 500, 1, 500);
+    const startDateValue = dateInputToUtcDate(startDate);
+    let batchEndDateValue = dateInputToUtcDate(endDate);
+
+    setIsAutoCatchUpRunning(true);
+    stopAutoCatchUpRef.current = false;
+    setMessage("");
+    setError("");
+    setAutoCatchUpStatus("Update everything started. Recent bookings are checked first, then the system works backwards.");
+    setAutoCatchUpLog([]);
+    setAutoCatchUpBatchesRun(0);
+    setAutoCatchUpCallsUsed(0);
+
+    let batchesRun = 0;
+    let callsUsed = 0;
+
+    try {
+      while (!stopAutoCatchUpRef.current && batchEndDateValue >= startDateValue) {
+        const proposedBatchStart = addUtcDays(batchEndDateValue, -(safeBatchDays - 1));
+        const batchStartDateValue = proposedBatchStart < startDateValue ? startDateValue : proposedBatchStart;
+        const batchStartIso = toDateInputValue(batchStartDateValue);
+        const batchEndIso = toDateInputValue(batchEndDateValue);
+
+        setAutoCatchUpStatus(`Updating ${formatDate(batchStartIso)} to ${formatDate(batchEndIso)}.`);
+        const run = await importTraveltekBookings({
+          token,
+          startDate: batchStartIso,
+          endDate: batchEndIso,
+          limit: safeLimit,
+        });
+
+        batchesRun += 1;
+        callsUsed += run.api_call_count ?? 0;
+        setAutoCatchUpBatchesRun(batchesRun);
+        setAutoCatchUpCallsUsed(callsUsed);
+        addAutoCatchUpLog(
+          `${formatDate(batchStartIso)}: checked ${run.checked_bookings}, changed ${run.proposals_created}, calls ${run.api_call_count}.`
+        );
+
+        if (run.status === "failed") {
+          setError(`Update everything stopped because Traveltek returned an issue: ${redactSensitiveText(run.error_summary || "Unknown Traveltek error.")}`);
+          stoppedForError = true;
+          break;
+        }
+
+        batchEndDateValue = addUtcDays(batchStartDateValue, -1);
+        await wait(1200);
+      }
+
+      if (stopAutoCatchUpRef.current) {
+        setMessage(`Update everything stopped. Batches run: ${batchesRun}. Traveltek calls used: ${callsUsed}.`);
+      } else if (!stoppedForError) {
+        setMessage(`Update everything complete. Batches run: ${batchesRun}. Traveltek calls used: ${callsUsed}.`);
+        setAutoCatchUpStatus("Update everything complete.");
+      }
+
+      await loadUpdates(statusFilter);
+    } catch (updateError) {
+      setError(updateError.message || "Update everything could not continue.");
+    } finally {
+      setIsAutoCatchUpRunning(false);
+    }
+  }
+
   function handleUpdateEverything() {
     const updateStartDate = TRAVELTEK_FULL_CATCH_UP_START_DATE;
     const updateEndDate = todayIso;
-    const updateBatchDays = 31;
+    const updateBatchDays = 1;
     const updateLimit = 500;
     setCatchUpStartDate(updateStartDate);
     setCatchUpEndDate(updateEndDate);
     setCatchUpBatchDays(updateBatchDays);
     setCatchUpLimit(updateLimit);
     setCatchUpResetProgress(false);
-    return runAutomaticCatchUp({
+    return runUpdateEverythingBackwards({
       startDate: updateStartDate,
       endDate: updateEndDate,
       batchDays: updateBatchDays,
       limit: updateLimit,
-      resetProgress: false,
-      startMessage: "Update everything started. Leave this page open while Traveltek is updated safely.",
     });
   }
 
@@ -1014,7 +1165,7 @@ function TraveltekUpdatesPage({ token }) {
           <div>
             <h3>Update Everything</h3>
             <p>
-              Pull all Traveltek booking data from 30 Jan 2023 to today in safe batches. It continues from the saved catch-up position.
+              Starts with today, then works backwards to 30 Jan 2023 in safe one-day booking-date batches.
             </p>
           </div>
           {isAutoCatchUpRunning ? (
@@ -1100,6 +1251,16 @@ function TraveltekUpdatesPage({ token }) {
           <p className="muted-note">
             {autoCatchUpStatus} Batches run: {autoCatchUpBatchesRun}. Calls used: {autoCatchUpCallsUsed}.
           </p>
+        ) : null}
+        {autoCatchUpLog.length ? (
+          <div className="traveltek-update-log">
+            <strong>Latest batches</strong>
+            <ul>
+              {autoCatchUpLog.map((line, index) => (
+                <li key={`${line}-${index}`}>{line}</li>
+              ))}
+            </ul>
+          </div>
         ) : null}
 
         <div className="section-heading">

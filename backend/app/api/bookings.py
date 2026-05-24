@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi import Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -15,11 +16,12 @@ router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
 
 @router.get("", response_model=BookingListResponse)
 def list_bookings(
+    limit: int = Query(default=10000, ge=1, le=20000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin),
 ) -> BookingListResponse:
     total = db.scalar(select(func.count()).select_from(Booking)) or 0
-    statement = select(Booking).order_by(Booking.updated_at.desc(), Booking.id.desc()).limit(200)
+    statement = select(Booking).order_by(Booking.booking_ref.asc()).limit(limit)
     bookings = list(db.scalars(statement))
     return BookingListResponse(bookings=bookings, total=total)
 

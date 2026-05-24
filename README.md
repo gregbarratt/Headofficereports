@@ -495,7 +495,7 @@ The Traveltek Updates page has two actions:
 
 The Traveltek `getbookings` document says the import date range is a booking date range. The Traveltek Updates page therefore searches by booking date only. The system stores Traveltek departure and return dates on the booking record, then Head Office can review by travel date inside Booking Checks.
 
-For a historic catch-up, use **Update Everything From Traveltek**. This starts at `2023-01-30`, runs to today, uses safe 31-day batches, and continues from the saved catch-up position. The browser page must stay open while it works. The advanced catch-up controls remain available if Head Office needs to change dates, batch size, or restart the catch-up position.
+For a historic catch-up, use **Update Everything From Traveltek**. This starts with today, works backwards to `2023-01-30`, and uses safe one-day booking-date batches so recent bookings appear first. The browser page must stay open while it works. The advanced catch-up controls remain available if Head Office needs to change dates, batch size, or restart the saved catch-up position.
 
 For regular use after the catch-up, use **Ongoing active update**. It first imports recent new bookings by booking date, then refreshes only bookings whose departure date is within the active window. The default active window is 60 days after departure, so old departed bookings are not repeatedly checked.
 
@@ -510,6 +510,8 @@ Booking Checks now labels PAX as Passenger Count so it matches Traveltek wording
 On Booking Checks, the main supplier payment match is TAPs Paid compared with Traveltek Paid To Supplier. Expected Supplier Cost remains visible as a balance guide, but it does not create the red supplier payment mismatch badge on Booking Checks.
 
 Booking Checks loads up to 10,000 booking rows. This prevents the old 5,000-row cap hiding bookings once the system has more than 5,000 records.
+
+The Bookings page loads up to 10,000 booking rows, can sort by booking reference from lowest to highest or highest to lowest, and can export the visible booking list to CSV.
 
 Traveltek is the main source for these booking framework fields:
 
