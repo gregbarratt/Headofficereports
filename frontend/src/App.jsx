@@ -509,7 +509,7 @@ function TraveltekUpdatesPage({ token }) {
   const [syncLimit, setSyncLimit] = useState(25);
   const [importStartDate, setImportStartDate] = useState(defaultStartDate);
   const [importEndDate, setImportEndDate] = useState(todayIso);
-  const [importDateType, setImportDateType] = useState("departure_date");
+  const [importDateType, setImportDateType] = useState("booking_date");
   const [importLimit, setImportLimit] = useState(25);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -566,7 +566,7 @@ function TraveltekUpdatesPage({ token }) {
           limit: Number(importLimit),
         });
       setMessage(
-          `Traveltek booking import finished. Date basis: ${importDateType === "departure_date" ? "departure date" : "booking date"}. API calls attempted: ${run.api_call_count}. Booking records checked: ${run.checked_bookings}. New or changed bookings: ${run.proposals_created}.`
+          `Traveltek booking import finished. Traveltek search: booking date. Display order: ${importDateType === "departure_date" ? "newest departures first" : "newest booking dates first"}. API calls attempted: ${run.api_call_count}. Booking records checked: ${run.checked_bookings}. New or changed bookings: ${run.proposals_created}.`
         );
         if (run.error_summary) {
           setError(`Traveltek returned an issue: ${redactSensitiveText(run.error_summary)}`);
@@ -643,10 +643,10 @@ function TraveltekUpdatesPage({ token }) {
 
         <div className="traveltek-toolbar">
           <label>
-            Import by
+            Import and order by
             <select value={importDateType} onChange={(event) => setImportDateType(event.target.value)}>
-              <option value="departure_date">Departure date, newest first</option>
-              <option value="booking_date">Booking date, newest first</option>
+              <option value="booking_date">Booking date from Traveltek</option>
+              <option value="departure_date">Booking date search, newest departures first</option>
             </select>
           </label>
           <label>
@@ -682,9 +682,11 @@ function TraveltekUpdatesPage({ token }) {
         </div>
 
         <p className="muted-note">
-          Traveltek can now replace the master booking CSV. Traveltek paid and projected profit figures are imported
-          for checking, while actual receipts, supplier payments, bank entries, refunds and commissions still come
-          from their separate sources. Imports are processed newest first so Head Office can work backwards.
+          Traveltek can now replace the master booking CSV. The Traveltek API document says booking imports search by
+          booking date, then the system stores departure and return dates so Head Office can work backwards from the
+          newest travel dates inside Booking Checks. Traveltek paid and projected profit figures are imported for
+          checking, while actual receipts, supplier payments, bank entries, refunds and commissions still come from
+          their separate sources.
         </p>
 
         <div className="traveltek-toolbar">
@@ -3980,6 +3982,10 @@ function SettingsPage({ token }) {
         <span>Traveltek base URL</span>
         <strong>
           <ConfigStatus isConfigured={traveltek.base_url_configured} />
+        </strong>
+        <span>Traveltek secure detail URL</span>
+        <strong>
+          <ConfigStatus isConfigured={traveltek.secure_base_url_configured} />
         </strong>
         <span>Traveltek username</span>
         <strong>

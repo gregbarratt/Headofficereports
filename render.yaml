@@ -53,6 +53,8 @@ services:
         sync: false
       - key: TRAVELTEK_API_BASE_URL
         value: https://fusionapi.traveltek.net/0.9/interface.pl
+      - key: TRAVELTEK_SECURE_API_BASE_URL
+        value: https://secure.traveltek.net/fusionapi/0.9/interface.pl
       - key: TRAVELTEK_USERNAME
         sync: false
       - key: TRAVELTEK_PASSWORD

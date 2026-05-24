@@ -10,7 +10,7 @@ class TraveltekSyncRequest(BaseModel):
 class TraveltekBookingImportRequest(BaseModel):
     start_date: date
     end_date: date
-    date_type: str = Field(default="departure_date", pattern="^(departure_date|booking_date)$")
+    date_type: str = Field(default="booking_date", pattern="^(departure_date|booking_date)$")
     limit: int = Field(default=25, ge=1, le=500)
 
 
@@ -64,6 +64,7 @@ class TraveltekUpdatesResponse(BaseModel):
 class TraveltekStatusResponse(BaseModel):
     configured: bool
     base_url_configured: bool
+    secure_base_url_configured: bool
     username_configured: bool
     password_configured: bool
     sitename_configured: bool

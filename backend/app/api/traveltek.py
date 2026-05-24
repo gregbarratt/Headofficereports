@@ -54,6 +54,7 @@ def traveltek_status(
     return TraveltekStatusResponse(
         configured=settings.traveltek_api_configured,
         base_url_configured=bool(settings.traveltek_api_base_url.strip()),
+        secure_base_url_configured=bool(settings.traveltek_secure_api_base_url.strip()),
         username_configured=bool(settings.traveltek_username.strip()),
         password_configured=bool(settings.traveltek_password.strip()),
         sitename_configured=bool(settings.traveltek_sitename.strip()),

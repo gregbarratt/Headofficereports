@@ -116,14 +116,15 @@ FIELD_DEFINITIONS = {
         "parser": "money",
     },
 }
-BOOKING_REF_CANDIDATES = (
+BOOKING_REFERENCE_CANDIDATES = (
     "bookingreference",
     "bookingref",
     "booking_ref",
-    "externalreference",
-    "externalref",
     "reference",
 )
+EXTERNAL_REFERENCE_CANDIDATES = ("externalreference", "externalref")
+BOOKING_ID_CANDIDATES = ("bookingid", "booking_id")
+BOOKING_REF_CANDIDATES = BOOKING_REFERENCE_CANDIDATES + EXTERNAL_REFERENCE_CANDIDATES
 BOOKING_ELEMENT_NAMES = {"booking", "portfolio", "enquiry", "item", "row", "result"}
 
 
@@ -292,14 +293,15 @@ def build_request_xml(action: str, attributes: dict[str, str]) -> str:
     return ElementTree.tostring(request, encoding="unicode")
 
 
-def call_traveltek(action: str, attributes: dict[str, str]) -> ElementTree.Element:
+def call_traveltek(action: str, attributes: dict[str, str], *, secure_endpoint: bool = False) -> ElementTree.Element:
     if not settings.traveltek_api_configured:
         raise TraveltekConfigurationError("Traveltek API is not configured in Render yet.")
 
     request_xml = build_request_xml(action, attributes)
     encoded = urllib.parse.urlencode({"xml": request_xml}).encode("utf-8")
+    endpoint_url = settings.traveltek_secure_api_base_url if secure_endpoint else settings.traveltek_api_base_url
     request = urllib.request.Request(
-        settings.traveltek_api_base_url,
+        endpoint_url,
         data=encoded,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
@@ -325,18 +327,24 @@ def call_traveltek(action: str, attributes: dict[str, str]) -> ElementTree.Eleme
     return root
 
 
-def fetch_booking_by_reference(booking_ref: str) -> TraveltekBookingData:
-    root = call_traveltek("getportfolio", {"bookingreference": booking_ref})
+def fetch_booking_detail(attributes: dict[str, str]) -> TraveltekBookingData:
+    root = call_traveltek("getportfolio", attributes, secure_endpoint=True)
     flattened = flatten_xml(root)
     values = extract_booking_values(flattened)
     return TraveltekBookingData(
         values=values,
         source={
             "action": "getportfolio",
+            "endpoint": "secure",
+            "lookup": attributes,
             "extracted": {key: display_value(value) for key, value in values.items()},
             "sample": element_to_source(root),
         },
     )
+
+
+def fetch_booking_by_reference(booking_ref: str) -> TraveltekBookingData:
+    return fetch_booking_detail({"bookingreference": booking_ref})
 
 
 def extract_booking_values(flattened: dict[str, str]) -> dict[str, Any]:
@@ -365,6 +373,22 @@ def extract_booking_values(flattened: dict[str, str]) -> dict[str, Any]:
     return values
 
 
+def booking_detail_lookup_attributes(flattened: dict[str, str]) -> dict[str, str]:
+    booking_reference = value_from_candidates(flattened, BOOKING_REFERENCE_CANDIDATES)
+    if booking_reference:
+        return {"bookingreference": booking_reference}
+
+    booking_id = value_from_candidates(flattened, BOOKING_ID_CANDIDATES)
+    if booking_id:
+        return {"bookingid": booking_id}
+
+    external_reference = value_from_candidates(flattened, EXTERNAL_REFERENCE_CANDIDATES)
+    if external_reference:
+        return {"externalreference": external_reference}
+
+    return {}
+
+
 def booking_elements_from_response(root: ElementTree.Element) -> list[ElementTree.Element]:
     matches_by_reference: dict[str, ElementTree.Element] = {}
     for element in root.iter():
@@ -374,14 +398,18 @@ def booking_elements_from_response(root: ElementTree.Element) -> list[ElementTre
         element_name = local_name(element.tag)
         flattened = flatten_xml(element, {})
         booking_ref = normalise_booking_ref(value_from_candidates(flattened, BOOKING_REF_CANDIDATES))
-        if booking_ref and element_name in BOOKING_ELEMENT_NAMES:
-            matches_by_reference.setdefault(booking_ref, element)
+        booking_id = value_from_candidates(flattened, BOOKING_ID_CANDIDATES)
+        booking_key = booking_ref or booking_id
+        if booking_key and element_name in BOOKING_ELEMENT_NAMES:
+            matches_by_reference.setdefault(str(booking_key), element)
 
     if matches_by_reference:
         return list(matches_by_reference.values())
 
     flattened_root = flatten_xml(root, {})
-    if value_from_candidates(flattened_root, BOOKING_REF_CANDIDATES):
+    if value_from_candidates(flattened_root, BOOKING_REF_CANDIDATES) or value_from_candidates(
+        flattened_root, BOOKING_ID_CANDIDATES
+    ):
         return [root]
     return []
 
@@ -392,23 +420,11 @@ def getbookings_attribute_attempts(start_date: date, end_date: date, date_type: 
     uk_from = format_date_for_traveltek(start_date, "uk")
     uk_to = format_date_for_traveltek(end_date, "uk")
 
-    if date_type == "departure_date":
-        return [
-            ("startdate/enddate departure", {"startdate": iso_from, "enddate": iso_to, "datetype": "departuredate"}),
-            ("UK startdate/enddate departure", {"startdate": uk_from, "enddate": uk_to, "datetype": "departuredate"}),
-            ("departuredatefrom/departuredateto", {"departuredatefrom": iso_from, "departuredateto": iso_to}),
-            ("datefrom/dateto/datetype", {"datefrom": iso_from, "dateto": iso_to, "datetype": "departuredate"}),
-            ("departdatefrom/departdateto", {"departdatefrom": iso_from, "departdateto": iso_to}),
-            ("departurefrom/departureto", {"departurefrom": iso_from, "departureto": iso_to}),
-            ("UK departuredatefrom/departuredateto", {"departuredatefrom": uk_from, "departuredateto": uk_to}),
-        ]
-
+    # Traveltek's getbookings document says startdate/enddate are the booking date range.
+    # Departure-date working is handled after import by sorting/filtering stored bookings.
     return [
-        ("startdate/enddate", {"startdate": iso_from, "enddate": iso_to}),
-        ("UK startdate/enddate", {"startdate": uk_from, "enddate": uk_to}),
-        ("datefrom/dateto", {"datefrom": iso_from, "dateto": iso_to}),
-        ("bookingdatefrom/bookingdateto", {"bookingdatefrom": iso_from, "bookingdateto": iso_to}),
-        ("UK datefrom/dateto", {"datefrom": uk_from, "dateto": uk_to}),
+        ("Traveltek booking date range", {"startdate": iso_from, "enddate": iso_to}),
+        ("Traveltek UK booking date range", {"startdate": uk_from, "enddate": uk_to}),
     ]
 
 
@@ -474,24 +490,48 @@ def import_traveltek_bookings_by_date_range(
         db.refresh(run)
         return run
 
-    max_limit = min(limit, settings.traveltek_max_calls_per_run)
+    max_api_calls = max(1, settings.traveltek_max_calls_per_run)
+    max_limit = min(limit, max(1, max_api_calls - 1))
     errors: list[str] = []
     created_count = 0
     updated_count = 0
 
-    root = None
+    booking_elements: list[ElementTree.Element] = []
     attempt_errors: list[str] = []
     successful_attempt = None
     for attempt_name, attributes in getbookings_attribute_attempts(start_date, end_date, normalised_date_type):
         run.api_call_count += 1
         try:
             root = call_traveltek("getbookings", attributes)
-            successful_attempt = attempt_name
-            break
+            next_booking_elements = booking_elements_from_response(root)
+            if next_booking_elements:
+                booking_elements = sort_booking_elements(next_booking_elements, normalised_date_type)[:max_limit]
+                successful_attempt = attempt_name
+                break
+            attempt_errors.append(f"{attempt_name}: Traveltek returned no booking rows.")
         except TraveltekApiError as exc:
             attempt_errors.append(f"{attempt_name}: {exc}")
 
-    if root is None:
+    if not booking_elements:
+        no_rows_message = (
+            "Traveltek accepted the request but returned no booking rows. "
+            "The Traveltek getbookings document says this search uses booking date, not departure date. "
+            "Try a wider booking-date range, then use Booking Checks to work by departure date."
+        )
+        if any("returned no booking rows" in error for error in attempt_errors):
+            run.status = "completed"
+            run.error_summary = no_rows_message
+        else:
+            run.status = "failed"
+            run.error_summary = "Traveltek could not import bookings with the documented booking-date filters. " + " ".join(
+                attempt_errors[:5]
+            )
+        run.finished_at = datetime.now(UTC)
+        db.commit()
+        db.refresh(run)
+        return run
+
+    if successful_attempt is None:
         run.status = "failed"
         run.error_summary = "Traveltek could not import bookings with the available date filters. " + " ".join(
             attempt_errors[:5]
@@ -501,19 +541,20 @@ def import_traveltek_bookings_by_date_range(
         db.refresh(run)
         return run
 
-    booking_elements = sort_booking_elements(booking_elements_from_response(root), normalised_date_type)[:max_limit]
-
     for booking_element in booking_elements:
         flattened = flatten_xml(booking_element, {})
         values = extract_booking_values(flattened)
-        booking_ref = values.get("booking_ref")
-        if booking_ref:
+        lookup_attributes = booking_detail_lookup_attributes(flattened)
+        lookup_label = values.get("booking_ref") or lookup_attributes.get("bookingreference") or lookup_attributes.get("bookingid")
+        if lookup_attributes and run.api_call_count < max_api_calls:
             try:
                 run.api_call_count += 1
-                detail = fetch_booking_by_reference(booking_ref)
+                detail = fetch_booking_detail(lookup_attributes)
                 values.update(detail.values)
             except TraveltekApiError as exc:
-                errors.append(f"{booking_ref}: detail lookup failed, imported list data only. {exc}")
+                errors.append(f"{lookup_label}: detail lookup failed, imported list data only. {exc}")
+        elif lookup_attributes and "booking_ref" not in values:
+            errors.append(f"{lookup_label}: detail lookup was skipped because the Traveltek call limit was reached.")
 
         try:
             imported_ref, created, changed = apply_booking_values_from_traveltek(db, values)
@@ -562,6 +603,7 @@ def import_traveltek_bookings_by_date_range(
                 "datefrom": start_date.isoformat(),
                 "dateto": end_date.isoformat(),
                 "date_type": normalised_date_type,
+                "traveltek_api_date_basis": "booking_date",
                 "successful_attempt": successful_attempt,
                 "created": created_count,
                 "updated": updated_count,

@@ -491,12 +491,12 @@ The Traveltek Updates page has two actions:
 - Import bookings from Traveltek for a selected date range
 - Check existing active bookings by booking reference and create review suggestions
 
-The import control can work backwards by:
+The Traveltek `getbookings` document says the import date range is a booking date range. That means the system should import by booking date, store the Traveltek departure and return dates, then let Head Office work backwards by departure date inside Booking Checks.
 
-- departure date, newest first
-- booking date, newest first
+The import control can order the imported results by:
 
-Use departure date when Head Office wants to reconcile upcoming or recently travelled bookings first. Use booking date when the Traveltek account only returns bookings by created/booked date.
+- booking date from Traveltek
+- newest departure dates first, after Traveltek has returned the bookings
 
 The booking import stores Traveltek booking framework fields including status, customer name, destination, elements, departure date, return date, booking date, due date, gross booking value, expected supplier nett, customer paid, supplier paid and projected profit.
 
@@ -519,6 +519,7 @@ Traveltek is the main source for these booking framework fields:
 The required private Render environment variables are:
 
 - `TRAVELTEK_API_BASE_URL`
+- `TRAVELTEK_SECURE_API_BASE_URL`
 - `TRAVELTEK_USERNAME`
 - `TRAVELTEK_PASSWORD`
 - `TRAVELTEK_SITENAME`, which appears to be the Traveltek sitename / SID
@@ -526,10 +527,16 @@ The required private Render environment variables are:
 
 Keep `TRAVELTEK_MAX_CALLS_PER_RUN` low at first because the Traveltek allowance is limited.
 
-For retrieving booking data, the API base URL should be:
+For retrieving the booking list, the API base URL should be:
 
 ```text
 https://fusionapi.traveltek.net/0.9/interface.pl
+```
+
+For retrieving full booking details with `getportfolio`, the secure API base URL should be:
+
+```text
+https://secure.traveltek.net/fusionapi/0.9/interface.pl
 ```
 
 ## Trust Reconciliation

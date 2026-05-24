@@ -27,6 +27,7 @@ def settings_status(current_user: User = Depends(get_current_super_admin)) -> di
         "traveltek": {
             "configured": settings.traveltek_api_configured,
             "base_url_configured": bool(settings.traveltek_api_base_url.strip()),
+            "secure_base_url_configured": bool(settings.traveltek_secure_api_base_url.strip()),
             "username_configured": bool(settings.traveltek_username.strip()),
             "password_configured": bool(settings.traveltek_password.strip()),
             "sitename_configured": bool(settings.traveltek_sitename.strip()),
