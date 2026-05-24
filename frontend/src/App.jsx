@@ -20,7 +20,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   allocateBankTransaction,
@@ -58,6 +58,8 @@ import {
   loginSuperAdmin,
   logoutSuperAdmin,
   onAuthExpired,
+  runTraveltekActiveMaintenance,
+  runTraveltekFullCatchUpBatch,
   sendWeeklyEmail,
   startFellohCustomerPaymentBackfill,
   storeToken,
@@ -91,6 +93,8 @@ const navItems = [
 ];
 
 const FELLOH_CATCH_UP_START_DATE = "2023-01-01";
+const TRAVELTEK_FULL_CATCH_UP_START_DATE = "2023-01-30";
+const TRAVELTEK_ACTIVE_WINDOW_DAYS = 60;
 
 function StatusCard({ icon: Icon, label, value, tone = "neutral" }) {
   return (
@@ -605,6 +609,7 @@ function traveltekKeyDetailValue(group, label) {
 function TraveltekUpdatesPage({ token }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const defaultNewBookingStartDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const [updates, setUpdates] = useState([]);
   const [summary, setSummary] = useState(null);
   const [latestRun, setLatestRun] = useState(null);
@@ -614,12 +619,29 @@ function TraveltekUpdatesPage({ token }) {
   const [importStartDate, setImportStartDate] = useState(defaultStartDate);
   const [importEndDate, setImportEndDate] = useState(todayIso);
   const [importLimit, setImportLimit] = useState(25);
+  const [catchUpStartDate, setCatchUpStartDate] = useState(TRAVELTEK_FULL_CATCH_UP_START_DATE);
+  const [catchUpEndDate, setCatchUpEndDate] = useState(todayIso);
+  const [catchUpBatchDays, setCatchUpBatchDays] = useState(30);
+  const [catchUpLimit, setCatchUpLimit] = useState(100);
+  const [catchUpResetProgress, setCatchUpResetProgress] = useState(false);
+  const [newBookingStartDate, setNewBookingStartDate] = useState(defaultNewBookingStartDate);
+  const [newBookingEndDate, setNewBookingEndDate] = useState(todayIso);
+  const [newBookingLimit, setNewBookingLimit] = useState(100);
+  const [activeRefreshLimit, setActiveRefreshLimit] = useState(100);
+  const [activeWindowDays, setActiveWindowDays] = useState(TRAVELTEK_ACTIVE_WINDOW_DAYS);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isCatchUpRunning, setIsCatchUpRunning] = useState(false);
+  const [isAutoCatchUpRunning, setIsAutoCatchUpRunning] = useState(false);
+  const [autoCatchUpStatus, setAutoCatchUpStatus] = useState("");
+  const [autoCatchUpBatchesRun, setAutoCatchUpBatchesRun] = useState(0);
+  const [autoCatchUpCallsUsed, setAutoCatchUpCallsUsed] = useState(0);
+  const [isActiveMaintenanceRunning, setIsActiveMaintenanceRunning] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
   const [updatingGroupRef, setUpdatingGroupRef] = useState("");
+  const stopAutoCatchUpRef = useRef(false);
 
   function loadUpdates(nextStatus = statusFilter) {
     return getTraveltekUpdates(token, nextStatus)
@@ -686,6 +708,153 @@ function TraveltekUpdatesPage({ token }) {
       setError(importError.message || "Traveltek booking import could not run.");
     } finally {
       setIsImporting(false);
+    }
+  }
+
+  async function handleFullCatchUpBatch() {
+    setIsCatchUpRunning(true);
+    setMessage("");
+    setError("");
+    try {
+      const result = await runTraveltekFullCatchUpBatch({
+        token,
+        startDate: catchUpStartDate,
+        endDate: catchUpEndDate,
+        batchDays: Number(catchUpBatchDays),
+        limit: Number(catchUpLimit),
+        resetProgress: catchUpResetProgress,
+      });
+      if (result.complete && !result.run) {
+        setMessage(result.message);
+      } else {
+        const nextText = result.complete
+          ? "Full catch-up is complete."
+          : `Next batch starts ${formatDate(result.next_start_date)}.`;
+        setMessage(
+          `Full catch-up batch finished: ${formatDate(result.batch_start_date)} to ${formatDate(result.batch_end_date)}. ` +
+            `API calls attempted: ${result.run?.api_call_count ?? 0}. Booking records checked: ${result.run?.checked_bookings ?? 0}. ` +
+            `New or changed bookings: ${result.run?.proposals_created ?? 0}. ${nextText}`
+        );
+        if (result.run?.error_summary) {
+          setError(`Traveltek returned an issue: ${redactSensitiveText(result.run.error_summary)}`);
+        }
+      }
+      setCatchUpResetProgress(false);
+      await loadUpdates(statusFilter);
+    } catch (catchUpError) {
+      setError(catchUpError.message || "Traveltek full catch-up batch could not run.");
+    } finally {
+      setIsCatchUpRunning(false);
+    }
+  }
+
+  async function handleAutoFullCatchUp() {
+    setIsAutoCatchUpRunning(true);
+    stopAutoCatchUpRef.current = false;
+    setMessage("");
+    setError("");
+    setAutoCatchUpStatus("Automatic catch-up started.");
+    setAutoCatchUpBatchesRun(0);
+    setAutoCatchUpCallsUsed(0);
+
+    let batchesRun = 0;
+    let callsUsed = 0;
+    let resetProgressOnNextBatch = catchUpResetProgress;
+    const safetyBatchLimit = 1500;
+
+    try {
+      while (!stopAutoCatchUpRef.current) {
+        const result = await runTraveltekFullCatchUpBatch({
+          token,
+          startDate: catchUpStartDate,
+          endDate: catchUpEndDate,
+          batchDays: Number(catchUpBatchDays),
+          limit: Number(catchUpLimit),
+          resetProgress: resetProgressOnNextBatch,
+        });
+        resetProgressOnNextBatch = false;
+        setCatchUpResetProgress(false);
+
+        if (!result.run && result.complete) {
+          setMessage(result.message);
+          setAutoCatchUpStatus("Automatic catch-up complete.");
+          break;
+        }
+
+        batchesRun += result.run ? 1 : 0;
+        callsUsed += result.run?.api_call_count ?? 0;
+        setAutoCatchUpBatchesRun(batchesRun);
+        setAutoCatchUpCallsUsed(callsUsed);
+        setAutoCatchUpStatus(
+          result.complete
+            ? "Automatic catch-up complete."
+            : `Last batch: ${formatDate(result.batch_start_date)} to ${formatDate(result.batch_end_date)}. Next batch starts ${formatDate(result.next_start_date)}.`
+        );
+
+        if (result.run?.status === "failed") {
+          setError(`Automatic catch-up stopped because Traveltek returned an issue: ${redactSensitiveText(result.run.error_summary || "")}`);
+          break;
+        }
+
+        if (result.complete) {
+          setMessage(
+            `Automatic catch-up complete. Batches run: ${batchesRun}. Traveltek calls used: ${callsUsed}.`
+          );
+          break;
+        }
+
+        if (batchesRun >= safetyBatchLimit) {
+          setError("Automatic catch-up paused at the safety limit. Start it again to continue from the saved next date.");
+          break;
+        }
+
+        await wait(800);
+      }
+
+      if (stopAutoCatchUpRef.current) {
+        setMessage(`Automatic catch-up stopped. Batches run: ${batchesRun}. Traveltek calls used: ${callsUsed}.`);
+      }
+
+      await loadUpdates(statusFilter);
+    } catch (catchUpError) {
+      setError(catchUpError.message || "Automatic Traveltek catch-up could not continue.");
+    } finally {
+      setIsAutoCatchUpRunning(false);
+    }
+  }
+
+  function stopAutoFullCatchUp() {
+    stopAutoCatchUpRef.current = true;
+    setAutoCatchUpStatus("Stopping after the current batch finishes.");
+  }
+
+  async function handleActiveMaintenance() {
+    setIsActiveMaintenanceRunning(true);
+    setMessage("");
+    setError("");
+    try {
+      const result = await runTraveltekActiveMaintenance({
+        token,
+        newBookingStartDate,
+        newBookingEndDate,
+        newBookingLimit: Number(newBookingLimit),
+        refreshLimit: Number(activeRefreshLimit),
+        activeWindowDays: Number(activeWindowDays),
+      });
+      setMessage(
+        `Active update finished. New-booking import used ${result.new_booking_run.api_call_count} call(s) and checked ${result.new_booking_run.checked_bookings} booking(s). ` +
+          `Active refresh used ${result.refresh_run.api_call_count} call(s) and checked ${result.refresh_run.checked_bookings} booking(s). ` +
+          `Only bookings departing from ${formatDate(result.active_window_start_date)} onwards, plus blank departure dates, were refreshed.`
+      );
+      const issues = [result.new_booking_run.error_summary, result.refresh_run.error_summary].filter(Boolean);
+      if (issues.length) {
+        setError(`Traveltek returned an issue: ${redactSensitiveText(issues.join(" "))}`);
+      }
+      await loadUpdates(statusFilter);
+    } catch (maintenanceError) {
+      setError(maintenanceError.message || "Traveltek active update could not run.");
+    } finally {
+      setIsActiveMaintenanceRunning(false);
     }
   }
 
@@ -786,7 +955,140 @@ function TraveltekUpdatesPage({ token }) {
         ) : null}
 
         <div className="section-heading">
-          <h3>Pull bookings from Traveltek</h3>
+          <h3>Full controlled catch-up</h3>
+          <p>Runs one safe booking-date batch at a time so the whole system can be caught up without using too many calls at once.</p>
+        </div>
+        <div className="traveltek-toolbar">
+          <label>
+            Catch-up from
+            <input
+              onChange={(event) => setCatchUpStartDate(event.target.value)}
+              type="date"
+              value={catchUpStartDate}
+            />
+          </label>
+          <label>
+            Catch-up to
+            <input
+              onChange={(event) => setCatchUpEndDate(event.target.value)}
+              type="date"
+              value={catchUpEndDate}
+            />
+          </label>
+          <label>
+            Days per batch
+            <input
+              max="92"
+              min="1"
+              onChange={(event) => setCatchUpBatchDays(event.target.value)}
+              type="number"
+              value={catchUpBatchDays}
+            />
+          </label>
+          <label>
+            Max bookings
+            <input
+              max="500"
+              min="1"
+              onChange={(event) => setCatchUpLimit(event.target.value)}
+              type="number"
+              value={catchUpLimit}
+            />
+          </label>
+          <label className="checkbox-label">
+            <input
+              checked={catchUpResetProgress}
+              onChange={(event) => setCatchUpResetProgress(event.target.checked)}
+              type="checkbox"
+            />
+            Start again from catch-up from date
+          </label>
+          <button className="primary-button" disabled={isCatchUpRunning || isAutoCatchUpRunning || !configured} onClick={handleFullCatchUpBatch} type="button">
+            <RefreshCw size={18} aria-hidden="true" />
+            {isCatchUpRunning ? "Running batch" : "Run Next Catch-up Batch"}
+          </button>
+          {isAutoCatchUpRunning ? (
+            <button className="secondary-button" onClick={stopAutoFullCatchUp} type="button">
+              Stop Automatic Catch-up
+            </button>
+          ) : (
+            <button className="primary-button" disabled={isCatchUpRunning || !configured} onClick={handleAutoFullCatchUp} type="button">
+              <RefreshCw size={18} aria-hidden="true" />
+              Start Automatic Catch-up
+            </button>
+          )}
+        </div>
+        <p className="muted-note">
+          Estimated calls for each batch: up to {Number(catchUpLimit || 0) + 1}. Automatic catch-up keeps running the next saved batch until complete, but this page must stay open.
+        </p>
+        {autoCatchUpStatus ? (
+          <p className="muted-note">
+            {autoCatchUpStatus} Batches run: {autoCatchUpBatchesRun}. Calls used: {autoCatchUpCallsUsed}.
+          </p>
+        ) : null}
+
+        <div className="section-heading">
+          <h3>Ongoing active update</h3>
+          <p>Pulls recent new bookings, then refreshes only bookings inside the active departure window.</p>
+        </div>
+        <div className="traveltek-toolbar">
+          <label>
+            New bookings from
+            <input
+              onChange={(event) => setNewBookingStartDate(event.target.value)}
+              type="date"
+              value={newBookingStartDate}
+            />
+          </label>
+          <label>
+            New bookings to
+            <input
+              onChange={(event) => setNewBookingEndDate(event.target.value)}
+              type="date"
+              value={newBookingEndDate}
+            />
+          </label>
+          <label>
+            New booking limit
+            <input
+              max="500"
+              min="1"
+              onChange={(event) => setNewBookingLimit(event.target.value)}
+              type="number"
+              value={newBookingLimit}
+            />
+          </label>
+          <label>
+            Active refresh limit
+            <input
+              max="500"
+              min="1"
+              onChange={(event) => setActiveRefreshLimit(event.target.value)}
+              type="number"
+              value={activeRefreshLimit}
+            />
+          </label>
+          <label>
+            Days after departure
+            <input
+              max="365"
+              min="1"
+              onChange={(event) => setActiveWindowDays(event.target.value)}
+              type="number"
+              value={activeWindowDays}
+            />
+          </label>
+          <button className="primary-button" disabled={isActiveMaintenanceRunning || !configured} onClick={handleActiveMaintenance} type="button">
+            <RefreshCw size={18} aria-hidden="true" />
+            {isActiveMaintenanceRunning ? "Updating" : "Run Active Update"}
+          </button>
+        </div>
+        <p className="muted-note">
+          Estimated calls: up to {Number(newBookingLimit || 0) + Number(activeRefreshLimit || 0) + 1}. With the default 60 days, old departed bookings are skipped unless you pull them manually.
+        </p>
+
+        <div className="section-heading">
+          <h3>Manual one-off pull</h3>
         </div>
         <div className="traveltek-toolbar">
           <label>
@@ -1046,6 +1348,12 @@ function downloadCsv(filename, headers, rows) {
   URL.revokeObjectURL(url);
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
 function groupedCheckStatus(row, area) {
   const checks =
     area === "supplier"
@@ -1080,6 +1388,9 @@ function BookingChecksPage({ token }) {
   const [editingRef, setEditingRef] = useState("");
   const [draft, setDraft] = useState({});
   const [isSaving, setIsSaving] = useState(false);
+  const bookingChecksTopScrollRef = useRef(null);
+  const bookingChecksTableScrollRef = useRef(null);
+  const [bookingChecksTableWidth, setBookingChecksTableWidth] = useState(1500);
 
   function loadBookingChecks() {
     return getBookingChecks(token)
@@ -1128,6 +1439,33 @@ function BookingChecksPage({ token }) {
     return true;
   });
   const editingRow = rows.find((row) => row.booking_ref === editingRef);
+
+  useEffect(() => {
+    function updateScrollWidth() {
+      if (bookingChecksTableScrollRef.current) {
+        setBookingChecksTableWidth(bookingChecksTableScrollRef.current.scrollWidth);
+      }
+    }
+
+    updateScrollWidth();
+    window.addEventListener("resize", updateScrollWidth);
+    return () => window.removeEventListener("resize", updateScrollWidth);
+  }, [filteredRows.length, rows.length, editingRef]);
+
+  function syncBookingChecksScroll(source) {
+    const topScroller = bookingChecksTopScrollRef.current;
+    const tableScroller = bookingChecksTableScrollRef.current;
+    if (!topScroller || !tableScroller) {
+      return;
+    }
+
+    if (source === "top" && tableScroller.scrollLeft !== topScroller.scrollLeft) {
+      tableScroller.scrollLeft = topScroller.scrollLeft;
+    }
+    if (source === "table" && topScroller.scrollLeft !== tableScroller.scrollLeft) {
+      topScroller.scrollLeft = tableScroller.scrollLeft;
+    }
+  }
 
   function startEditing(row) {
     setMessage("");
@@ -1420,7 +1758,16 @@ function BookingChecksPage({ token }) {
         </section>
       ) : null}
 
-      <div className="table-wrap">
+      <div
+        aria-label="Scroll Booking Checks table left and right"
+        className="table-top-scroll"
+        onScroll={() => syncBookingChecksScroll("top")}
+        ref={bookingChecksTopScrollRef}
+      >
+        <div className="table-top-scroll-spacer" style={{ width: bookingChecksTableWidth }} />
+      </div>
+
+      <div className="table-wrap" onScroll={() => syncBookingChecksScroll("table")} ref={bookingChecksTableScrollRef}>
         <table className="booking-checks-table">
           <thead>
             <tr>

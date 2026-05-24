@@ -437,9 +437,21 @@ nav button:disabled {
 .traveltek-toolbar {
   align-items: end;
   display: grid;
-  grid-template-columns: repeat(3, minmax(140px, 220px)) minmax(220px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 12px;
+}
+
+.checkbox-label {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  min-height: 38px;
+}
+
+.checkbox-label input {
+  width: auto;
 }
 
 .traveltek-booking-groups {
@@ -635,6 +647,20 @@ nav button:disabled {
 
 .booking-check-actions .muted-note {
   margin: 0;
+}
+
+.table-top-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 18px;
+  margin: 4px 0 8px;
+  border: 1px solid #d7e0e4;
+  border-radius: 6px;
+  background: #f7faf9;
+}
+
+.table-top-scroll-spacer {
+  height: 1px;
 }
 
 .table-action-button {

@@ -14,6 +14,22 @@ class TraveltekBookingImportRequest(BaseModel):
     limit: int = Field(default=25, ge=1, le=500)
 
 
+class TraveltekFullCatchUpBatchRequest(BaseModel):
+    start_date: date
+    end_date: date
+    batch_days: int = Field(default=30, ge=1, le=92)
+    limit: int = Field(default=100, ge=1, le=500)
+    reset_progress: bool = False
+
+
+class TraveltekActiveMaintenanceRequest(BaseModel):
+    new_booking_start_date: date
+    new_booking_end_date: date
+    new_booking_limit: int = Field(default=100, ge=1, le=500)
+    refresh_limit: int = Field(default=100, ge=1, le=500)
+    active_window_days: int = Field(default=60, ge=1, le=365)
+
+
 class TraveltekSyncRunRead(BaseModel):
     id: int
     status: str
@@ -60,6 +76,24 @@ class TraveltekUpdatesResponse(BaseModel):
     latest_run: TraveltekSyncRunRead | None
     summary: TraveltekUpdateSummary
     updates: list[TraveltekBookingUpdateRead]
+
+
+class TraveltekFullCatchUpBatchResponse(BaseModel):
+    run: TraveltekSyncRunRead | None
+    batch_start_date: date | None
+    batch_end_date: date | None
+    next_start_date: date | None
+    complete: bool
+    estimated_calls_this_batch: int
+    message: str
+
+
+class TraveltekActiveMaintenanceResponse(BaseModel):
+    new_booking_run: TraveltekSyncRunRead
+    refresh_run: TraveltekSyncRunRead
+    active_window_start_date: date
+    estimated_calls_this_run: int
+    message: str
 
 
 class TraveltekStatusResponse(BaseModel):

@@ -276,6 +276,48 @@ export async function importTraveltekBookings({ token, startDate, endDate, limit
   });
 }
 
+export async function runTraveltekFullCatchUpBatch({
+  token,
+  startDate,
+  endDate,
+  batchDays,
+  limit,
+  resetProgress,
+}) {
+  return apiRequest("/api/traveltek/full-catch-up/next-batch", {
+    method: "POST",
+    token,
+    body: JSON.stringify({
+      start_date: startDate,
+      end_date: endDate,
+      batch_days: batchDays,
+      limit,
+      reset_progress: resetProgress,
+    }),
+  });
+}
+
+export async function runTraveltekActiveMaintenance({
+  token,
+  newBookingStartDate,
+  newBookingEndDate,
+  newBookingLimit,
+  refreshLimit,
+  activeWindowDays,
+}) {
+  return apiRequest("/api/traveltek/active-maintenance", {
+    method: "POST",
+    token,
+    body: JSON.stringify({
+      new_booking_start_date: newBookingStartDate,
+      new_booking_end_date: newBookingEndDate,
+      new_booking_limit: newBookingLimit,
+      refresh_limit: refreshLimit,
+      active_window_days: activeWindowDays,
+    }),
+  });
+}
+
 export async function updateTraveltekUpdateStatus({ token, updateId, status }) {
   return apiRequest(`/api/traveltek/updates/${updateId}`, {
     method: "PATCH",

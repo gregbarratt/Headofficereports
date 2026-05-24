@@ -488,10 +488,16 @@ Traveltek can now replace the manual master booking CSV for booking data.
 
 The Traveltek Updates page has two actions:
 
-- Import bookings from Traveltek for a selected date range
+- Run a full controlled catch-up, one booking-date batch at a time
+- Run an ongoing active update for recent new bookings and active/recent departures
+- Import bookings from Traveltek for a selected booking-date range
 - Check existing active bookings by booking reference and create review suggestions
 
 The Traveltek `getbookings` document says the import date range is a booking date range. The Traveltek Updates page therefore searches by booking date only. The system stores Traveltek departure and return dates on the booking record, then Head Office can review by travel date inside Booking Checks.
+
+For a historic catch-up, use **Full controlled catch-up**. The default start date is `2023-01-30`, but it can be changed before running. Head Office can either run one batch at a time or use **Start Automatic Catch-up**. Automatic catch-up keeps running the next saved batch until the date range is complete, but the browser page must stay open while it works.
+
+For regular use after the catch-up, use **Ongoing active update**. It first imports recent new bookings by booking date, then refreshes only bookings whose departure date is within the active window. The default active window is 60 days after departure, so old departed bookings are not repeatedly checked.
 
 The booking import stores Traveltek booking framework fields including Traveltek booking ID, status, customer name, destination, elements, supplier references, departure date, return date, booking date, due date, total cost, total amount paid, outstanding, total due, due to suppliers, paid to supplier, expected supplier nett and profit.
 
@@ -502,6 +508,8 @@ Traveltek Total Due is the one Traveltek finance value that is automatically ref
 Booking Checks now labels PAX as Passenger Count so it matches Traveltek wording. Each row also shows the last booking update date and time, so Head Office can see when a booking was last changed by an import, Traveltek refresh, or manual booking check amendment.
 
 On Booking Checks, the main supplier payment match is TAPs Paid compared with Traveltek Paid To Supplier. Expected Supplier Cost remains visible as a balance guide, but it does not create the red supplier payment mismatch badge on Booking Checks.
+
+Booking Checks loads up to 10,000 booking rows. This prevents the old 5,000-row cap hiding bookings once the system has more than 5,000 records.
 
 Traveltek is the main source for these booking framework fields:
 

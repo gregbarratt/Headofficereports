@@ -10,8 +10,12 @@ from app.db.session import get_db
 from app.models.reporting import AuditLog, TraveltekBookingUpdate, TraveltekSyncRun
 from app.models.user import User
 from app.schemas.traveltek import (
+    TraveltekActiveMaintenanceRequest,
+    TraveltekActiveMaintenanceResponse,
     TraveltekBookingImportRequest,
     TraveltekBookingUpdateRead,
+    TraveltekFullCatchUpBatchRequest,
+    TraveltekFullCatchUpBatchResponse,
     TraveltekStatusResponse,
     TraveltekSyncRequest,
     TraveltekSyncRunRead,
@@ -23,6 +27,8 @@ from app.services.traveltek_service import (
     apply_traveltek_update_to_booking,
     import_traveltek_bookings_by_date_range,
     is_valid_traveltek_update_value,
+    run_active_maintenance_update,
+    run_full_catchup_batch,
     scan_active_bookings_for_traveltek_updates,
 )
 
@@ -127,6 +133,52 @@ def import_bookings_from_traveltek(
         limit=limit,
         actor_user_id=current_user.id,
     )
+
+
+@router.post("/full-catch-up/next-batch", response_model=TraveltekFullCatchUpBatchResponse)
+def run_full_catch_up_next_batch(
+    request: TraveltekFullCatchUpBatchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> dict:
+    if request.end_date < request.start_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End date must be after start date.")
+
+    try:
+        return run_full_catchup_batch(
+            db=db,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            batch_days=request.batch_days,
+            limit=min(request.limit, settings.traveltek_max_calls_per_run),
+            reset_progress=request.reset_progress,
+            actor_user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/active-maintenance", response_model=TraveltekActiveMaintenanceResponse)
+def run_active_maintenance(
+    request: TraveltekActiveMaintenanceRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> dict:
+    if request.new_booking_end_date < request.new_booking_start_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New booking end date must be after start date.")
+
+    try:
+        return run_active_maintenance_update(
+            db=db,
+            new_booking_start_date=request.new_booking_start_date,
+            new_booking_end_date=request.new_booking_end_date,
+            new_booking_limit=min(request.new_booking_limit, settings.traveltek_max_calls_per_run),
+            refresh_limit=min(request.refresh_limit, settings.traveltek_max_calls_per_run),
+            active_window_days=request.active_window_days,
+            actor_user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.patch("/updates/{update_id}", response_model=TraveltekBookingUpdateRead)

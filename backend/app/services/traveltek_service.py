@@ -4,7 +4,7 @@ import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -14,7 +14,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.reporting import AuditLog, Booking, TraveltekBookingUpdate, TraveltekSyncRun
+from app.models.reporting import AuditLog, Booking, Setting, TraveltekBookingUpdate, TraveltekSyncRun
 from app.services.master_booking_import import (
     determine_atol_review_status,
     determine_booking_company,
@@ -189,6 +189,8 @@ EXTERNAL_REFERENCE_CANDIDATES = ("externalreference", "externalref")
 BOOKING_ID_CANDIDATES = ("bookingid", "booking_id")
 BOOKING_REF_CANDIDATES = BOOKING_REFERENCE_CANDIDATES + EXTERNAL_REFERENCE_CANDIDATES
 BOOKING_ELEMENT_NAMES = {"booking", "portfolio", "enquiry", "item", "row", "result"}
+FULL_CATCHUP_CURSOR_KEY = "traveltek_full_catchup_cursor_date"
+FULL_CATCHUP_END_KEY = "traveltek_full_catchup_end_date"
 SUPPLIER_REFERENCE_KEYS = {
     "supplierreference",
     "supplierref",
@@ -714,6 +716,36 @@ def apply_booking_values_from_traveltek(
     return booking_ref, False, changed
 
 
+def get_setting_value(db: Session, key: str) -> str | None:
+    setting = db.scalar(select(Setting).where(Setting.key == key))
+    return setting.value if setting else None
+
+
+def set_setting_value(
+    db: Session,
+    key: str,
+    value: str | None,
+    description: str,
+    actor_user_id: int | None,
+) -> None:
+    setting = db.scalar(select(Setting).where(Setting.key == key))
+    if setting is None:
+        setting = Setting(key=key, description=description)
+        db.add(setting)
+    setting.value = value
+    setting.description = description
+    setting.updated_by_user_id = actor_user_id
+
+
+def parse_setting_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def import_traveltek_bookings_by_date_range(
     db: Session,
     start_date: date,
@@ -861,15 +893,105 @@ def import_traveltek_bookings_by_date_range(
     return run
 
 
-def candidate_active_bookings(db: Session, limit: int) -> list[Booking]:
-    today = date.today()
-    statement = (
-        select(Booking)
-        .where(or_(Booking.normalised_status.is_(None), Booking.normalised_status.not_in(("cancelled", "completed"))))
-        .where((Booking.departure_date.is_(None)) | (Booking.departure_date >= today))
-        .order_by(Booking.departure_date.asc().nullslast(), Booking.updated_at.desc())
-        .limit(limit)
+def run_full_catchup_batch(
+    db: Session,
+    start_date: date,
+    end_date: date,
+    batch_days: int,
+    limit: int,
+    reset_progress: bool,
+    actor_user_id: int | None,
+) -> dict[str, Any]:
+    if end_date < start_date:
+        raise ValueError("End date must be after start date.")
+
+    stored_cursor = parse_setting_date(get_setting_value(db, FULL_CATCHUP_CURSOR_KEY))
+    cursor = start_date if reset_progress or stored_cursor is None else stored_cursor
+    if cursor < start_date or cursor > end_date:
+        cursor = start_date if reset_progress else end_date + timedelta(days=1)
+
+    if cursor > end_date:
+        return {
+            "run": None,
+            "batch_start_date": None,
+            "batch_end_date": None,
+            "next_start_date": None,
+            "complete": True,
+            "estimated_calls_this_batch": 0,
+            "message": "Full Traveltek catch-up is already complete for this date range.",
+        }
+
+    batch_end_date = min(cursor + timedelta(days=batch_days - 1), end_date)
+    estimated_calls = min(limit, max(1, settings.traveltek_max_calls_per_run - 1)) + 1
+    run = import_traveltek_bookings_by_date_range(
+        db=db,
+        start_date=cursor,
+        end_date=batch_end_date,
+        date_type="booking_date",
+        limit=limit,
+        actor_user_id=actor_user_id,
     )
+
+    next_start_date = batch_end_date + timedelta(days=1)
+    complete = next_start_date > end_date
+    set_setting_value(
+        db,
+        FULL_CATCHUP_CURSOR_KEY,
+        None if complete else next_start_date.isoformat(),
+        "Next Traveltek full catch-up booking date to import.",
+        actor_user_id,
+    )
+    set_setting_value(
+        db,
+        FULL_CATCHUP_END_KEY,
+        end_date.isoformat(),
+        "Current Traveltek full catch-up end date.",
+        actor_user_id,
+    )
+    db.add(
+        AuditLog(
+            actor_user_id=actor_user_id,
+            action="traveltek_full_catchup_batch",
+            table_name="traveltek_sync_runs",
+            record_id=run.id,
+            description=(
+                f"Traveltek full catch-up imported booking dates "
+                f"{cursor.isoformat()} to {batch_end_date.isoformat()}."
+            ),
+            after_data={
+                "batch_start_date": cursor.isoformat(),
+                "batch_end_date": batch_end_date.isoformat(),
+                "next_start_date": None if complete else next_start_date.isoformat(),
+                "complete": complete,
+            },
+        )
+    )
+    db.commit()
+    db.refresh(run)
+    return {
+        "run": run,
+        "batch_start_date": cursor,
+        "batch_end_date": batch_end_date,
+        "next_start_date": None if complete else next_start_date,
+        "complete": complete,
+        "estimated_calls_this_batch": estimated_calls,
+        "message": "Full Traveltek catch-up batch finished.",
+    }
+
+
+def candidate_active_bookings(db: Session, limit: int, active_window_days: int = 0) -> list[Booking]:
+    today = date.today()
+    statement = select(Booking)
+    if active_window_days > 0:
+        active_cutoff_date = today - timedelta(days=active_window_days)
+        statement = statement.where(or_(Booking.normalised_status.is_(None), Booking.normalised_status != "cancelled"))
+        statement = statement.where((Booking.departure_date.is_(None)) | (Booking.departure_date >= active_cutoff_date))
+    else:
+        statement = statement.where(
+            or_(Booking.normalised_status.is_(None), Booking.normalised_status.not_in(("cancelled", "completed")))
+        )
+        statement = statement.where((Booking.departure_date.is_(None)) | (Booking.departure_date >= today))
+    statement = statement.order_by(Booking.departure_date.asc().nullslast(), Booking.updated_at.desc()).limit(limit)
     return list(db.scalars(statement))
 
 
@@ -980,8 +1102,10 @@ def scan_active_bookings_for_traveltek_updates(
     db: Session,
     limit: int,
     actor_user_id: int | None,
+    active_window_days: int = 0,
+    sync_type: str = "active_booking_check",
 ) -> TraveltekSyncRun:
-    run = TraveltekSyncRun(requested_by_user_id=actor_user_id)
+    run = TraveltekSyncRun(sync_type=sync_type, requested_by_user_id=actor_user_id)
     db.add(run)
     db.flush()
 
@@ -996,7 +1120,7 @@ def scan_active_bookings_for_traveltek_updates(
     errors: list[str] = []
     created_count = 0
     max_limit = min(limit, settings.traveltek_max_calls_per_run)
-    bookings = candidate_active_bookings(db, max_limit)
+    bookings = candidate_active_bookings(db, max_limit, active_window_days=active_window_days)
 
     for booking in bookings:
         try:
@@ -1066,8 +1190,48 @@ def scan_active_bookings_for_traveltek_updates(
                 f"Traveltek check scanned {run.checked_bookings} booking(s), "
                 f"used {run.api_call_count} API call(s), and created {created_count} update suggestion(s)."
             ),
+            after_data={"active_window_days": active_window_days},
         )
     )
     db.commit()
     db.refresh(run)
     return run
+
+
+def run_active_maintenance_update(
+    db: Session,
+    new_booking_start_date: date,
+    new_booking_end_date: date,
+    new_booking_limit: int,
+    refresh_limit: int,
+    active_window_days: int,
+    actor_user_id: int | None,
+) -> dict[str, Any]:
+    if new_booking_end_date < new_booking_start_date:
+        raise ValueError("New booking end date must be after start date.")
+
+    new_booking_run = import_traveltek_bookings_by_date_range(
+        db=db,
+        start_date=new_booking_start_date,
+        end_date=new_booking_end_date,
+        date_type="booking_date",
+        limit=new_booking_limit,
+        actor_user_id=actor_user_id,
+    )
+    refresh_run = scan_active_bookings_for_traveltek_updates(
+        db=db,
+        limit=refresh_limit,
+        actor_user_id=actor_user_id,
+        active_window_days=active_window_days,
+        sync_type="active_recent_booking_check",
+    )
+    active_window_start_date = date.today() - timedelta(days=active_window_days)
+    estimated_calls = min(new_booking_limit, max(1, settings.traveltek_max_calls_per_run - 1)) + 1
+    estimated_calls += min(refresh_limit, settings.traveltek_max_calls_per_run)
+    return {
+        "new_booking_run": new_booking_run,
+        "refresh_run": refresh_run,
+        "active_window_start_date": active_window_start_date,
+        "estimated_calls_this_run": estimated_calls,
+        "message": "Active Traveltek update finished.",
+    }

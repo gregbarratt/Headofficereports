@@ -10,7 +10,7 @@ from app.schemas.booking import BookingCheckRow, BookingChecksResponse, BookingC
 
 
 ZERO = Decimal("0.00")
-BOOKING_CHECK_ROW_LIMIT = 5000
+BOOKING_CHECK_ROW_LIMIT = 10000
 ADJUSTABLE_FIELDS = {
     "gross_booking_value",
     "expected_supplier_total",
