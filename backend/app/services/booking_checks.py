@@ -1,16 +1,26 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.reporting import Booking, BookingCheckAdjustment, CustomerPayment, InsuranceCost, SupplierPayment
+from app.models.reporting import (
+    Booking,
+    BookingCheckAdjustment,
+    CustomerPayment,
+    InsuranceCost,
+    SupplierPayment,
+    TraveltekBookingUpdate,
+)
 from app.schemas.booking import BookingCheckRow, BookingChecksResponse, BookingChecksSummary
+from app.services.master_booking_import import parse_date, parse_int, parse_money
 
 
 ZERO = Decimal("0.00")
 BOOKING_CHECK_ROW_LIMIT = 10000
+TRAVELTEK_AUTO_BOOKING_FIELDS = {"return_date", "passenger_count", "non_trusted_total_due"}
 ADJUSTABLE_FIELDS = {
     "gross_booking_value",
     "expected_supplier_total",
@@ -19,6 +29,90 @@ ADJUSTABLE_FIELDS = {
     "customer_sings_total",
     "customer_tt_total",
 }
+
+
+def parse_traveltek_auto_booking_value(field_name: str, raw_value: str | None):
+    if raw_value is None:
+        return None
+    try:
+        if field_name == "return_date":
+            try:
+                return parse_date(raw_value)
+            except ValueError:
+                return date.fromisoformat(str(raw_value).strip()[:10])
+        if field_name == "passenger_count":
+            value = parse_int(raw_value)
+            return value if value is not None and 0 < value <= 99 else None
+        if field_name == "non_trusted_total_due":
+            return parse_money(raw_value)
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def values_match(current_value, new_value) -> bool:
+    if current_value is None and new_value is None:
+        return True
+    if isinstance(current_value, Decimal) or isinstance(new_value, Decimal):
+        if current_value is None or new_value is None:
+            return False
+        return money(current_value) == money(new_value)
+    if isinstance(current_value, datetime):
+        current_value = current_value.date()
+    if isinstance(new_value, datetime):
+        new_value = new_value.date()
+    return current_value == new_value
+
+
+def apply_pending_traveltek_auto_booking_fields(db: Session) -> None:
+    pending_updates = list(
+        db.scalars(
+            select(TraveltekBookingUpdate)
+            .where(TraveltekBookingUpdate.field_name.in_(TRAVELTEK_AUTO_BOOKING_FIELDS))
+            .where(TraveltekBookingUpdate.status.in_(("open", "reviewing")))
+            .order_by(TraveltekBookingUpdate.detected_at.desc(), TraveltekBookingUpdate.id.desc())
+        )
+    )
+    if not pending_updates:
+        return
+
+    changed = False
+    bookings_by_id: dict[int, Booking] = {}
+    bookings_by_ref: dict[str, Booking] = {}
+
+    for update in pending_updates:
+        parsed_value = parse_traveltek_auto_booking_value(update.field_name, update.traveltek_value)
+        if parsed_value is None or not hasattr(Booking, update.field_name):
+            continue
+
+        booking = None
+        if update.booking_id:
+            booking = bookings_by_id.get(update.booking_id)
+            if booking is None:
+                booking = db.get(Booking, update.booking_id)
+                if booking is not None:
+                    bookings_by_id[update.booking_id] = booking
+
+        if booking is None:
+            booking_ref = update.booking_ref.strip().upper()
+            booking = bookings_by_ref.get(booking_ref)
+            if booking is None:
+                booking = db.scalar(select(Booking).where(Booking.booking_ref == booking_ref))
+                if booking is not None:
+                    bookings_by_ref[booking_ref] = booking
+
+        if booking is None:
+            continue
+
+        if not values_match(getattr(booking, update.field_name), parsed_value):
+            setattr(booking, update.field_name, parsed_value)
+            changed = True
+
+        update.status = "resolved"
+        changed = True
+
+    if changed:
+        db.commit()
 
 
 def money(value: Decimal | None) -> Decimal:
@@ -140,6 +234,7 @@ def adjustment_note(adjustments: dict[str, BookingCheckAdjustment]) -> str | Non
 
 
 def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> BookingChecksResponse:
+    apply_pending_traveltek_auto_booking_fields(db)
     bookings = list(
         db.scalars(
             select(Booking)
@@ -265,6 +360,7 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
 
 
 def build_booking_checks_summary(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> BookingChecksSummary:
+    apply_pending_traveltek_auto_booking_fields(db)
     bookings = list(
         db.scalars(
             select(Booking)
