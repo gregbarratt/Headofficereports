@@ -229,14 +229,25 @@ function defaultSyncStartDate() {
   return toDateInputValue(dateValue);
 }
 
-function formatStatusLabel(value) {
-  if (!value) {
-    return "-";
+  function formatStatusLabel(value) {
+    if (!value) {
+      return "-";
+    }
+    return value.replaceAll("_", " ");
   }
-  return value.replaceAll("_", " ");
-}
 
-function formatSourceLabel(value) {
+  function redactSensitiveText(value) {
+    if (!value) {
+      return "";
+    }
+    return String(value)
+      .replace(/(password\s*[=:]\s*)[^,\s|<>]+/gi, "$1[redacted]")
+      .replace(/(username\s*[=:]\s*)[^,\s|<>]+/gi, "$1[redacted]")
+      .replace(/(<auth\b[^>]*\bpassword=")[^"]+/gi, "$1[redacted]")
+      .replace(/(<auth\b[^>]*\busername=")[^"]+/gi, "$1[redacted]");
+  }
+
+  function formatSourceLabel(value) {
   const labels = {
     taps: "TAPs",
     tt: "TT",
@@ -530,10 +541,10 @@ function TraveltekUpdatesPage({ token }) {
         const run = await syncTraveltekActiveBookings({ token, limit: Number(syncLimit) });
         setMessage(
           `Traveltek check finished. Traveltek calls attempted: ${run.api_call_count}. Successfully checked: ${run.checked_bookings}. Suggestions created: ${run.proposals_created}.`
-        );
-        if (run.error_summary) {
-          setError(`Traveltek returned an issue: ${run.error_summary}`);
-        }
+          );
+          if (run.error_summary) {
+            setError(`Traveltek returned an issue: ${redactSensitiveText(run.error_summary)}`);
+          }
         await loadUpdates(statusFilter);
       } catch (syncError) {
         setError(syncError.message || "Traveltek check could not run.");
@@ -556,10 +567,10 @@ function TraveltekUpdatesPage({ token }) {
         });
       setMessage(
           `Traveltek booking import finished. Date basis: ${importDateType === "departure_date" ? "departure date" : "booking date"}. API calls attempted: ${run.api_call_count}. Booking records checked: ${run.checked_bookings}. New or changed bookings: ${run.proposals_created}.`
-      );
-      if (run.error_summary) {
-        setError(`Traveltek returned an issue: ${run.error_summary}`);
-      }
+        );
+        if (run.error_summary) {
+          setError(`Traveltek returned an issue: ${redactSensitiveText(run.error_summary)}`);
+        }
       await loadUpdates(statusFilter);
     } catch (importError) {
       setError(importError.message || "Traveltek booking import could not run.");
@@ -596,7 +607,7 @@ function TraveltekUpdatesPage({ token }) {
       {message ? <p className="form-success">{message}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
         {!configured ? (
-          <p className="form-error">Traveltek API is not configured yet. Add the Traveltek username, password and sitename in Render.</p>
+          <p className="form-error">Traveltek API is not configured yet. Add the Traveltek username, password and sitename / SID in Render.</p>
         ) : null}
 
       <div className="summary-strip summary-strip-wide">
@@ -627,7 +638,7 @@ function TraveltekUpdatesPage({ token }) {
         </div>
 
         {latestRun?.error_summary ? (
-          <p className="form-error">Last Traveltek issue: {latestRun.error_summary}</p>
+          <p className="form-error">Last Traveltek issue: {redactSensitiveText(latestRun.error_summary)}</p>
         ) : null}
 
         <div className="traveltek-toolbar">
@@ -3978,7 +3989,7 @@ function SettingsPage({ token }) {
         <strong>
           <ConfigStatus isConfigured={traveltek.password_configured} />
         </strong>
-        <span>Traveltek sitename</span>
+        <span>Traveltek sitename / SID</span>
         <strong>
           <ConfigStatus isConfigured={traveltek.sitename_configured} />
         </strong>

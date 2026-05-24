@@ -521,10 +521,16 @@ The required private Render environment variables are:
 - `TRAVELTEK_API_BASE_URL`
 - `TRAVELTEK_USERNAME`
 - `TRAVELTEK_PASSWORD`
-- `TRAVELTEK_SITENAME`
+- `TRAVELTEK_SITENAME`, which appears to be the Traveltek sitename / SID
 - `TRAVELTEK_MAX_CALLS_PER_RUN`
 
 Keep `TRAVELTEK_MAX_CALLS_PER_RUN` low at first because the Traveltek allowance is limited.
+
+For retrieving booking data, the API base URL should be:
+
+```text
+https://fusionapi.traveltek.net/0.9/interface.pl
+```
 
 ## Trust Reconciliation
 

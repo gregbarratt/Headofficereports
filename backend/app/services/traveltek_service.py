@@ -141,6 +141,14 @@ class TraveltekApiError(RuntimeError):
     pass
 
 
+def redact_sensitive_text(value: str) -> str:
+    redacted = re.sub(r"(password\s*[=:]\s*)[^,\s|<>]+", r"\1[redacted]", value, flags=re.IGNORECASE)
+    redacted = re.sub(r"(username\s*[=:]\s*)[^,\s|<>]+", r"\1[redacted]", redacted, flags=re.IGNORECASE)
+    redacted = re.sub(r"(<auth\b[^>]*\bpassword=\")[^\"]+", r"\1[redacted]", redacted, flags=re.IGNORECASE)
+    redacted = re.sub(r"(<auth\b[^>]*\busername=\")[^\"]+", r"\1[redacted]", redacted, flags=re.IGNORECASE)
+    return redacted
+
+
 def format_date_for_traveltek(value: date, style: str) -> str:
     if style == "uk":
         return value.strftime("%d/%m/%Y")
@@ -239,16 +247,17 @@ def traveltek_error_message(root: ElementTree.Element) -> str:
     messages: list[str] = []
     for element in root.iter():
         element_name = local_name(element.tag)
+        if element_name in {"request", "auth", "method"}:
+            continue
+
         text = (element.text or "").strip()
-        if element.attrib:
-            messages.append(f"{element_name}: " + ", ".join(f"{key}={value}" for key, value in element.attrib.items()))
         interesting_attributes = [
             f"{key}={value}"
             for key, value in element.attrib.items()
             if normalise_key(key) in {"error", "errors", "message", "reason", "code", "description", "status", "success"}
             and str(value).strip()
         ]
-        if text and len(text) <= 300:
+        if text and len(text) <= 300 and element_name in {"error", "errors", "message", "fault", "exception"}:
             messages.append(f"{element_name}: {text}")
         if element_name in {"error", "errors", "message", "fault", "exception"} and text:
             messages.append(text)
@@ -261,10 +270,10 @@ def traveltek_error_message(root: ElementTree.Element) -> str:
             deduped.append(message)
 
     if deduped:
-        return " | ".join(deduped[:8])
+        return redact_sensitive_text(" | ".join(deduped[:8]))
 
     root_text = ElementTree.tostring(root, encoding="unicode")
-    return root_text[:700]
+    return redact_sensitive_text(root_text[:700])
 
 
 def build_request_xml(action: str, attributes: dict[str, str]) -> str:
@@ -301,7 +310,7 @@ def call_traveltek(action: str, attributes: dict[str, str]) -> ElementTree.Eleme
             response_text = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         response_text = exc.read().decode("utf-8", errors="replace")
-        raise TraveltekApiError(f"Traveltek API returned HTTP {exc.code}: {response_text[:500]}") from exc
+        raise TraveltekApiError(f"Traveltek API returned HTTP {exc.code}: {redact_sensitive_text(response_text[:500])}") from exc
     except urllib.error.URLError as exc:
         raise TraveltekApiError(f"Traveltek API request failed: {exc}") from exc
 
@@ -385,6 +394,8 @@ def getbookings_attribute_attempts(start_date: date, end_date: date, date_type: 
 
     if date_type == "departure_date":
         return [
+            ("startdate/enddate departure", {"startdate": iso_from, "enddate": iso_to, "datetype": "departuredate"}),
+            ("UK startdate/enddate departure", {"startdate": uk_from, "enddate": uk_to, "datetype": "departuredate"}),
             ("departuredatefrom/departuredateto", {"departuredatefrom": iso_from, "departuredateto": iso_to}),
             ("datefrom/dateto/datetype", {"datefrom": iso_from, "dateto": iso_to, "datetype": "departuredate"}),
             ("departdatefrom/departdateto", {"departdatefrom": iso_from, "departdateto": iso_to}),
@@ -393,6 +404,8 @@ def getbookings_attribute_attempts(start_date: date, end_date: date, date_type: 
         ]
 
     return [
+        ("startdate/enddate", {"startdate": iso_from, "enddate": iso_to}),
+        ("UK startdate/enddate", {"startdate": uk_from, "enddate": uk_to}),
         ("datefrom/dateto", {"datefrom": iso_from, "dateto": iso_to}),
         ("bookingdatefrom/bookingdateto", {"bookingdatefrom": iso_from, "bookingdateto": iso_to}),
         ("UK datefrom/dateto", {"datefrom": uk_from, "dateto": uk_to}),

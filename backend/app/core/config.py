@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     felloh_public_key: str = ""
     felloh_private_key: str = ""
     felloh_organisation_id: str = ""
-    traveltek_api_base_url: str = "https://secure.traveltek.net/fusionapi/0.9/interface.pl"
+    traveltek_api_base_url: str = "https://fusionapi.traveltek.net/0.9/interface.pl"
     traveltek_username: str = ""
     traveltek_password: str = ""
     traveltek_sitename: str = ""
