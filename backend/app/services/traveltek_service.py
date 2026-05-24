@@ -37,7 +37,16 @@ FIELD_DEFINITIONS = {
     },
     "customer_last_name": {
         "label": "Customer / lead name",
-        "candidates": ("leadname", "leadpassenger", "customername", "customer", "lastname", "last_name", "surname"),
+        "candidates": (
+            "leadname",
+            "leadpassenger",
+            "leadpassengername",
+            "customername",
+            "customerlastname",
+            "lastname",
+            "last_name",
+            "surname",
+        ),
         "parser": "text",
     },
     "agent_in_charge": {
@@ -52,7 +61,7 @@ FIELD_DEFINITIONS = {
     },
     "travel_elements_raw": {
         "label": "Travel elements",
-        "candidates": ("elements", "products", "producttype", "type"),
+        "candidates": ("elements", "products", "producttype", "product", "bookingtype"),
         "parser": "text",
     },
     "departure_date": {
@@ -67,7 +76,7 @@ FIELD_DEFINITIONS = {
     },
     "passenger_count": {
         "label": "Passenger count",
-        "candidates": ("pax", "passengers", "passengercount", "totalpax", "numberofpassengers"),
+        "candidates": ("pax", "paxcount", "passengercount", "totalpax", "numberofpassengers", "noofpassengers"),
         "parser": "int",
     },
     "booking_date": {
@@ -116,6 +125,7 @@ FIELD_DEFINITIONS = {
         "parser": "money",
     },
 }
+REVIEW_FIELD_NAMES = set(FIELD_DEFINITIONS)
 BOOKING_REFERENCE_CANDIDATES = (
     "bookingreference",
     "bookingref",
@@ -216,6 +226,31 @@ def parse_traveltek_value(value: str | None, parser: str) -> Any:
     if parser == "status":
         return value.strip()
     return value.strip() or None
+
+
+def is_plausible_traveltek_value(field_name: str, value: Any) -> bool:
+    if value is None:
+        return False
+
+    if field_name == "passenger_count":
+        return isinstance(value, int) and 0 < value <= 99
+
+    if field_name == "customer_last_name":
+        return str(value).strip().upper() not in {"Y", "N", "YES", "NO", "TRUE", "FALSE", "0", "1"}
+
+    return True
+
+
+def is_valid_traveltek_update_value(field_name: str, raw_value: str | None) -> bool:
+    if field_name not in REVIEW_FIELD_NAMES:
+        return False
+
+    definition = FIELD_DEFINITIONS[field_name]
+    try:
+        parsed_value = parse_traveltek_value(raw_value, definition["parser"])
+    except ValueError:
+        return False
+    return is_plausible_traveltek_value(field_name, parsed_value)
 
 
 def display_value(value: Any) -> str | None:
@@ -360,7 +395,7 @@ def extract_booking_values(flattened: dict[str, str]) -> dict[str, Any]:
             parsed_value = parse_traveltek_value(raw_value, definition["parser"])
         except ValueError:
             parsed_value = None
-        if parsed_value is not None:
+        if is_plausible_traveltek_value(field_name, parsed_value):
             values[field_name] = parsed_value
 
     imported_status = values.get("imported_booking_status")
@@ -637,6 +672,9 @@ def create_update_proposal(
     traveltek_value: Any,
     source: dict[str, Any],
 ) -> bool:
+    if not is_valid_traveltek_update_value(field_name, display_value(traveltek_value)):
+        return False
+
     existing_open = db.scalar(
         select(TraveltekBookingUpdate).where(
             TraveltekBookingUpdate.booking_ref == booking.booking_ref,
@@ -695,6 +733,9 @@ def scan_active_bookings_for_traveltek_updates(
             run.checked_bookings += 1
 
             for field_name, traveltek_value in traveltek_booking.values.items():
+                if field_name not in REVIEW_FIELD_NAMES:
+                    continue
+
                 current_value = getattr(booking, field_name)
                 if field_name == "imported_booking_status":
                     current_value = booking.imported_booking_status or booking.normalised_status

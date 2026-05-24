@@ -233,6 +233,12 @@ function isTraveltekNoRowsMessage(value) {
   return String(value || "").toLowerCase().includes("returned no booking rows");
 }
 
+function isLegacyTraveltekFieldMessage(value) {
+  return /'(flight_included|accommodation_included|cruise_included|extras_included|package_included|normalised_status|atol_review_status)'/i.test(
+    String(value || "")
+  );
+}
+
   function formatStatusLabel(value) {
     if (!value) {
       return "-";
@@ -657,6 +663,8 @@ function TraveltekUpdatesPage({ token }) {
         {latestRun?.error_summary ? (
           isTraveltekNoRowsMessage(latestRun.error_summary) ? (
             <p className="muted-note">Last Traveltek note: {redactSensitiveText(latestRun.error_summary)}</p>
+          ) : isLegacyTraveltekFieldMessage(latestRun.error_summary) ? (
+            <p className="muted-note">Last Traveltek note: older internal-field suggestions are now hidden.</p>
           ) : (
             <p className="form-error">Last Traveltek issue: {redactSensitiveText(latestRun.error_summary)}</p>
           )

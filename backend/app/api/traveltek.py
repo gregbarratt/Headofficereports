@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
@@ -19,7 +19,11 @@ from app.schemas.traveltek import (
     TraveltekUpdateSummary,
     TraveltekUpdatesResponse,
 )
-from app.services.traveltek_service import import_traveltek_bookings_by_date_range, scan_active_bookings_for_traveltek_updates
+from app.services.traveltek_service import (
+    import_traveltek_bookings_by_date_range,
+    is_valid_traveltek_update_value,
+    scan_active_bookings_for_traveltek_updates,
+)
 
 
 router = APIRouter(prefix="/api/traveltek", tags=["Traveltek"])
@@ -30,14 +34,27 @@ def latest_run(db: Session) -> TraveltekSyncRun | None:
     return db.scalar(select(TraveltekSyncRun).order_by(TraveltekSyncRun.started_at.desc(), TraveltekSyncRun.id.desc()).limit(1))
 
 
+def visible_traveltek_updates(db: Session, status_filter: str = "all", limit: int | None = None) -> list[TraveltekBookingUpdate]:
+    statement = select(TraveltekBookingUpdate).order_by(
+        TraveltekBookingUpdate.detected_at.desc(),
+        TraveltekBookingUpdate.id.desc(),
+    )
+    if status_filter != "all":
+        statement = statement.where(TraveltekBookingUpdate.status == status_filter)
+
+    updates = [
+        update
+        for update in db.scalars(statement)
+        if is_valid_traveltek_update_value(update.field_name, update.traveltek_value)
+    ]
+    return updates[:limit] if limit is not None else updates
+
+
 def update_summary(db: Session) -> TraveltekUpdateSummary:
-    counts = {
-        status_value: db.scalar(
-            select(func.count()).select_from(TraveltekBookingUpdate).where(TraveltekBookingUpdate.status == status_value)
-        )
-        or 0
-        for status_value in VALID_UPDATE_STATUSES
-    }
+    updates = visible_traveltek_updates(db)
+    counts = {status_value: 0 for status_value in VALID_UPDATE_STATUSES}
+    for update in updates:
+        counts[update.status] = counts.get(update.status, 0) + 1
     return TraveltekUpdateSummary(
         open_count=counts["open"],
         reviewing_count=counts["reviewing"],
@@ -60,10 +77,7 @@ def traveltek_status(
         sitename_configured=bool(settings.traveltek_sitename.strip()),
         max_calls_per_run=settings.traveltek_max_calls_per_run,
         latest_run=latest_run(db),
-        open_update_count=db.scalar(
-            select(func.count()).select_from(TraveltekBookingUpdate).where(TraveltekBookingUpdate.status == "open")
-        )
-        or 0,
+        open_update_count=len(visible_traveltek_updates(db, "open")),
     )
 
 
@@ -76,18 +90,11 @@ def list_traveltek_updates(
     if status_filter not in VALID_UPDATE_STATUSES and status_filter != "all":
         status_filter = "open"
 
-    statement = select(TraveltekBookingUpdate).order_by(
-        TraveltekBookingUpdate.detected_at.desc(),
-        TraveltekBookingUpdate.id.desc(),
-    )
-    if status_filter != "all":
-        statement = statement.where(TraveltekBookingUpdate.status == status_filter)
-
     return TraveltekUpdatesResponse(
         configured=settings.traveltek_api_configured,
         latest_run=latest_run(db),
         summary=update_summary(db),
-        updates=list(db.scalars(statement.limit(500))),
+        updates=visible_traveltek_updates(db, status_filter, limit=500),
     )
 
 
