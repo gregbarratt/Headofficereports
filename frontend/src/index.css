@@ -437,7 +437,7 @@ nav button:disabled {
 .traveltek-toolbar {
   align-items: end;
   display: grid;
-  grid-template-columns: minmax(160px, 220px) minmax(140px, 180px) auto;
+  grid-template-columns: repeat(3, minmax(140px, 220px)) minmax(220px, 1fr);
   gap: 12px;
   margin-bottom: 12px;
 }

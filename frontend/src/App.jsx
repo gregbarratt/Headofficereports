@@ -641,7 +641,7 @@ function TraveltekUpdatesPage({ token }) {
       try {
         const run = await syncTraveltekActiveBookings({ token, limit: Number(syncLimit) });
         setMessage(
-          `Traveltek check finished. Traveltek calls attempted: ${run.api_call_count}. Successfully checked: ${run.checked_bookings}. Suggestions created: ${run.proposals_created}.`
+          `Traveltek review refresh finished. Traveltek calls attempted: ${run.api_call_count}. Successfully checked: ${run.checked_bookings}. Suggestions created: ${run.proposals_created}.`
           );
           if (run.error_summary) {
             setError(`Traveltek returned an issue: ${redactSensitiveText(run.error_summary)}`);
@@ -666,13 +666,13 @@ function TraveltekUpdatesPage({ token }) {
           limit: Number(importLimit),
         });
       setMessage(
-          `Traveltek booking-date search finished. API calls attempted: ${run.api_call_count}. Booking records checked: ${run.checked_bookings}. New or changed bookings: ${run.proposals_created}.`
+          `Traveltek import finished. API calls attempted: ${run.api_call_count}. Booking records checked: ${run.checked_bookings}. New or changed bookings: ${run.proposals_created}.`
         );
         if (run.error_summary) {
           const safeSummary = redactSensitiveText(run.error_summary);
           if (isTraveltekNoRowsMessage(safeSummary)) {
             setMessage(
-              `Traveltek booking-date search finished. No booking rows were returned for ${formatDate(importStartDate)} to ${formatDate(importEndDate)}. Try a wider booking-date range if needed.`
+              `Traveltek import finished. No booking rows were returned for ${formatDate(importStartDate)} to ${formatDate(importEndDate)}. Try a wider booking-date range if needed.`
             );
           } else {
             setError(`Traveltek returned an issue: ${safeSummary}`);
@@ -726,7 +726,7 @@ function TraveltekUpdatesPage({ token }) {
       <div className="panel-heading">
         <div>
           <h2>Traveltek Updates</h2>
-          <p>Checks active bookings against Traveltek and creates suggested changes for review.</p>
+          <p>Pulls booking data from Traveltek and groups suggested changes for review.</p>
         </div>
         <RefreshCw size={24} aria-hidden="true" />
       </div>
@@ -762,14 +762,6 @@ function TraveltekUpdatesPage({ token }) {
             <span>Last Traveltek status</span>
             <strong>{latestRun ? formatStatusLabel(latestRun.status) : "-"}</strong>
           </div>
-          <div>
-            <span>Search basis</span>
-            <strong>Booking date</strong>
-          </div>
-          <div>
-            <span>Detail lookup</span>
-            <strong>Secure portfolio</strong>
-          </div>
         </div>
 
         {latestRun?.error_summary ? (
@@ -782,11 +774,10 @@ function TraveltekUpdatesPage({ token }) {
           )
         ) : null}
 
+        <div className="section-heading">
+          <h3>Pull bookings from Traveltek</h3>
+        </div>
         <div className="traveltek-toolbar">
-          <label>
-            Traveltek search
-            <input readOnly value="Booking date" />
-          </label>
           <label>
             Booking date from
             <input
@@ -804,7 +795,7 @@ function TraveltekUpdatesPage({ token }) {
             />
           </label>
           <label>
-            Bookings to import
+            Max bookings
             <input
               max="500"
               min="1"
@@ -815,15 +806,13 @@ function TraveltekUpdatesPage({ token }) {
           </label>
           <button className="primary-button" disabled={isImporting || !configured} onClick={handleBookingImport} type="button">
             <RefreshCw size={18} aria-hidden="true" />
-            {isImporting ? "Importing" : "Import Bookings"}
+            {isImporting ? "Pulling" : "Pull Bookings From Traveltek"}
           </button>
         </div>
 
-        <p className="muted-note">
-          Traveltek searches by booking date. Departure and return dates are stored on each booking, so Booking Checks
-          can still be reviewed by travel date after the booking data has been imported.
-        </p>
-
+        <div className="section-heading">
+          <h3>Review suggestions</h3>
+        </div>
         <div className="traveltek-toolbar">
           <label>
             Suggestions
@@ -836,7 +825,7 @@ function TraveltekUpdatesPage({ token }) {
           </select>
         </label>
         <label>
-          Bookings to check
+          Bookings to refresh
           <input
             max="500"
             min="1"
@@ -847,12 +836,12 @@ function TraveltekUpdatesPage({ token }) {
         </label>
         <button className="primary-button" disabled={isSyncing || !configured} onClick={handleSync} type="button">
           <RefreshCw size={18} aria-hidden="true" />
-          {isSyncing ? "Checking" : "Check Traveltek"}
+          {isSyncing ? "Refreshing" : "Refresh Suggestions"}
         </button>
       </div>
 
       <p className="muted-note">
-        This only creates suggestions. It does not overwrite the Head Office booking database.
+        Suggestions are shown below by booking reference.
       </p>
 
       {groupedUpdates.length ? (
