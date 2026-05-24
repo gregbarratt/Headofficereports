@@ -488,6 +488,7 @@ Traveltek can now replace the manual master booking CSV for booking data.
 
 The Traveltek Updates page has two actions:
 
+- Update everything already in the Head Office database by booking reference or Traveltek booking ID
 - Run a full controlled catch-up, one booking-date batch at a time
 - Run an ongoing active update for recent new bookings and active/recent departures
 - Import bookings from Traveltek for a selected booking-date range
@@ -495,7 +496,9 @@ The Traveltek Updates page has two actions:
 
 The Traveltek `getbookings` document says the import date range is a booking date range. The Traveltek Updates page therefore searches by booking date only. The system stores Traveltek departure and return dates on the booking record, then Head Office can review by travel date inside Booking Checks.
 
-For a historic catch-up, use **Update Everything From Traveltek**. This starts with today, works backwards to `2023-01-30`, and uses safe one-day booking-date batches so recent bookings appear first. The browser page must stay open while it works. The advanced catch-up controls remain available if Head Office needs to change dates, batch size, or restart the saved catch-up position.
+For the main system refresh, use **Update Everything From Traveltek**. This refreshes the bookings already held in the Head Office database by Traveltek booking ID or booking reference, so it does not get stuck if Traveltek's booking-date search returns no rows. The browser page must stay open while it works.
+
+The advanced catch-up controls remain available for importing bookings that are not already in the Head Office database. Those controls still use Traveltek booking-date searches because that is how the Traveltek `getbookings` import works.
 
 For regular use after the catch-up, use **Ongoing active update**. It first imports recent new bookings by booking date, then refreshes only bookings whose departure date is within the active window. The default active window is 60 days after departure, so old departed bookings are not repeatedly checked.
 
@@ -506,6 +509,8 @@ Traveltek total amount paid, outstanding, total due, due to suppliers, paid to s
 Traveltek Total Due, Return Date and Passenger Count are automatically refreshed on the booking record when Traveltek is checked. They appear in Booking Checks, but they do not create separate review suggestions. Traveltek projected profit is kept for reporting/cross-checking, but it no longer creates a Traveltek Updates review item.
 
 Booking Checks now labels PAX as Passenger Count so it matches Traveltek wording. The Traveltek importer also counts passenger rows from the detailed portfolio if Traveltek does not send one simple PAX total. Each row also shows the last booking update date and time, so Head Office can see when a booking was last changed by an import, Traveltek refresh, or manual booking check amendment.
+
+Traveltek Updates now includes a Booking change log. Whenever a Traveltek import or refresh changes a booking, the system records the booking reference, the type of change, the field names, the old value and the new value. Cancellations, customer payment changes, gross value changes, supplier payment changes and balance changes are labelled so Head Office can review what has moved.
 
 On Booking Checks, the main supplier payment match is TAPs Paid compared with Traveltek Paid To Supplier. Expected Supplier Cost remains visible as a balance guide, but it does not create the red supplier payment mismatch badge on Booking Checks.
 

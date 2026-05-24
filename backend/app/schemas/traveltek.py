@@ -30,6 +30,11 @@ class TraveltekActiveMaintenanceRequest(BaseModel):
     active_window_days: int = Field(default=60, ge=1, le=365)
 
 
+class TraveltekUpdateEverythingBatchRequest(BaseModel):
+    limit: int = Field(default=25, ge=1, le=500)
+    reset_progress: bool = False
+
+
 class TraveltekSyncRunRead(BaseModel):
     id: int
     status: str
@@ -94,6 +99,24 @@ class TraveltekActiveMaintenanceResponse(BaseModel):
     active_window_start_date: date
     estimated_calls_this_run: int
     message: str
+
+
+class TraveltekUpdateEverythingBatchResponse(BaseModel):
+    run: TraveltekSyncRunRead | None
+    complete: bool
+    next_booking_ref: str | None
+    estimated_calls_this_batch: int
+    message: str
+
+
+class TraveltekChangeLogRead(BaseModel):
+    id: int
+    booking_ref: str | None
+    change_type: str
+    changed_fields: list[str]
+    changes: list[dict[str, str | None]]
+    description: str | None
+    created_at: datetime
 
 
 class TraveltekStatusResponse(BaseModel):

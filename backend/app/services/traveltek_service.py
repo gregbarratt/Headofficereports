@@ -216,6 +216,7 @@ BOOKING_REF_CANDIDATES = BOOKING_REFERENCE_CANDIDATES + EXTERNAL_REFERENCE_CANDI
 BOOKING_ELEMENT_NAMES = {"booking", "portfolio", "enquiry", "item", "row", "result"}
 FULL_CATCHUP_CURSOR_KEY = "traveltek_full_catchup_cursor_date"
 FULL_CATCHUP_END_KEY = "traveltek_full_catchup_end_date"
+UPDATE_EVERYTHING_CURSOR_KEY = "traveltek_update_everything_cursor_ref"
 SUPPLIER_REFERENCE_KEYS = {
     "supplierreference",
     "supplierref",
@@ -678,6 +679,92 @@ def values_are_equal(current_value: Any, traveltek_value: Any) -> bool:
     return str(current_value or "").strip().lower() == str(traveltek_value or "").strip().lower()
 
 
+def traveltek_field_label(field_name: str) -> str:
+    if field_name == "normalised_status":
+        return "Normalised booking status"
+    return FIELD_DEFINITIONS.get(field_name, {}).get("label") or field_name.replace("_", " ").title()
+
+
+def classify_traveltek_booking_change(changes: list[dict[str, str | None]], created: bool = False) -> str:
+    if created:
+        return "created"
+    for change in changes:
+        field_name = change.get("field_name")
+        next_value = str(change.get("new_value") or "").strip().lower()
+        if field_name in {"normalised_status", "imported_booking_status"} and "cancel" in next_value:
+            return "cancelled"
+    changed_fields = {str(change.get("field_name") or "") for change in changes}
+    if "non_trusted_total_received" in changed_fields:
+        return "customer_payment_changed"
+    if "gross_booking_value" in changed_fields:
+        return "gross_value_changed"
+    if "non_trusted_paid_supplier" in changed_fields:
+        return "supplier_payment_changed"
+    if "imported_customer_outstanding" in changed_fields or "non_trusted_total_due" in changed_fields:
+        return "customer_balance_changed"
+    if "imported_supplier_outstanding" in changed_fields or "expected_supplier_nett" in changed_fields:
+        return "supplier_balance_changed"
+    return "changed"
+
+
+def change_type_label(change_type: str) -> str:
+    labels = {
+        "created": "New booking created from Traveltek",
+        "cancelled": "Booking cancelled in Traveltek",
+        "customer_payment_changed": "Customer payment changed in Traveltek",
+        "gross_value_changed": "Gross booking value changed in Traveltek",
+        "supplier_payment_changed": "Supplier payment changed in Traveltek",
+        "customer_balance_changed": "Customer balance changed in Traveltek",
+        "supplier_balance_changed": "Supplier balance changed in Traveltek",
+        "changed": "Booking changed in Traveltek",
+    }
+    return labels.get(change_type, "Booking changed in Traveltek")
+
+
+def add_traveltek_booking_change_log(
+    db: Session,
+    booking_ref: str,
+    booking_id: int | None,
+    sync_run_id: int | None,
+    changes: list[dict[str, str | None]],
+    created: bool,
+    actor_user_id: int | None,
+) -> None:
+    if not changes and not created:
+        return
+
+    change_type = classify_traveltek_booking_change(changes, created)
+    changed_fields = [str(change.get("field_label") or change.get("field_name")) for change in changes]
+    description = f"{booking_ref}: {change_type_label(change_type)}."
+    db.add(
+        AuditLog(
+            actor_user_id=actor_user_id,
+            action=f"traveltek_booking_{change_type if change_type in {'created', 'cancelled'} else 'changed'}",
+            table_name="bookings",
+            record_id=booking_id,
+            description=description,
+            before_data={
+                "booking_ref": booking_ref,
+                "changes": [
+                    {
+                        "field_name": change.get("field_name"),
+                        "field_label": change.get("field_label"),
+                        "previous_value": change.get("previous_value"),
+                    }
+                    for change in changes
+                ],
+            },
+            after_data={
+                "booking_ref": booking_ref,
+                "change_type": change_type,
+                "changed_fields": changed_fields,
+                "sync_run_id": sync_run_id,
+                "changes": changes,
+            },
+        )
+    )
+
+
 def traveltek_error_message(root: ElementTree.Element) -> str:
     messages: list[str] = []
     for element in root.iter():
@@ -917,7 +1004,7 @@ def sort_booking_elements(elements: list[ElementTree.Element], date_type: str) -
 def apply_booking_values_from_traveltek(
     db: Session,
     values: dict[str, Any],
-) -> tuple[str, bool, bool]:
+) -> tuple[str, bool, bool, list[dict[str, str | None]], int | None]:
     booking_ref = values.get("booking_ref")
     if not booking_ref:
         raise ValueError("Traveltek booking did not include a booking reference.")
@@ -929,15 +1016,36 @@ def apply_booking_values_from_traveltek(
     }
     booking = db.scalar(select(Booking).where(Booking.booking_ref == booking_ref))
     if booking is None:
-        db.add(Booking(booking_ref=booking_ref, **writable_values))
-        return booking_ref, True, False
+        booking = Booking(booking_ref=booking_ref, **writable_values)
+        db.add(booking)
+        db.flush()
+        changes = [
+            {
+                "field_name": field_name,
+                "field_label": traveltek_field_label(field_name),
+                "previous_value": None,
+                "new_value": display_value(value),
+            }
+            for field_name, value in writable_values.items()
+        ]
+        return booking_ref, True, False, changes, booking.id
 
     changed = False
+    changes = []
     for field_name, value in writable_values.items():
-        if not values_are_equal(getattr(booking, field_name), value):
+        current_value = getattr(booking, field_name)
+        if not values_are_equal(current_value, value):
+            changes.append(
+                {
+                    "field_name": field_name,
+                    "field_label": traveltek_field_label(field_name),
+                    "previous_value": display_value(current_value),
+                    "new_value": display_value(value),
+                }
+            )
             setattr(booking, field_name, value)
             changed = True
-    return booking_ref, False, changed
+    return booking_ref, False, changed, changes, booking.id
 
 
 def get_setting_value(db: Session, key: str) -> str | None:
@@ -1057,12 +1165,21 @@ def import_traveltek_bookings_by_date_range(
             errors.append(f"{lookup_label}: detail lookup was skipped because the Traveltek call limit was reached.")
 
         try:
-            imported_ref, created, changed = apply_booking_values_from_traveltek(db, values)
+            imported_ref, created, changed, changes, booking_id = apply_booking_values_from_traveltek(db, values)
             run.checked_bookings += 1
             if created:
                 created_count += 1
             elif changed:
                 updated_count += 1
+            add_traveltek_booking_change_log(
+                db,
+                booking_ref=imported_ref,
+                booking_id=booking_id,
+                sync_run_id=run.id,
+                changes=changes,
+                created=created,
+                actor_user_id=actor_user_id,
+            )
             db.add(
                 AuditLog(
                     actor_user_id=actor_user_id,
@@ -1074,6 +1191,7 @@ def import_traveltek_bookings_by_date_range(
                         "booking_ref": imported_ref,
                         "created": created,
                         "changed": changed,
+                        "changed_fields": [change["field_label"] for change in changes],
                     },
                 )
             )
@@ -1217,6 +1335,147 @@ def candidate_active_bookings(db: Session, limit: int, active_window_days: int =
         statement = statement.where((Booking.departure_date.is_(None)) | (Booking.departure_date >= today))
     statement = statement.order_by(Booking.departure_date.asc().nullslast(), Booking.updated_at.desc()).limit(limit)
     return list(db.scalars(statement))
+
+
+def candidate_existing_bookings_for_update_everything(
+    db: Session,
+    limit: int,
+    reset_progress: bool,
+) -> tuple[list[Booking], str | None]:
+    cursor = None if reset_progress else get_setting_value(db, UPDATE_EVERYTHING_CURSOR_KEY)
+    statement = select(Booking).order_by(Booking.booking_ref.desc()).limit(limit)
+    if cursor:
+        statement = statement.where(Booking.booking_ref < cursor)
+    bookings = list(db.scalars(statement))
+    return bookings, cursor
+
+
+def run_update_everything_existing_booking_batch(
+    db: Session,
+    limit: int,
+    reset_progress: bool,
+    actor_user_id: int | None,
+) -> dict[str, Any]:
+    run = TraveltekSyncRun(sync_type="update_everything_existing_bookings", requested_by_user_id=actor_user_id)
+    db.add(run)
+    db.flush()
+
+    if not settings.traveltek_api_configured:
+        run.status = "failed"
+        run.error_summary = "Traveltek API is not configured in Render yet."
+        run.finished_at = datetime.now(UTC)
+        db.commit()
+        db.refresh(run)
+        return {
+            "run": run,
+            "complete": False,
+            "next_booking_ref": None,
+            "estimated_calls_this_batch": 0,
+            "message": "Traveltek API is not configured in Render yet.",
+        }
+
+    max_limit = min(limit, settings.traveltek_max_calls_per_run)
+    bookings, previous_cursor = candidate_existing_bookings_for_update_everything(db, max_limit, reset_progress)
+    if not bookings:
+        set_setting_value(
+            db,
+            UPDATE_EVERYTHING_CURSOR_KEY,
+            None,
+            "Next booking reference for Traveltek update everything.",
+            actor_user_id,
+        )
+        run.status = "completed"
+        run.finished_at = datetime.now(UTC)
+        run.error_summary = None if previous_cursor else "No bookings are available to update."
+        db.commit()
+        db.refresh(run)
+        return {
+            "run": run,
+            "complete": True,
+            "next_booking_ref": None,
+            "estimated_calls_this_batch": 0,
+            "message": "All existing bookings have been checked against Traveltek.",
+        }
+
+    errors: list[str] = []
+    changed_count = 0
+    for booking in bookings:
+        try:
+            run.api_call_count += 1
+            traveltek_booking = fetch_booking_for_existing_booking(booking)
+            values = dict(traveltek_booking.values)
+            # This refresh is for a booking we already hold; keep our booking key to avoid
+            # creating a duplicate if Traveltek also returns an external reference.
+            values["booking_ref"] = booking.booking_ref
+            imported_ref, created, changed, changes, booking_id = apply_booking_values_from_traveltek(db, values)
+            run.checked_bookings += 1
+            changed_count += 1 if changed else 0
+            add_traveltek_booking_change_log(
+                db,
+                booking_ref=imported_ref,
+                booking_id=booking_id,
+                sync_run_id=run.id,
+                changes=changes,
+                created=created,
+                actor_user_id=actor_user_id,
+            )
+        except TraveltekApiError as exc:
+            errors.append(f"{booking.booking_ref}: {exc}")
+        except Exception as exc:
+            errors.append(f"{booking.booking_ref}: {exc}")
+
+    last_booking_ref = bookings[-1].booking_ref
+    more_bookings = db.scalar(
+        select(Booking.id)
+        .where(Booking.booking_ref < last_booking_ref)
+        .order_by(Booking.booking_ref.desc())
+        .limit(1)
+    )
+    complete = more_bookings is None
+    set_setting_value(
+        db,
+        UPDATE_EVERYTHING_CURSOR_KEY,
+        None if complete else last_booking_ref,
+        "Next booking reference for Traveltek update everything.",
+        actor_user_id,
+    )
+
+    run.proposals_created = changed_count
+    if errors and run.checked_bookings == 0:
+        run.status = "failed"
+    elif errors:
+        run.status = "completed_with_errors"
+    else:
+        run.status = "completed"
+    run.error_summary = " ".join(errors[:5]) if errors else None
+    run.finished_at = datetime.now(UTC)
+    db.add(
+        AuditLog(
+            actor_user_id=actor_user_id,
+            action="traveltek_update_everything_existing_bookings",
+            table_name="traveltek_sync_runs",
+            record_id=run.id,
+            description=(
+                f"Traveltek update everything refreshed {run.checked_bookings} existing booking(s), "
+                f"changed {changed_count}, and used {run.api_call_count} API call(s)."
+            ),
+            after_data={
+                "last_booking_ref": last_booking_ref,
+                "complete": complete,
+                "changed": changed_count,
+                "api_calls": run.api_call_count,
+            },
+        )
+    )
+    db.commit()
+    db.refresh(run)
+    return {
+        "run": run,
+        "complete": complete,
+        "next_booking_ref": None if complete else last_booking_ref,
+        "estimated_calls_this_batch": max_limit,
+        "message": "Existing booking batch refreshed from Traveltek.",
+    }
 
 
 def create_update_proposal(

@@ -49,6 +49,7 @@ import {
   getStoredToken,
   getTrustReconciliation,
   getTraveltekUpdates,
+  getTraveltekChangeLog,
   importTraveltekBookings,
   getUploadBatches,
   getUploadTypes,
@@ -60,6 +61,7 @@ import {
   onAuthExpired,
   runTraveltekActiveMaintenance,
   runTraveltekFullCatchUpBatch,
+  runTraveltekUpdateEverythingBatch,
   sendWeeklyEmail,
   startFellohCustomerPaymentBackfill,
   storeToken,
@@ -221,17 +223,6 @@ function moneyMatches(value, search) {
 
 function toDateInputValue(dateValue) {
   return dateValue.toISOString().slice(0, 10);
-}
-
-function dateInputToUtcDate(value) {
-  const [year, month, day] = String(value).split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
-function addUtcDays(dateValue, days) {
-  const nextDate = new Date(dateValue);
-  nextDate.setUTCDate(nextDate.getUTCDate() + days);
-  return nextDate;
 }
 
 function toTimeInputValue(dateValue) {
@@ -678,11 +669,37 @@ function traveltekKeyDetailValue(group, label) {
   return hasTraveltekReviewValue(value) ? value : "-";
 }
 
+function traveltekChangeTypeLabel(changeType) {
+  const labels = {
+    created: "New booking",
+    cancelled: "Cancelled",
+    customer_payment_changed: "Customer payment changed",
+    gross_value_changed: "Gross value changed",
+    supplier_payment_changed: "Supplier payment changed",
+    customer_balance_changed: "Customer balance changed",
+    supplier_balance_changed: "Supplier balance changed",
+    changed: "Booking changed",
+  };
+  return labels[changeType] || "Booking changed";
+}
+
+function traveltekChangeSummary(changes) {
+  if (!changes?.length) {
+    return "-";
+  }
+  return changes
+    .slice(0, 4)
+    .map((change) => `${change.field_label || change.field_name}: ${change.previous_value || "-"} -> ${change.new_value || "-"}`)
+    .join("; ");
+}
+
 function TraveltekUpdatesPage({ token }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const defaultNewBookingStartDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const [updates, setUpdates] = useState([]);
+  const [changeLog, setChangeLog] = useState([]);
+  const [changeLogFilter, setChangeLogFilter] = useState("all");
   const [summary, setSummary] = useState(null);
   const [latestRun, setLatestRun] = useState(null);
   const [configured, setConfigured] = useState(false);
@@ -751,9 +768,19 @@ function TraveltekUpdatesPage({ token }) {
       .catch((loadError) => setError(loadError.message || "Traveltek updates could not load."));
   }
 
+  function loadChangeLog(nextChangeType = changeLogFilter) {
+    return getTraveltekChangeLog(token, nextChangeType, 100)
+      .then((rows) => setChangeLog(rows || []))
+      .catch((loadError) => setError(loadError.message || "Traveltek change log could not load."));
+  }
+
+  async function refreshTraveltekPage(nextStatus = statusFilter, nextChangeType = changeLogFilter) {
+    await Promise.all([loadUpdates(nextStatus), loadChangeLog(nextChangeType)]);
+  }
+
   useEffect(() => {
-    loadUpdates(statusFilter);
-  }, [token, statusFilter]);
+    refreshTraveltekPage(statusFilter, changeLogFilter);
+  }, [token, statusFilter, changeLogFilter]);
 
   async function handleSync() {
     setIsSyncing(true);
@@ -767,7 +794,7 @@ function TraveltekUpdatesPage({ token }) {
           if (run.error_summary) {
             setError(`Traveltek returned an issue: ${redactSensitiveText(run.error_summary)}`);
           }
-        await loadUpdates(statusFilter);
+        await refreshTraveltekPage(statusFilter, changeLogFilter);
       } catch (syncError) {
         setError(syncError.message || "Traveltek check could not run.");
     } finally {
@@ -799,7 +826,7 @@ function TraveltekUpdatesPage({ token }) {
             setError(`Traveltek returned an issue: ${safeSummary}`);
           }
         }
-      await loadUpdates(statusFilter);
+      await refreshTraveltekPage(statusFilter, changeLogFilter);
     } catch (importError) {
       setError(importError.message || "Traveltek booking import could not run.");
     } finally {
@@ -837,7 +864,7 @@ function TraveltekUpdatesPage({ token }) {
         }
       }
       setCatchUpResetProgress(false);
-      await loadUpdates(statusFilter);
+      await refreshTraveltekPage(statusFilter, changeLogFilter);
     } catch (catchUpError) {
       setError(catchUpError.message || "Traveltek full catch-up batch could not run.");
     } finally {
@@ -928,7 +955,7 @@ function TraveltekUpdatesPage({ token }) {
         setMessage(`Automatic catch-up stopped. Batches run: ${batchesRun}. Traveltek calls used: ${callsUsed}.`);
       }
 
-      await loadUpdates(statusFilter);
+      await refreshTraveltekPage(statusFilter, changeLogFilter);
     } catch (catchUpError) {
       setError(catchUpError.message || "Automatic Traveltek catch-up could not continue.");
     } finally {
@@ -940,60 +967,67 @@ function TraveltekUpdatesPage({ token }) {
     return runAutomaticCatchUp();
   }
 
-  async function runUpdateEverythingBackwards({
-    startDate = TRAVELTEK_FULL_CATCH_UP_START_DATE,
-    endDate = todayIso,
-    batchDays = 1,
-    limit = 500,
-  } = {}) {
-    const safeBatchDays = boundedNumber(batchDays, 1, 1, 31);
-    const safeLimit = boundedNumber(limit, 500, 1, 500);
-    const startDateValue = dateInputToUtcDate(startDate);
-    let batchEndDateValue = dateInputToUtcDate(endDate);
-
+  async function runUpdateEverythingExistingBookings({ limit = 25, resetProgress = false } = {}) {
+    const safeLimit = boundedNumber(limit, 25, 1, 500);
     setIsAutoCatchUpRunning(true);
     stopAutoCatchUpRef.current = false;
     setMessage("");
     setError("");
-    setAutoCatchUpStatus("Update everything started. Recent bookings are checked first, then the system works backwards.");
+    setAutoCatchUpStatus("Update everything started. Existing bookings are being refreshed from Traveltek by booking reference.");
     setAutoCatchUpLog([]);
     setAutoCatchUpBatchesRun(0);
     setAutoCatchUpCallsUsed(0);
 
     let batchesRun = 0;
     let callsUsed = 0;
+    let resetProgressOnNextBatch = resetProgress;
+    let stoppedForError = false;
+    const safetyBatchLimit = 1000;
 
     try {
-      while (!stopAutoCatchUpRef.current && batchEndDateValue >= startDateValue) {
-        const proposedBatchStart = addUtcDays(batchEndDateValue, -(safeBatchDays - 1));
-        const batchStartDateValue = proposedBatchStart < startDateValue ? startDateValue : proposedBatchStart;
-        const batchStartIso = toDateInputValue(batchStartDateValue);
-        const batchEndIso = toDateInputValue(batchEndDateValue);
-
-        setAutoCatchUpStatus(`Updating ${formatDate(batchStartIso)} to ${formatDate(batchEndIso)}.`);
-        const run = await importTraveltekBookings({
+      while (!stopAutoCatchUpRef.current) {
+        const result = await runTraveltekUpdateEverythingBatch({
           token,
-          startDate: batchStartIso,
-          endDate: batchEndIso,
           limit: safeLimit,
+          resetProgress: resetProgressOnNextBatch,
         });
+        resetProgressOnNextBatch = false;
 
-        batchesRun += 1;
-        callsUsed += run.api_call_count ?? 0;
+        batchesRun += result.run ? 1 : 0;
+        callsUsed += result.run?.api_call_count ?? 0;
         setAutoCatchUpBatchesRun(batchesRun);
         setAutoCatchUpCallsUsed(callsUsed);
         addAutoCatchUpLog(
-          `${formatDate(batchStartIso)}: checked ${run.checked_bookings}, changed ${run.proposals_created}, calls ${run.api_call_count}.`
+          `Existing bookings: checked ${result.run?.checked_bookings ?? 0}, changed ${result.run?.proposals_created ?? 0}, calls ${result.run?.api_call_count ?? 0}.`
+        );
+        setAutoCatchUpStatus(
+          result.complete
+            ? "Update everything complete."
+            : `Refreshing existing bookings. Next batch continues after ${result.next_booking_ref || "the last checked booking"}.`
         );
 
-        if (run.status === "failed") {
-          setError(`Update everything stopped because Traveltek returned an issue: ${redactSensitiveText(run.error_summary || "Unknown Traveltek error.")}`);
+        if (result.run?.status === "failed") {
+          setError(`Update everything stopped because Traveltek returned an issue: ${redactSensitiveText(result.run.error_summary || "Unknown Traveltek error.")}`);
           stoppedForError = true;
           break;
         }
 
-        batchEndDateValue = addUtcDays(batchStartDateValue, -1);
-        await wait(1200);
+        if (result.run?.error_summary) {
+          setError(`Traveltek returned an issue on this batch: ${redactSensitiveText(result.run.error_summary)}`);
+        }
+
+        if (result.complete) {
+          setMessage(result.message || `Update everything complete. Batches run: ${batchesRun}. Traveltek calls used: ${callsUsed}.`);
+          break;
+        }
+
+        if (batchesRun >= safetyBatchLimit) {
+          setError("Update everything paused at the safety limit. Press the button again to continue from where it stopped.");
+          stoppedForError = true;
+          break;
+        }
+
+        await wait(900);
       }
 
       if (stopAutoCatchUpRef.current) {
@@ -1003,7 +1037,7 @@ function TraveltekUpdatesPage({ token }) {
         setAutoCatchUpStatus("Update everything complete.");
       }
 
-      await loadUpdates(statusFilter);
+      await refreshTraveltekPage(statusFilter, changeLogFilter);
     } catch (updateError) {
       setError(updateError.message || "Update everything could not continue.");
     } finally {
@@ -1012,20 +1046,9 @@ function TraveltekUpdatesPage({ token }) {
   }
 
   function handleUpdateEverything() {
-    const updateStartDate = TRAVELTEK_FULL_CATCH_UP_START_DATE;
-    const updateEndDate = todayIso;
-    const updateBatchDays = 1;
-    const updateLimit = 500;
-    setCatchUpStartDate(updateStartDate);
-    setCatchUpEndDate(updateEndDate);
-    setCatchUpBatchDays(updateBatchDays);
-    setCatchUpLimit(updateLimit);
-    setCatchUpResetProgress(false);
-    return runUpdateEverythingBackwards({
-      startDate: updateStartDate,
-      endDate: updateEndDate,
-      batchDays: updateBatchDays,
-      limit: updateLimit,
+    return runUpdateEverythingExistingBookings({
+      limit: 25,
+      resetProgress: false,
     });
   }
 
@@ -1056,7 +1079,7 @@ function TraveltekUpdatesPage({ token }) {
       if (issues.length) {
         setError(`Traveltek returned an issue: ${redactSensitiveText(issues.join(" "))}`);
       }
-      await loadUpdates(statusFilter);
+      await refreshTraveltekPage(statusFilter, changeLogFilter);
     } catch (maintenanceError) {
       setError(maintenanceError.message || "Traveltek active update could not run.");
     } finally {
@@ -1075,7 +1098,7 @@ function TraveltekUpdatesPage({ token }) {
           ? "Traveltek suggestion applied to the booking."
           : `Traveltek suggestion marked as ${formatStatusLabel(nextStatus)}.`
       );
-      await loadUpdates(statusFilter);
+      await refreshTraveltekPage(statusFilter, changeLogFilter);
     } catch (updateError) {
       setError(updateError.message || "Traveltek suggestion could not be updated.");
     } finally {
@@ -1097,7 +1120,7 @@ function TraveltekUpdatesPage({ token }) {
           ? `${group.booking_ref} suggestions applied to the booking.`
           : `${group.booking_ref} suggestions marked as ${formatStatusLabel(nextStatus)}.`
       );
-      await loadUpdates(statusFilter);
+      await refreshTraveltekPage(statusFilter, changeLogFilter);
     } catch (updateError) {
       setError(updateError.message || "Traveltek suggestions could not be updated.");
     } finally {
@@ -1165,7 +1188,7 @@ function TraveltekUpdatesPage({ token }) {
           <div>
             <h3>Update Everything</h3>
             <p>
-              Starts with today, then works backwards to 30 Jan 2023 in safe one-day booking-date batches.
+              Refreshes the bookings already in this system using each booking reference or Traveltek ID.
             </p>
           </div>
           {isAutoCatchUpRunning ? (
@@ -1235,7 +1258,7 @@ function TraveltekUpdatesPage({ token }) {
           </button>
           {isAutoCatchUpRunning ? (
             <button className="secondary-button" disabled type="button">
-              Automatic catch-up running
+              Traveltek update running
             </button>
           ) : (
             <button className="primary-button" disabled={isCatchUpRunning || !configured} onClick={handleAutoFullCatchUp} type="button">
@@ -1357,6 +1380,56 @@ function TraveltekUpdatesPage({ token }) {
             <RefreshCw size={18} aria-hidden="true" />
             {isImporting ? "Pulling" : "Pull Bookings From Traveltek"}
           </button>
+        </div>
+
+        <div className="section-heading">
+          <h3>Booking change log</h3>
+          <p>Shows what Traveltek changed on bookings after an import or refresh.</p>
+        </div>
+        <div className="traveltek-toolbar">
+          <label>
+            Change type
+            <select value={changeLogFilter} onChange={(event) => setChangeLogFilter(event.target.value)}>
+              <option value="all">All changes</option>
+              <option value="cancelled">Cancelled bookings</option>
+              <option value="changed">Changed bookings</option>
+              <option value="created">New bookings</option>
+            </select>
+          </label>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Detected</th>
+                <th>Booking ref</th>
+                <th>Change</th>
+                <th>Fields changed</th>
+                <th>Before and after</th>
+              </tr>
+            </thead>
+            <tbody>
+              {changeLog.length ? (
+                changeLog.map((row) => (
+                  <tr key={row.id}>
+                    <td>{formatDateTime(row.created_at)}</td>
+                    <td>{row.booking_ref || "-"}</td>
+                    <td>
+                      <span className={`status-pill status-${row.change_type === "cancelled" ? "mismatch" : "reviewing"}`}>
+                        {traveltekChangeTypeLabel(row.change_type)}
+                      </span>
+                    </td>
+                    <td>{row.changed_fields?.length ? row.changed_fields.join(", ") : "-"}</td>
+                    <td>{traveltekChangeSummary(row.changes)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5">No Traveltek booking changes logged yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
 
         <div className="section-heading">

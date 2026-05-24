@@ -286,6 +286,14 @@ export async function getTraveltekUpdates(token, status = "open") {
   return apiRequest(`/api/traveltek/updates${query.toString() ? `?${query.toString()}` : ""}`, { token });
 }
 
+export async function getTraveltekChangeLog(token, changeType = "all", limit = 100) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (changeType && changeType !== "all") {
+    query.set("change_type", changeType);
+  }
+  return apiRequest(`/api/traveltek/change-log?${query.toString()}`, { token });
+}
+
 export async function syncTraveltekActiveBookings({ token, limit }) {
   return apiRequest("/api/traveltek/sync-active-bookings", {
     method: "POST",
@@ -317,6 +325,17 @@ export async function runTraveltekFullCatchUpBatch({
       start_date: startDate,
       end_date: endDate,
       batch_days: batchDays,
+      limit,
+      reset_progress: resetProgress,
+    }),
+  });
+}
+
+export async function runTraveltekUpdateEverythingBatch({ token, limit, resetProgress }) {
+  return apiRequest("/api/traveltek/update-everything/next-batch", {
+    method: "POST",
+    token,
+    body: JSON.stringify({
       limit,
       reset_progress: resetProgress,
     }),

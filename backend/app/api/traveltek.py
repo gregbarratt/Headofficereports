@@ -14,22 +14,28 @@ from app.schemas.traveltek import (
     TraveltekActiveMaintenanceResponse,
     TraveltekBookingImportRequest,
     TraveltekBookingUpdateRead,
+    TraveltekChangeLogRead,
     TraveltekFullCatchUpBatchRequest,
     TraveltekFullCatchUpBatchResponse,
     TraveltekStatusResponse,
     TraveltekSyncRequest,
     TraveltekSyncRunRead,
     TraveltekUpdateStatusRequest,
+    TraveltekUpdateEverythingBatchRequest,
+    TraveltekUpdateEverythingBatchResponse,
     TraveltekUpdateSummary,
     TraveltekUpdatesResponse,
 )
 from app.services.traveltek_service import (
+    add_traveltek_booking_change_log,
     apply_traveltek_update_to_booking,
     import_traveltek_bookings_by_date_range,
     is_valid_traveltek_update_value,
     run_active_maintenance_update,
     run_full_catchup_batch,
+    run_update_everything_existing_booking_batch,
     scan_active_bookings_for_traveltek_updates,
+    traveltek_field_label,
 )
 
 
@@ -55,6 +61,44 @@ def visible_traveltek_updates(db: Session, status_filter: str = "all", limit: in
         if is_valid_traveltek_update_value(update.field_name, update.traveltek_value)
     ]
     return updates[:limit] if limit is not None else updates
+
+
+@router.get("/change-log", response_model=list[TraveltekChangeLogRead])
+def get_traveltek_change_log(
+    limit: int = Query(default=100, ge=1, le=500),
+    change_type: str = Query(default="all"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> list[dict]:
+    actions = {
+        "created": "traveltek_booking_created",
+        "changed": "traveltek_booking_changed",
+        "cancelled": "traveltek_booking_cancelled",
+    }
+    allowed_actions = set(actions.values())
+    statement = select(AuditLog).where(AuditLog.action.in_(allowed_actions))
+    if change_type != "all":
+        selected_action = actions.get(change_type)
+        if selected_action is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Change type is not recognised.")
+        statement = statement.where(AuditLog.action == selected_action)
+    statement = statement.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
+
+    rows = []
+    for audit_log in db.scalars(statement):
+        after_data = audit_log.after_data or {}
+        rows.append(
+            {
+                "id": audit_log.id,
+                "booking_ref": after_data.get("booking_ref"),
+                "change_type": after_data.get("change_type") or audit_log.action.replace("traveltek_booking_", ""),
+                "changed_fields": after_data.get("changed_fields") or [],
+                "changes": after_data.get("changes") or [],
+                "description": audit_log.description,
+                "created_at": audit_log.created_at,
+            }
+        )
+    return rows
 
 
 def update_summary(db: Session) -> TraveltekUpdateSummary:
@@ -181,6 +225,23 @@ def run_active_maintenance(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+@router.post("/update-everything/next-batch", response_model=TraveltekUpdateEverythingBatchResponse)
+def run_update_everything_next_batch(
+    request: TraveltekUpdateEverythingBatchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> dict:
+    try:
+        return run_update_everything_existing_booking_batch(
+            db=db,
+            limit=min(request.limit, settings.traveltek_max_calls_per_run),
+            reset_progress=request.reset_progress,
+            actor_user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 @router.patch("/updates/{update_id}", response_model=TraveltekBookingUpdateRead)
 def update_traveltek_update_status(
     update_id: int,
@@ -200,6 +261,28 @@ def update_traveltek_update_status(
     applied_data = None
     if next_status == "resolved":
         applied_data = apply_traveltek_update_to_booking(db, update)
+        if applied_data:
+            before_booking = applied_data.get("before") or {}
+            after_booking = applied_data.get("after") or {}
+            changes = [
+                {
+                    "field_name": field_name,
+                    "field_label": traveltek_field_label(field_name),
+                    "previous_value": before_booking.get(field_name),
+                    "new_value": after_booking.get(field_name),
+                }
+                for field_name in after_booking
+                if field_name != "booking_ref" and before_booking.get(field_name) != after_booking.get(field_name)
+            ]
+            add_traveltek_booking_change_log(
+                db,
+                booking_ref=update.booking_ref,
+                booking_id=update.booking_id,
+                sync_run_id=update.sync_run_id,
+                changes=changes,
+                created=False,
+                actor_user_id=current_user.id,
+            )
 
     update.status = next_status
     if next_status in {"resolved", "ignored"}:
