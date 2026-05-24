@@ -508,6 +508,76 @@ function BookingsPage({ token }) {
   );
 }
 
+function hasTraveltekReviewValue(value) {
+  const text = value === null || value === undefined ? "" : String(value).trim();
+  return text !== "" && text !== "-";
+}
+
+function traveltekSuggestionType(update) {
+  const hasCurrent = hasTraveltekReviewValue(update.current_value);
+  const hasTraveltek = hasTraveltekReviewValue(update.traveltek_value);
+
+  if (!hasCurrent && hasTraveltek) {
+    return "missing";
+  }
+  if (hasCurrent && hasTraveltek && String(update.current_value).trim() !== String(update.traveltek_value).trim()) {
+    return "different";
+  }
+  if (hasCurrent && !hasTraveltek) {
+    return "missing_traveltek";
+  }
+  return "review";
+}
+
+function traveltekSuggestionTypeLabel(type) {
+  if (type === "missing") {
+    return "Missing in our system";
+  }
+  if (type === "different") {
+    return "Different value";
+  }
+  if (type === "missing_traveltek") {
+    return "Traveltek value missing";
+  }
+  return "Needs review";
+}
+
+function groupTraveltekUpdatesByBooking(updates) {
+  const groupsByRef = new Map();
+  for (const update of updates) {
+    const bookingRef = update.booking_ref || "Unknown booking";
+    if (!groupsByRef.has(bookingRef)) {
+      groupsByRef.set(bookingRef, {
+        booking_ref: bookingRef,
+        updates: [],
+        missingFields: [],
+        changedFields: [],
+        newestDetectedAt: update.detected_at,
+      });
+    }
+
+    const group = groupsByRef.get(bookingRef);
+    group.updates.push(update);
+    if (!group.newestDetectedAt || update.detected_at > group.newestDetectedAt) {
+      group.newestDetectedAt = update.detected_at;
+    }
+
+    const type = traveltekSuggestionType(update);
+    if (type === "missing") {
+      group.missingFields.push(update.field_label);
+    }
+    if (type === "different") {
+      group.changedFields.push(update.field_label);
+    }
+  }
+
+  return Array.from(groupsByRef.values()).sort((left, right) => {
+    const leftDate = left.newestDetectedAt || "";
+    const rightDate = right.newestDetectedAt || "";
+    return rightDate.localeCompare(leftDate) || left.booking_ref.localeCompare(right.booking_ref);
+  });
+}
+
 function TraveltekUpdatesPage({ token }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -525,6 +595,7 @@ function TraveltekUpdatesPage({ token }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
+  const [updatingGroupRef, setUpdatingGroupRef] = useState("");
 
   function loadUpdates(nextStatus = statusFilter) {
     return getTraveltekUpdates(token, nextStatus)
@@ -608,6 +679,26 @@ function TraveltekUpdatesPage({ token }) {
       setUpdatingId(null);
     }
   }
+
+  async function handleGroupStatusChange(group, nextStatus) {
+    setUpdatingGroupRef(group.booking_ref);
+    setMessage("");
+    setError("");
+    try {
+      const updatesToChange = group.updates.filter((update) => update.status !== nextStatus);
+      await Promise.all(
+        updatesToChange.map((update) => updateTraveltekUpdateStatus({ token, updateId: update.id, status: nextStatus }))
+      );
+      setMessage(`${group.booking_ref} suggestions marked as ${formatStatusLabel(nextStatus)}.`);
+      await loadUpdates(statusFilter);
+    } catch (updateError) {
+      setError(updateError.message || "Traveltek suggestions could not be updated.");
+    } finally {
+      setUpdatingGroupRef("");
+    }
+  }
+
+  const groupedUpdates = groupTraveltekUpdatesByBooking(updates);
 
   return (
     <section className="panel">
@@ -743,83 +834,141 @@ function TraveltekUpdatesPage({ token }) {
         This only creates suggestions. It does not overwrite the Head Office booking database.
       </p>
 
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Booking Ref</th>
-              <th>Field</th>
-              <th>Current system value</th>
-              <th>Traveltek value</th>
-              <th>Status</th>
-              <th>Detected</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {updates.length ? (
-              updates.map((update) => (
-                <tr key={update.id}>
-                  <td>{update.booking_ref}</td>
-                  <td>{update.field_label}</td>
-                  <td>{update.current_value || "-"}</td>
-                  <td>{update.traveltek_value || "-"}</td>
-                  <td>
-                    <span className={`status-pill status-${update.status}`}>{formatStatusLabel(update.status)}</span>
-                  </td>
-                  <td>{formatDateTime(update.detected_at)}</td>
-                  <td>
-                    <div className="table-actions">
-                      {update.status !== "reviewing" ? (
-                        <button
-                          disabled={updatingId === update.id}
-                          onClick={() => handleStatusChange(update.id, "reviewing")}
-                          type="button"
-                        >
-                          Review
-                        </button>
-                      ) : null}
-                      {update.status !== "resolved" ? (
-                        <button
-                          disabled={updatingId === update.id}
-                          onClick={() => handleStatusChange(update.id, "resolved")}
-                          type="button"
-                        >
-                          Resolve
-                        </button>
-                      ) : null}
-                      {update.status !== "ignored" ? (
-                        <button
-                          disabled={updatingId === update.id}
-                          onClick={() => handleStatusChange(update.id, "ignored")}
-                          type="button"
-                        >
-                          Ignore
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="7">No Traveltek update suggestions match this filter.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {groupedUpdates.length ? (
+        <div className="traveltek-booking-groups">
+          {groupedUpdates.map((group) => (
+            <section className="traveltek-booking-group" key={group.booking_ref}>
+              <div className="traveltek-booking-group-heading">
+                <div>
+                  <h3>{group.booking_ref}</h3>
+                  <p>
+                    {group.updates.length} field(s) need checking.{" "}
+                    {group.missingFields.length ? `${group.missingFields.length} missing in our system.` : "No missing system fields."}{" "}
+                    {group.changedFields.length ? `${group.changedFields.length} different value(s).` : ""}
+                  </p>
+                </div>
+                <div className="table-actions">
+                  <button
+                    disabled={updatingGroupRef === group.booking_ref}
+                    onClick={() => handleGroupStatusChange(group, "reviewing")}
+                    type="button"
+                  >
+                    Review all
+                  </button>
+                  <button
+                    disabled={updatingGroupRef === group.booking_ref}
+                    onClick={() => handleGroupStatusChange(group, "resolved")}
+                    type="button"
+                  >
+                    Resolve all
+                  </button>
+                  <button
+                    disabled={updatingGroupRef === group.booking_ref}
+                    onClick={() => handleGroupStatusChange(group, "ignored")}
+                    type="button"
+                  >
+                    Ignore all
+                  </button>
+                </div>
+              </div>
+
+              <div className="traveltek-booking-needs">
+                <div>
+                  <span>Missing in our system</span>
+                  <strong>{group.missingFields.length ? group.missingFields.join(", ") : "None"}</strong>
+                </div>
+                <div>
+                  <span>Different values</span>
+                  <strong>{group.changedFields.length ? group.changedFields.join(", ") : "None"}</strong>
+                </div>
+              </div>
+
+              <div className="table-wrap">
+                <table className="traveltek-booking-fields-table">
+                  <thead>
+                    <tr>
+                      <th>What needs checking</th>
+                      <th>Field</th>
+                      <th>Current system value</th>
+                      <th>Traveltek value</th>
+                      <th>Status</th>
+                      <th>Detected</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.updates.map((update) => {
+                      const suggestionType = traveltekSuggestionType(update);
+                      return (
+                        <tr key={update.id}>
+                          <td>
+                            <span className={`status-pill status-${suggestionType}`}>
+                              {traveltekSuggestionTypeLabel(suggestionType)}
+                            </span>
+                          </td>
+                          <td>{update.field_label}</td>
+                          <td>{update.current_value || "-"}</td>
+                          <td>{update.traveltek_value || "-"}</td>
+                          <td>
+                            <span className={`status-pill status-${update.status}`}>
+                              {formatStatusLabel(update.status)}
+                            </span>
+                          </td>
+                          <td>{formatDateTime(update.detected_at)}</td>
+                          <td>
+                            <div className="table-actions">
+                              {update.status !== "reviewing" ? (
+                                <button
+                                  disabled={updatingId === update.id || updatingGroupRef === group.booking_ref}
+                                  onClick={() => handleStatusChange(update.id, "reviewing")}
+                                  type="button"
+                                >
+                                  Review
+                                </button>
+                              ) : null}
+                              {update.status !== "resolved" ? (
+                                <button
+                                  disabled={updatingId === update.id || updatingGroupRef === group.booking_ref}
+                                  onClick={() => handleStatusChange(update.id, "resolved")}
+                                  type="button"
+                                >
+                                  Resolve
+                                </button>
+                              ) : null}
+                              {update.status !== "ignored" ? (
+                                <button
+                                  disabled={updatingId === update.id || updatingGroupRef === group.booking_ref}
+                                  onClick={() => handleStatusChange(update.id, "ignored")}
+                                  type="button"
+                                >
+                                  Ignore
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <p className="muted-note">No Traveltek update suggestions match this filter.</p>
+      )}
     </section>
   );
 }
 
 const adjustmentFields = [
-  ["gross_booking_value", "Gross Traveltek", "raw_gross_booking_value"],
+  ["gross_booking_value", "Traveltek total cost", "raw_gross_booking_value"],
   ["customer_sings_total", "SINGs in", "raw_customer_sings_total"],
-  ["customer_tt_total", "Traveltek customer paid", "raw_customer_tt_total"],
+  ["customer_tt_total", "Traveltek total amount paid", "raw_customer_tt_total"],
   ["expected_supplier_total", "Expected supplier cost", "raw_expected_supplier_total"],
   ["supplier_taps_total", "TAPs paid", "raw_supplier_taps_total"],
-  ["supplier_tt_total", "Traveltek supplier paid", "raw_supplier_tt_total"],
+  ["supplier_tt_total", "Traveltek paid to supplier", "raw_supplier_tt_total"],
 ];
 
 function moneyInputValue(value) {
@@ -1034,16 +1183,19 @@ function BookingChecksPage({ token }) {
       "Departure Date",
       "Return Date",
       "Passenger Count",
-      "Gross Traveltek",
+      "Traveltek Total Cost",
+      "Traveltek Total Amount Paid",
+      "Traveltek Outstanding",
       "SINGs In",
-      "Traveltek Customer Paid",
       "SINGs vs Traveltek",
       "SINGs vs Traveltek Variance",
       "SINGs vs Traveltek Paid",
       "SINGs vs Traveltek Paid Variance",
+      "Traveltek Total Due",
+      "Traveltek Due To Suppliers",
       "Expected Supplier Cost",
       "TAPs Paid",
-      "Traveltek Supplier Paid",
+      "Traveltek Paid To Supplier",
       "TAPs vs Expected Cost",
       "TAPs vs Expected Cost Variance",
       "TAPs vs Traveltek Supplier Paid",
@@ -1066,12 +1218,15 @@ function BookingChecksPage({ token }) {
       row.return_date || "",
       row.passenger_count ?? "",
       row.gross_booking_value ?? "",
-      row.customer_sings_total ?? "",
       row.customer_tt_total ?? "",
+      row.traveltek_customer_outstanding ?? "",
+      row.customer_sings_total ?? "",
       checkLabel(row.customer_expected_check),
       row.customer_expected_variance ?? "",
       checkLabel(row.customer_tt_check),
       row.customer_tt_variance ?? "",
+      row.traveltek_total_due ?? "",
+      row.traveltek_due_to_suppliers ?? "",
       row.expected_supplier_total ?? "",
       row.supplier_taps_total ?? "",
       row.supplier_tt_total ?? "",
@@ -1129,7 +1284,7 @@ function BookingChecksPage({ token }) {
       </div>
 
       <p className="muted-note">
-          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. Traveltek paid and projected profit values are imported for cross-checking.
+          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. Traveltek finance values are imported for cross-checking.
       </p>
 
       <div className="booking-check-filters">
@@ -1245,14 +1400,17 @@ function BookingChecksPage({ token }) {
               <th>Depart</th>
               <th>Return</th>
               <th>Pax</th>
-              <th>Gross Traveltek</th>
+              <th>Traveltek Total Cost</th>
+              <th>Traveltek Total Amount Paid</th>
+              <th>Traveltek Outstanding</th>
               <th>SINGs In</th>
-              <th>Traveltek Customer Paid</th>
               <th>SINGs vs Traveltek</th>
               <th>SINGs vs Traveltek Paid</th>
+              <th>Traveltek Total Due</th>
+              <th>Traveltek Due To Suppliers</th>
               <th>Expected Supplier Cost</th>
               <th>TAPs Paid</th>
-              <th>Traveltek Supplier Paid</th>
+              <th>Traveltek Paid To Supplier</th>
                 <th>TAPs vs Expected</th>
                 <th>TAPs vs Traveltek Paid</th>
                 <th>Traveltek Profit</th>
@@ -1279,8 +1437,9 @@ function BookingChecksPage({ token }) {
                   <td>{formatDate(row.return_date)}</td>
                   <td>{row.passenger_count ?? "-"}</td>
                   <td>{formatMoney(row.gross_booking_value)}</td>
-                  <td>{formatMoney(row.customer_sings_total)}</td>
                   <td>{formatMoney(row.customer_tt_total)}</td>
+                  <td>{formatMoney(row.traveltek_customer_outstanding)}</td>
+                  <td>{formatMoney(row.customer_sings_total)}</td>
                   <td>
                     <CheckBadge status={row.customer_expected_check} />
                     <span className="variance-note">{formatMoney(row.customer_expected_variance)}</span>
@@ -1289,6 +1448,8 @@ function BookingChecksPage({ token }) {
                     <CheckBadge status={row.customer_tt_check} />
                     <span className="variance-note">{formatMoney(row.customer_tt_variance)}</span>
                   </td>
+                  <td>{formatMoney(row.traveltek_total_due)}</td>
+                  <td>{formatMoney(row.traveltek_due_to_suppliers)}</td>
                   <td>{formatMoney(row.expected_supplier_total)}</td>
                   <td>{formatMoney(row.supplier_taps_total)}</td>
                   <td>{formatMoney(row.supplier_tt_total)}</td>
@@ -1317,7 +1478,7 @@ function BookingChecksPage({ token }) {
               ))
             ) : (
               <tr>
-                  <td colSpan="22">No booking checks match the current filters.</td>
+                  <td colSpan="25">No booking checks match the current filters.</td>
               </tr>
             )}
           </tbody>

@@ -442,6 +442,75 @@ nav button:disabled {
   margin-bottom: 12px;
 }
 
+.traveltek-booking-groups {
+  display: grid;
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.traveltek-booking-group {
+  border-top: 1px solid #d7e0e4;
+  padding-top: 16px;
+}
+
+.traveltek-booking-group-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.traveltek-booking-group-heading h3,
+.traveltek-booking-group-heading p {
+  margin: 0;
+}
+
+.traveltek-booking-group-heading h3 {
+  font-size: 1rem;
+}
+
+.traveltek-booking-group-heading p {
+  margin-top: 4px;
+  color: #5c6b72;
+  font-size: 0.9rem;
+}
+
+.traveltek-booking-needs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #d7e0e4;
+  border-radius: 8px;
+  background: #d7e0e4;
+  margin-bottom: 12px;
+}
+
+.traveltek-booking-needs div {
+  background: #f7faf9;
+  padding: 12px;
+}
+
+.traveltek-booking-needs span,
+.traveltek-booking-needs strong {
+  display: block;
+}
+
+.traveltek-booking-needs span {
+  color: #5c6b72;
+  font-size: 0.82rem;
+}
+
+.traveltek-booking-needs strong {
+  margin-top: 5px;
+  font-size: 0.92rem;
+}
+
+.traveltek-booking-fields-table {
+  min-width: 1100px;
+}
+
 .form-success {
   margin: 0 0 12px;
   color: #0f5132;
@@ -731,6 +800,7 @@ th {
 .status-partially_paid,
 .status-awaiting_supplier_nett,
 .status-awaiting_supplier_refund,
+.status-missing,
 .status-enquiry,
 .status-tt,
 .status-lemieux,
@@ -750,6 +820,8 @@ th {
 .status-overpaid,
 .status-unmatched,
 .status-mismatch,
+.status-different,
+.status-missing_traveltek,
 .status-overdue,
 .status-incomplete,
 .status-open,
@@ -902,5 +974,14 @@ th {
   .booking-check-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .traveltek-booking-group-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .traveltek-booking-needs {
+    grid-template-columns: 1fr;
   }
 }

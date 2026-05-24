@@ -90,38 +90,79 @@ FIELD_DEFINITIONS = {
         "parser": "date",
     },
     "imported_customer_outstanding": {
-        "label": "Imported customer outstanding",
-        "candidates": ("outstanding", "customeroutstanding", "balancedue", "customerbalancedue"),
+        "label": "Traveltek customer outstanding",
+        "candidates": (
+            "outstanding",
+            "customeroutstanding",
+            "customer_outstanding",
+            "balancedue",
+            "balance_due",
+            "customerbalancedue",
+            "customer_balance_due",
+        ),
         "parser": "money",
     },
     "imported_supplier_outstanding": {
-        "label": "Imported supplier outstanding",
-        "candidates": ("outstandingsupplier", "supplieroutstanding", "supplierbalancedue"),
+        "label": "Traveltek due to suppliers",
+        "candidates": (
+            "duetosuppliers",
+            "due_to_suppliers",
+            "duetosupplier",
+            "supplierdue",
+            "supplieroutstanding",
+            "supplierbalancedue",
+            "outstandingsupplier",
+            "outstanding_supplier",
+        ),
+        "parser": "money",
+    },
+    "non_trusted_total_due": {
+        "label": "Traveltek total due",
+        "candidates": ("totaldue", "total_due", "totalduetosupplier", "supplierstotaldue", "suppliertotaldue"),
         "parser": "money",
     },
     "non_trusted_total_received": {
-        "label": "Traveltek customer paid",
-        "candidates": ("totalreceived", "totalpaid", "customerpaid", "paid", "amountpaid"),
+        "label": "Traveltek total amount paid",
+        "candidates": (
+            "totalamountpaid",
+            "total_amount_paid",
+            "amountpaid",
+            "amount_paid",
+            "totalpaid",
+            "totalreceived",
+            "customerpaid",
+            "customer_paid",
+            "paid",
+        ),
         "parser": "money",
     },
     "non_trusted_paid_supplier": {
-        "label": "Traveltek supplier paid",
-        "candidates": ("paidsupp", "paidsupplier", "supplierpaid", "paidtosupplier"),
+        "label": "Traveltek paid to supplier",
+        "candidates": ("paidtosupplier", "paid_to_supplier", "paidsupplier", "paidsupp", "supplierpaid"),
         "parser": "money",
     },
     "non_trusted_projected_profit": {
-        "label": "Traveltek projected profit",
+        "label": "Traveltek profit",
         "candidates": ("profitprojected", "projectedprofit", "profit", "margin"),
         "parser": "money",
     },
     "gross_booking_value": {
-        "label": "Gross booking value",
-        "candidates": ("totalcost", "totalprice", "totalsell", "totalvalue", "gross"),
+        "label": "Traveltek total cost",
+        "candidates": (
+            "totalcost",
+            "total_cost",
+            "holidayprice",
+            "holiday_price",
+            "totalprice",
+            "totalsell",
+            "totalvalue",
+            "gross",
+        ),
         "parser": "money",
     },
     "expected_supplier_nett": {
-        "label": "Expected supplier nett",
-        "candidates": ("nett", "net", "nettcost", "suppliernett", "suppliercost"),
+        "label": "Traveltek expected supplier cost",
+        "candidates": ("nett", "nettcost", "suppliernett", "suppliercost", "totaldue", "total_due"),
         "parser": "money",
     },
 }
@@ -183,7 +224,72 @@ def element_to_source(element: ElementTree.Element) -> dict[str, Any]:
     }
 
 
+def direct_text(element: ElementTree.Element) -> str | None:
+    text = "".join(element.itertext()).strip()
+    return re.sub(r"\s+", " ", text) if text else None
+
+
+def first_present(values: dict[str, str], candidate_keys: tuple[str, ...]) -> str | None:
+    for key in candidate_keys:
+        value = values.get(key)
+        if value not in {None, ""}:
+            return value
+    return None
+
+
+def collect_label_value_pairs(element: ElementTree.Element, output: dict[str, str] | None = None) -> dict[str, str]:
+    if output is None:
+        output = {}
+
+    label_keys = ("label", "name", "field", "key", "title", "caption", "description")
+    value_keys = ("value", "amount", "total", "cost", "price", "balance", "paid", "due", "text")
+
+    attributes = {normalise_key(key): str(value).strip() for key, value in element.attrib.items() if str(value).strip()}
+    label = first_present(attributes, label_keys)
+    value = first_present(attributes, value_keys)
+    if label and not value:
+        value = direct_text(element)
+    if label and value and len(label) <= 120 and len(value) <= 160 and normalise_key(label) != normalise_key(value):
+        output.setdefault(normalise_key(label), value)
+
+    child_values = {
+        normalise_key(local_name(child.tag)): direct_text(child) or ""
+        for child in element
+        if direct_text(child)
+    }
+    child_label = first_present(child_values, label_keys)
+    child_value = first_present(child_values, value_keys)
+    if (
+        child_label
+        and child_value
+        and len(child_label) <= 120
+        and len(child_value) <= 160
+        and normalise_key(child_label) != normalise_key(child_value)
+    ):
+        output.setdefault(normalise_key(child_label), child_value)
+
+    row_texts = [direct_text(child) for child in element if direct_text(child)]
+    row_texts = [text for text in row_texts if text]
+    if len(row_texts) >= 2:
+        possible_label = row_texts[0]
+        possible_value = row_texts[1]
+        if (
+            possible_label
+            and possible_value
+            and len(possible_label) <= 120
+            and len(possible_value) <= 160
+            and not re.search(r"\d{2,}[/.-]\d{1,2}[/.-]\d{2,4}", possible_label)
+        ):
+            output.setdefault(normalise_key(possible_label), possible_value)
+
+    for child in element:
+        collect_label_value_pairs(child, output)
+
+    return output
+
+
 def flatten_xml(element: ElementTree.Element, output: dict[str, str] | None = None) -> dict[str, str]:
+    top_level = output is None
     if output is None:
         output = {}
 
@@ -199,6 +305,10 @@ def flatten_xml(element: ElementTree.Element, output: dict[str, str] | None = No
 
     for child in element:
         flatten_xml(child, output)
+
+    if top_level:
+        for key, value in collect_label_value_pairs(element).items():
+            output.setdefault(key, value)
 
     return output
 

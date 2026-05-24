@@ -69,6 +69,7 @@ class Booking(Base):
     imported_supplier_outstanding: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     gross_booking_value: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     expected_supplier_nett: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    non_trusted_total_due: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     non_trusted_total_received: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     non_trusted_paid_supplier: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     non_trusted_projected_profit: Mapped[Decimal | None] = mapped_column(Money, nullable=True)

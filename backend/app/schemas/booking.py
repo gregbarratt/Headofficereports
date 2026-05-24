@@ -23,6 +23,10 @@ class BookingRead(BaseModel):
     imported_supplier_outstanding: Decimal | None
     gross_booking_value: Decimal | None
     expected_supplier_nett: Decimal | None
+    non_trusted_total_due: Decimal | None = None
+    non_trusted_total_received: Decimal | None = None
+    non_trusted_paid_supplier: Decimal | None = None
+    non_trusted_projected_profit: Decimal | None = None
     flight_included: bool
     accommodation_included: bool
     cruise_included: bool
@@ -75,6 +79,11 @@ class BookingCheckRow(BaseModel):
     raw_supplier_tt_total: Decimal
     raw_customer_sings_total: Decimal
     raw_customer_tt_total: Decimal
+    traveltek_total_due: Decimal | None
+    traveltek_total_amount_paid: Decimal | None
+    traveltek_customer_outstanding: Decimal | None
+    traveltek_due_to_suppliers: Decimal | None
+    traveltek_paid_to_supplier: Decimal | None
     traveltek_projected_profit: Decimal | None
     manual_adjustments: dict[str, Decimal]
     manual_adjustment_note: str | None
