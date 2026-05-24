@@ -493,13 +493,14 @@ The Traveltek Updates page has two actions:
 
 The Traveltek `getbookings` document says the import date range is a booking date range. The Traveltek Updates page therefore searches by booking date only. The system stores Traveltek departure and return dates on the booking record, then Head Office can review by travel date inside Booking Checks.
 
-The booking import stores Traveltek booking framework fields including status, customer name, destination, elements, supplier references, departure date, return date, booking date, due date, total cost, total amount paid, outstanding, total due, due to suppliers, paid to supplier, expected supplier nett and profit.
+The booking import stores Traveltek booking framework fields including Traveltek booking ID, status, customer name, destination, elements, supplier references, departure date, return date, booking date, due date, total cost, total amount paid, outstanding, total due, due to suppliers, paid to supplier, expected supplier nett and profit.
 
 Traveltek total amount paid, outstanding, total due, due to suppliers, paid to supplier and profit are stored as cross-check figures. They are shown against SINGs customer receipts, TAPs supplier payments and calculated true profit, but they do not silently replace those actual sources.
 
 Traveltek is the main source for these booking framework fields:
 
 - booking reference
+- Traveltek booking ID
 - customer / lead name
 - agent in charge, if Traveltek returns it
 - booking status
@@ -534,6 +535,8 @@ For retrieving full booking details with `getportfolio`, the secure API base URL
 ```text
 https://secure.traveltek.net/fusionapi/0.9/interface.pl
 ```
+
+The full `getportfolio` detail call is sent as form-data with one `xml` field, matching the working Postman/Salesforce setup. Where a Traveltek booking ID is available, the detail call uses `bookingid` because that is the most reliable way to retrieve the complete portfolio details.
 
 ## Trust Reconciliation
 

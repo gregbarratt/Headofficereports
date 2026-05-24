@@ -204,6 +204,7 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
         rows.append(
             BookingCheckRow(
                 booking_ref=booking.booking_ref,
+                traveltek_booking_id=booking.traveltek_booking_id,
                 booking_company=booking.booking_company,
                 normalised_status=booking.normalised_status,
                 customer_last_name=booking.customer_last_name,

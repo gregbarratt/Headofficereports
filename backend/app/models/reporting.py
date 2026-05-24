@@ -53,6 +53,7 @@ class Booking(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     booking_ref: Mapped[str] = mapped_column(String(80), unique=True, index=True, nullable=False)
+    traveltek_booking_id: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
     booking_company: Mapped[str] = mapped_column(String(80), default="otc", server_default="otc", index=True, nullable=False)
     imported_booking_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
     normalised_status: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
@@ -230,6 +231,7 @@ class TraveltekBookingUpdate(Base):
     def traveltek_key_details(self) -> dict[str, str | None]:
         extracted = (self.raw_source or {}).get("extracted") or {}
         return {
+            "Traveltek Booking ID": extracted.get("traveltek_booking_id"),
             "Total Cost": extracted.get("gross_booking_value"),
             "Total Amount Paid": extracted.get("non_trusted_total_received"),
             "Outstanding": extracted.get("imported_customer_outstanding"),

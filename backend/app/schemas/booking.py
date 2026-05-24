@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class BookingRead(BaseModel):
     id: int
     booking_ref: str
+    traveltek_booking_id: str | None = None
     booking_company: str
     imported_booking_status: str | None
     normalised_status: str | None
@@ -47,6 +48,7 @@ class BookingListResponse(BaseModel):
 
 class BookingCheckRow(BaseModel):
     booking_ref: str
+    traveltek_booking_id: str | None = None
     booking_company: str
     normalised_status: str | None
     customer_last_name: str | None

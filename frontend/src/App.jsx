@@ -465,6 +465,7 @@ function BookingsPage({ token }) {
           <thead>
             <tr>
               <th>Booking Ref</th>
+              <th>Traveltek ID</th>
               <th>Company</th>
                 <th>Status</th>
                 <th>Customer / Lead</th>
@@ -484,6 +485,7 @@ function BookingsPage({ token }) {
               bookings.map((booking) => (
                 <tr key={booking.id}>
                   <td>{booking.booking_ref}</td>
+                    <td>{booking.traveltek_booking_id || "-"}</td>
                     <td>{formatSourceLabel(booking.booking_company)}</td>
                     <td>{booking.normalised_status || "-"}</td>
                     <td>{booking.customer_last_name || "-"}</td>
@@ -500,7 +502,7 @@ function BookingsPage({ token }) {
               ))
             ) : (
               <tr>
-                  <td colSpan="13">No bookings imported yet.</td>
+                  <td colSpan="14">No bookings imported yet.</td>
               </tr>
             )}
           </tbody>
@@ -585,6 +587,7 @@ function groupTraveltekUpdatesByBooking(updates) {
 }
 
 const traveltekKeyDetailLabels = [
+  "Traveltek Booking ID",
   "Total Cost",
   "Total Amount Paid",
   "Outstanding",

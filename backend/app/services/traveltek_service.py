@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import re
 import urllib.error
-import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 from xml.etree import ElementTree
 
 from sqlalchemy import or_, select
@@ -28,7 +28,6 @@ from app.services.master_booking_import import (
 )
 
 
-TRAVELTEK_NAMESPACE = "http://fusionapi.traveltek.net/0.9/xsds"
 FIELD_DEFINITIONS = {
     "imported_booking_status": {
         "label": "Booking status",
@@ -505,8 +504,21 @@ def traveltek_error_message(root: ElementTree.Element) -> str:
     return redact_sensitive_text(root_text[:700])
 
 
+def encode_multipart_form_data(fields: dict[str, str]) -> tuple[bytes, str]:
+    boundary = f"----HeadOfficeTraveltek{uuid4().hex}"
+    body_parts: list[str] = []
+    for key, value in fields.items():
+        body_parts.append(f"--{boundary}")
+        body_parts.append(f'Content-Disposition: form-data; name="{key}"')
+        body_parts.append("")
+        body_parts.append(value)
+    body_parts.append(f"--{boundary}--")
+    body_parts.append("")
+    return "\r\n".join(body_parts).encode("utf-8"), f"multipart/form-data; boundary={boundary}"
+
+
 def build_request_xml(action: str, attributes: dict[str, str]) -> str:
-    request = ElementTree.Element("request", xmlns=TRAVELTEK_NAMESPACE)
+    request = ElementTree.Element("request")
     ElementTree.SubElement(
         request,
         "auth",
@@ -518,7 +530,7 @@ def build_request_xml(action: str, attributes: dict[str, str]) -> str:
         method_attributes["sitename"] = settings.traveltek_sitename.strip()
     method_attributes.update({key: value for key, value in attributes.items() if value})
     ElementTree.SubElement(request, "method", **method_attributes)
-    return ElementTree.tostring(request, encoding="unicode")
+    return '<?xml version="1.0"?>\n' + ElementTree.tostring(request, encoding="unicode")
 
 
 def call_traveltek(action: str, attributes: dict[str, str], *, secure_endpoint: bool = False) -> ElementTree.Element:
@@ -526,12 +538,12 @@ def call_traveltek(action: str, attributes: dict[str, str], *, secure_endpoint: 
         raise TraveltekConfigurationError("Traveltek API is not configured in Render yet.")
 
     request_xml = build_request_xml(action, attributes)
-    encoded = urllib.parse.urlencode({"xml": request_xml}).encode("utf-8")
+    encoded, content_type = encode_multipart_form_data({"xml": request_xml})
     endpoint_url = settings.traveltek_secure_api_base_url if secure_endpoint else settings.traveltek_api_base_url
     request = urllib.request.Request(
         endpoint_url,
         data=encoded,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={"Content-Type": content_type},
         method="POST",
     )
 
@@ -579,9 +591,18 @@ def fetch_booking_by_reference(booking_ref: str) -> TraveltekBookingData:
     return fetch_booking_detail({"bookingreference": booking_ref})
 
 
+def fetch_booking_for_existing_booking(booking: Booking) -> TraveltekBookingData:
+    if booking.traveltek_booking_id:
+        return fetch_booking_detail({"bookingid": booking.traveltek_booking_id})
+    return fetch_booking_by_reference(booking.booking_ref)
+
+
 def extract_booking_values(flattened: dict[str, str]) -> dict[str, Any]:
     booking_ref = normalise_booking_ref(value_from_candidates(flattened, BOOKING_REF_CANDIDATES))
+    booking_id = value_from_candidates(flattened, BOOKING_ID_CANDIDATES)
     values: dict[str, Any] = {}
+    if booking_id:
+        values["traveltek_booking_id"] = str(booking_id).strip()
     if booking_ref:
         values["booking_ref"] = booking_ref
         values["booking_company"] = determine_booking_company(booking_ref)
@@ -606,13 +627,13 @@ def extract_booking_values(flattened: dict[str, str]) -> dict[str, Any]:
 
 
 def booking_detail_lookup_attributes(flattened: dict[str, str]) -> dict[str, str]:
-    booking_reference = value_from_candidates(flattened, BOOKING_REFERENCE_CANDIDATES)
-    if booking_reference:
-        return {"bookingreference": booking_reference}
-
     booking_id = value_from_candidates(flattened, BOOKING_ID_CANDIDATES)
     if booking_id:
         return {"bookingid": booking_id}
+
+    booking_reference = value_from_candidates(flattened, BOOKING_REFERENCE_CANDIDATES)
+    if booking_reference:
+        return {"bookingreference": booking_reference}
 
     external_reference = value_from_candidates(flattened, EXTERNAL_REFERENCE_CANDIDATES)
     if external_reference:
@@ -926,7 +947,7 @@ def scan_active_bookings_for_traveltek_updates(
     for booking in bookings:
         try:
             run.api_call_count += 1
-            traveltek_booking = fetch_booking_by_reference(booking.booking_ref)
+            traveltek_booking = fetch_booking_for_existing_booking(booking)
             run.checked_bookings += 1
 
             for field_name, traveltek_value in traveltek_booking.values.items():
