@@ -210,6 +210,7 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
                 agent_in_charge=booking.agent_in_charge,
                 destination=booking.destination,
                 travel_elements_raw=booking.travel_elements_raw,
+                supplier_references_raw=booking.supplier_references_raw,
                 departure_date=booking.departure_date,
                 return_date=booking.return_date,
                 passenger_count=booking.passenger_count,

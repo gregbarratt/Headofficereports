@@ -60,6 +60,7 @@ class Booking(Base):
     agent_in_charge: Mapped[str | None] = mapped_column(String(160), nullable=True)
     destination: Mapped[str | None] = mapped_column(String(255), nullable=True)
     travel_elements_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    supplier_references_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
     departure_date: Mapped[date | None] = mapped_column(Date, index=True, nullable=True)
     return_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     passenger_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -224,6 +225,19 @@ class TraveltekBookingUpdate(Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    @property
+    def traveltek_key_details(self) -> dict[str, str | None]:
+        extracted = (self.raw_source or {}).get("extracted") or {}
+        return {
+            "Total Cost": extracted.get("gross_booking_value"),
+            "Total Amount Paid": extracted.get("non_trusted_total_received"),
+            "Outstanding": extracted.get("imported_customer_outstanding"),
+            "Total Due": extracted.get("non_trusted_total_due"),
+            "Due to Suppliers": extracted.get("imported_supplier_outstanding"),
+            "Paid To Supplier": extracted.get("non_trusted_paid_supplier"),
+            "Supplier References": extracted.get("supplier_references_raw"),
+        }
 
 
 class Refund(Base):

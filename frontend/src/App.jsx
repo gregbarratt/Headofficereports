@@ -470,6 +470,7 @@ function BookingsPage({ token }) {
                 <th>Customer / Lead</th>
                 <th>Agent</th>
                 <th>Destination</th>
+                <th>Supplier refs</th>
                 <th>Departure</th>
                 <th>Return</th>
                 <th>Pax</th>
@@ -488,6 +489,7 @@ function BookingsPage({ token }) {
                     <td>{booking.customer_last_name || "-"}</td>
                     <td>{booking.agent_in_charge || "-"}</td>
                     <td>{booking.destination || "-"}</td>
+                    <td>{booking.supplier_references_raw || "-"}</td>
                     <td>{formatDate(booking.departure_date)}</td>
                     <td>{formatDate(booking.return_date)}</td>
                     <td>{booking.passenger_count ?? "-"}</td>
@@ -498,7 +500,7 @@ function BookingsPage({ token }) {
               ))
             ) : (
               <tr>
-                  <td colSpan="12">No bookings imported yet.</td>
+                  <td colSpan="13">No bookings imported yet.</td>
               </tr>
             )}
           </tbody>
@@ -552,12 +554,16 @@ function groupTraveltekUpdatesByBooking(updates) {
         updates: [],
         missingFields: [],
         changedFields: [],
+        keyDetails: {},
         newestDetectedAt: update.detected_at,
       });
     }
 
     const group = groupsByRef.get(bookingRef);
     group.updates.push(update);
+    if (update.traveltek_key_details) {
+      group.keyDetails = { ...group.keyDetails, ...update.traveltek_key_details };
+    }
     if (!group.newestDetectedAt || update.detected_at > group.newestDetectedAt) {
       group.newestDetectedAt = update.detected_at;
     }
@@ -576,6 +582,21 @@ function groupTraveltekUpdatesByBooking(updates) {
     const rightDate = right.newestDetectedAt || "";
     return rightDate.localeCompare(leftDate) || left.booking_ref.localeCompare(right.booking_ref);
   });
+}
+
+const traveltekKeyDetailLabels = [
+  "Total Cost",
+  "Total Amount Paid",
+  "Outstanding",
+  "Total Due",
+  "Due to Suppliers",
+  "Paid To Supplier",
+  "Supplier References",
+];
+
+function traveltekKeyDetailValue(group, label) {
+  const value = group.keyDetails?.[label];
+  return hasTraveltekReviewValue(value) ? value : "-";
 }
 
 function TraveltekUpdatesPage({ token }) {
@@ -881,6 +902,15 @@ function TraveltekUpdatesPage({ token }) {
                   <span>Different values</span>
                   <strong>{group.changedFields.length ? group.changedFields.join(", ") : "None"}</strong>
                 </div>
+              </div>
+
+              <div className="traveltek-key-details">
+                {traveltekKeyDetailLabels.map((label) => (
+                  <div key={`${group.booking_ref}-${label}`}>
+                    <span>{label}</span>
+                    <strong>{traveltekKeyDetailValue(group, label)}</strong>
+                  </div>
+                ))}
               </div>
 
               <div className="table-wrap">

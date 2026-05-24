@@ -64,6 +64,28 @@ FIELD_DEFINITIONS = {
         "candidates": ("elements", "products", "producttype", "product", "bookingtype"),
         "parser": "text",
     },
+    "supplier_references_raw": {
+        "label": "Supplier references",
+        "candidates": (
+            "supplierreference",
+            "supplier_reference",
+            "supplierref",
+            "supplier_ref",
+            "supplierbookingreference",
+            "supplier_booking_reference",
+            "supplierbookingref",
+            "supplier_booking_ref",
+            "supplierlocator",
+            "supplier_locator",
+            "supplierconfirmation",
+            "supplier_confirmation",
+            "providerreference",
+            "provider_reference",
+            "providerref",
+            "provider_ref",
+        ),
+        "parser": "text",
+    },
     "departure_date": {
         "label": "Departure date",
         "candidates": ("departuredate", "departdate", "depdate", "startdate"),
@@ -177,6 +199,18 @@ EXTERNAL_REFERENCE_CANDIDATES = ("externalreference", "externalref")
 BOOKING_ID_CANDIDATES = ("bookingid", "booking_id")
 BOOKING_REF_CANDIDATES = BOOKING_REFERENCE_CANDIDATES + EXTERNAL_REFERENCE_CANDIDATES
 BOOKING_ELEMENT_NAMES = {"booking", "portfolio", "enquiry", "item", "row", "result"}
+SUPPLIER_REFERENCE_KEYS = {
+    "supplierreference",
+    "supplierref",
+    "supplierbookingreference",
+    "supplierbookingref",
+    "supplierbookingid",
+    "supplierlocator",
+    "supplierconfirmation",
+    "supplierconfirmationreference",
+    "providerreference",
+    "providerref",
+}
 
 
 @dataclass
@@ -288,6 +322,52 @@ def collect_label_value_pairs(element: ElementTree.Element, output: dict[str, st
     return output
 
 
+def looks_like_supplier_reference_key(key: str) -> bool:
+    normalised = normalise_key(key)
+    if normalised in SUPPLIER_REFERENCE_KEYS:
+        return True
+    return "supplier" in normalised and (
+        "ref" in normalised
+        or "reference" in normalised
+        or "locator" in normalised
+        or "confirmation" in normalised
+        or "bookingid" in normalised
+    )
+
+
+def looks_like_supplier_reference_value(value: str | None) -> bool:
+    text = (value or "").strip()
+    if not text or len(text) > 120:
+        return False
+    if text.lower() in {"yes", "no", "true", "false", "supplier", "reference", "n/a", "none"}:
+        return False
+    return bool(re.search(r"[A-Za-z0-9]", text))
+
+
+def collect_supplier_references(element: ElementTree.Element, flattened: dict[str, str] | None = None) -> list[str]:
+    references: list[str] = []
+
+    def add_reference(value: str | None) -> None:
+        text = (value or "").strip()
+        if looks_like_supplier_reference_value(text) and text not in references:
+            references.append(text)
+
+    flattened_values = flattened or flatten_xml(element, {})
+    for key, value in flattened_values.items():
+        if looks_like_supplier_reference_key(key):
+            add_reference(value)
+
+    for next_element in element.iter():
+        element_name = local_name(next_element.tag)
+        if looks_like_supplier_reference_key(element_name):
+            add_reference(direct_text(next_element))
+        for attr_name, attr_value in next_element.attrib.items():
+            if looks_like_supplier_reference_key(attr_name):
+                add_reference(attr_value)
+
+    return references[:20]
+
+
 def flatten_xml(element: ElementTree.Element, output: dict[str, str] | None = None) -> dict[str, str]:
     top_level = output is None
     if output is None:
@@ -347,6 +427,9 @@ def is_plausible_traveltek_value(field_name: str, value: Any) -> bool:
 
     if field_name == "customer_last_name":
         return str(value).strip().upper() not in {"Y", "N", "YES", "NO", "TRUE", "FALSE", "0", "1"}
+
+    if field_name == "supplier_references_raw":
+        return bool(str(value).strip()) and len(str(value).strip()) <= 1000
 
     return True
 
@@ -476,6 +559,9 @@ def fetch_booking_detail(attributes: dict[str, str]) -> TraveltekBookingData:
     root = call_traveltek("getportfolio", attributes, secure_endpoint=True)
     flattened = flatten_xml(root)
     values = extract_booking_values(flattened)
+    supplier_references = collect_supplier_references(root, flattened)
+    if supplier_references:
+        values["supplier_references_raw"] = " | ".join(supplier_references)
     return TraveltekBookingData(
         values=values,
         source={
@@ -483,6 +569,7 @@ def fetch_booking_detail(attributes: dict[str, str]) -> TraveltekBookingData:
             "endpoint": "secure",
             "lookup": attributes,
             "extracted": {key: display_value(value) for key, value in values.items()},
+            "supplier_references": supplier_references,
             "sample": element_to_source(root),
         },
     )

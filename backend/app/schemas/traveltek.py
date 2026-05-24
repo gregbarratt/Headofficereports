@@ -36,6 +36,7 @@ class TraveltekBookingUpdateRead(BaseModel):
     field_label: str
     current_value: str | None
     traveltek_value: str | None
+    traveltek_key_details: dict[str, str | None] | None = None
     status: str
     detected_at: datetime
     reviewed_at: datetime | None

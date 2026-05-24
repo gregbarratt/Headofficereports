@@ -493,7 +493,7 @@ The Traveltek Updates page has two actions:
 
 The Traveltek `getbookings` document says the import date range is a booking date range. The Traveltek Updates page therefore searches by booking date only. The system stores Traveltek departure and return dates on the booking record, then Head Office can review by travel date inside Booking Checks.
 
-The booking import stores Traveltek booking framework fields including status, customer name, destination, elements, departure date, return date, booking date, due date, total cost, total amount paid, outstanding, total due, due to suppliers, paid to supplier, expected supplier nett and profit.
+The booking import stores Traveltek booking framework fields including status, customer name, destination, elements, supplier references, departure date, return date, booking date, due date, total cost, total amount paid, outstanding, total due, due to suppliers, paid to supplier, expected supplier nett and profit.
 
 Traveltek total amount paid, outstanding, total due, due to suppliers, paid to supplier and profit are stored as cross-check figures. They are shown against SINGs customer receipts, TAPs supplier payments and calculated true profit, but they do not silently replace those actual sources.
 
@@ -508,6 +508,7 @@ Traveltek is the main source for these booking framework fields:
 - return date
 - passenger count
 - booking elements
+- supplier references
 - gross booking value
 - expected supplier cost, cross-checked with supplier reports
 

@@ -14,6 +14,7 @@ class BookingRead(BaseModel):
     agent_in_charge: str | None
     destination: str | None
     travel_elements_raw: str | None
+    supplier_references_raw: str | None = None
     departure_date: date | None
     return_date: date | None
     passenger_count: int | None
@@ -52,6 +53,7 @@ class BookingCheckRow(BaseModel):
     agent_in_charge: str | None
     destination: str | None
     travel_elements_raw: str | None
+    supplier_references_raw: str | None = None
     departure_date: date | None
     return_date: date | None = None
     passenger_count: int | None = None
