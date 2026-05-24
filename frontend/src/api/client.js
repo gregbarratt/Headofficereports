@@ -11,6 +11,31 @@ export class ApiError extends Error {
   }
 }
 
+function readableApiErrorDetail(detail, fallback) {
+  if (!detail) {
+    return fallback;
+  }
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        const location = Array.isArray(item?.loc) ? item.loc.filter((part) => part !== "body").join(".") : "";
+        const message = item?.msg || item?.message || JSON.stringify(item);
+        return location ? `${location}: ${message}` : message;
+      })
+      .join(" ");
+  }
+  if (typeof detail === "object") {
+    return detail.message || detail.msg || detail.error || JSON.stringify(detail);
+  }
+  return String(detail);
+}
+
 async function apiRequest(path, options = {}) {
   const { token, ...fetchOptions } = options;
   const isFormData = fetchOptions.body instanceof FormData;
@@ -29,7 +54,7 @@ async function apiRequest(path, options = {}) {
     let message = "Request failed.";
     try {
       const error = await response.json();
-      message = error.detail || message;
+      message = readableApiErrorDetail(error.detail || error.message || error, message);
     } catch {
       message = response.statusText || message;
     }
@@ -377,7 +402,7 @@ export async function downloadReportExcel({ token, reportType }) {
     let message = "Report export failed.";
     try {
       const error = await response.json();
-      message = error.detail || message;
+      message = readableApiErrorDetail(error.detail || error.message || error, message);
     } catch {
       message = response.statusText || message;
     }

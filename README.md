@@ -495,7 +495,7 @@ The Traveltek Updates page has two actions:
 
 The Traveltek `getbookings` document says the import date range is a booking date range. The Traveltek Updates page therefore searches by booking date only. The system stores Traveltek departure and return dates on the booking record, then Head Office can review by travel date inside Booking Checks.
 
-For a historic catch-up, use **Full controlled catch-up**. The default start date is `2023-01-30`, but it can be changed before running. Head Office can either run one batch at a time or use **Start Automatic Catch-up**. Automatic catch-up keeps running the next saved batch until the date range is complete, but the browser page must stay open while it works.
+For a historic catch-up, use **Update Everything From Traveltek**. This starts at `2023-01-30`, runs to today, uses safe 31-day batches, and continues from the saved catch-up position. The browser page must stay open while it works. The advanced catch-up controls remain available if Head Office needs to change dates, batch size, or restart the catch-up position.
 
 For regular use after the catch-up, use **Ongoing active update**. It first imports recent new bookings by booking date, then refreshes only bookings whose departure date is within the active window. The default active window is 60 days after departure, so old departed bookings are not repeatedly checked.
 

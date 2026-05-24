@@ -442,6 +442,36 @@ nav button:disabled {
   margin-bottom: 12px;
 }
 
+.traveltek-simple-update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 18px 0;
+  padding: 16px;
+  border-left: 4px solid #1d4945;
+  background: #e7f2ef;
+}
+
+.traveltek-simple-update h3,
+.traveltek-simple-update p {
+  margin: 0;
+}
+
+.traveltek-simple-update h3 {
+  font-size: 1rem;
+}
+
+.traveltek-simple-update p {
+  margin-top: 4px;
+  color: #45545b;
+  font-size: 0.92rem;
+}
+
+.traveltek-simple-update button {
+  flex: 0 0 auto;
+}
+
 .checkbox-label {
   align-items: center;
   display: flex;
@@ -1005,6 +1035,11 @@ th {
   .email-report-panel,
   .recipient-form {
     grid-template-columns: 1fr;
+  }
+
+  .traveltek-simple-update {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .upload-form,

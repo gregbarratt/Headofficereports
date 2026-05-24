@@ -643,6 +643,25 @@ function TraveltekUpdatesPage({ token }) {
   const [updatingGroupRef, setUpdatingGroupRef] = useState("");
   const stopAutoCatchUpRef = useRef(false);
 
+  function catchUpRequestValues() {
+    const batchDays = boundedNumber(catchUpBatchDays, 30, 1, 92);
+    const limit = boundedNumber(catchUpLimit, 100, 1, 500);
+    if (String(batchDays) !== String(catchUpBatchDays)) {
+      setCatchUpBatchDays(batchDays);
+    }
+    if (String(limit) !== String(catchUpLimit)) {
+      setCatchUpLimit(limit);
+    }
+    return { batchDays, limit };
+  }
+
+  function normalisedCatchUpRunValues({ batchDays = catchUpBatchDays, limit = catchUpLimit } = {}) {
+    return {
+      batchDays: boundedNumber(batchDays, 30, 1, 92),
+      limit: boundedNumber(limit, 100, 1, 500),
+    };
+  }
+
   function loadUpdates(nextStatus = statusFilter) {
     return getTraveltekUpdates(token, nextStatus)
       .then((data) => {
@@ -716,12 +735,13 @@ function TraveltekUpdatesPage({ token }) {
     setMessage("");
     setError("");
     try {
+      const { batchDays, limit } = catchUpRequestValues();
       const result = await runTraveltekFullCatchUpBatch({
         token,
         startDate: catchUpStartDate,
         endDate: catchUpEndDate,
-        batchDays: Number(catchUpBatchDays),
-        limit: Number(catchUpLimit),
+        batchDays,
+        limit,
         resetProgress: catchUpResetProgress,
       });
       if (result.complete && !result.run) {
@@ -748,28 +768,39 @@ function TraveltekUpdatesPage({ token }) {
     }
   }
 
-  async function handleAutoFullCatchUp() {
+  async function runAutomaticCatchUp({
+    startDate = catchUpStartDate,
+    endDate = catchUpEndDate,
+    batchDays: requestedBatchDays = catchUpBatchDays,
+    limit: requestedLimit = catchUpLimit,
+    resetProgress = catchUpResetProgress,
+    startMessage = "Automatic catch-up started.",
+  } = {}) {
+    const { batchDays, limit } = normalisedCatchUpRunValues({
+      batchDays: requestedBatchDays,
+      limit: requestedLimit,
+    });
     setIsAutoCatchUpRunning(true);
     stopAutoCatchUpRef.current = false;
     setMessage("");
     setError("");
-    setAutoCatchUpStatus("Automatic catch-up started.");
+    setAutoCatchUpStatus(startMessage);
     setAutoCatchUpBatchesRun(0);
     setAutoCatchUpCallsUsed(0);
 
     let batchesRun = 0;
     let callsUsed = 0;
-    let resetProgressOnNextBatch = catchUpResetProgress;
+    let resetProgressOnNextBatch = resetProgress;
     const safetyBatchLimit = 1500;
 
     try {
       while (!stopAutoCatchUpRef.current) {
         const result = await runTraveltekFullCatchUpBatch({
           token,
-          startDate: catchUpStartDate,
-          endDate: catchUpEndDate,
-          batchDays: Number(catchUpBatchDays),
-          limit: Number(catchUpLimit),
+          startDate,
+          endDate,
+          batchDays,
+          limit,
           resetProgress: resetProgressOnNextBatch,
         });
         resetProgressOnNextBatch = false;
@@ -821,6 +852,30 @@ function TraveltekUpdatesPage({ token }) {
     } finally {
       setIsAutoCatchUpRunning(false);
     }
+  }
+
+  function handleAutoFullCatchUp() {
+    return runAutomaticCatchUp();
+  }
+
+  function handleUpdateEverything() {
+    const updateStartDate = TRAVELTEK_FULL_CATCH_UP_START_DATE;
+    const updateEndDate = todayIso;
+    const updateBatchDays = 31;
+    const updateLimit = 500;
+    setCatchUpStartDate(updateStartDate);
+    setCatchUpEndDate(updateEndDate);
+    setCatchUpBatchDays(updateBatchDays);
+    setCatchUpLimit(updateLimit);
+    setCatchUpResetProgress(false);
+    return runAutomaticCatchUp({
+      startDate: updateStartDate,
+      endDate: updateEndDate,
+      batchDays: updateBatchDays,
+      limit: updateLimit,
+      resetProgress: false,
+      startMessage: "Update everything started. Leave this page open while Traveltek is updated safely.",
+    });
   }
 
   function stopAutoFullCatchUp() {
@@ -900,6 +955,7 @@ function TraveltekUpdatesPage({ token }) {
   }
 
   const groupedUpdates = groupTraveltekUpdatesByBooking(updates);
+  const safeCatchUpLimit = boundedNumber(catchUpLimit, 100, 1, 500);
 
   return (
     <section className="panel">
@@ -954,9 +1010,28 @@ function TraveltekUpdatesPage({ token }) {
           )
         ) : null}
 
+        <div className="traveltek-simple-update">
+          <div>
+            <h3>Update Everything</h3>
+            <p>
+              Pull all Traveltek booking data from 30 Jan 2023 to today in safe batches. It continues from the saved catch-up position.
+            </p>
+          </div>
+          {isAutoCatchUpRunning ? (
+            <button className="secondary-button" onClick={stopAutoFullCatchUp} type="button">
+              Stop Updating
+            </button>
+          ) : (
+            <button className="primary-button" disabled={isCatchUpRunning || !configured} onClick={handleUpdateEverything} type="button">
+              <RefreshCw size={18} aria-hidden="true" />
+              Update Everything From Traveltek
+            </button>
+          )}
+        </div>
+
         <div className="section-heading">
-          <h3>Full controlled catch-up</h3>
-          <p>Runs one safe booking-date batch at a time so the whole system can be caught up without using too many calls at once.</p>
+          <h3>Advanced catch-up controls</h3>
+          <p>Use these only when you want to change the catch-up dates, batch size or restart position.</p>
         </div>
         <div className="traveltek-toolbar">
           <label>
@@ -1008,8 +1083,8 @@ function TraveltekUpdatesPage({ token }) {
             {isCatchUpRunning ? "Running batch" : "Run Next Catch-up Batch"}
           </button>
           {isAutoCatchUpRunning ? (
-            <button className="secondary-button" onClick={stopAutoFullCatchUp} type="button">
-              Stop Automatic Catch-up
+            <button className="secondary-button" disabled type="button">
+              Automatic catch-up running
             </button>
           ) : (
             <button className="primary-button" disabled={isCatchUpRunning || !configured} onClick={handleAutoFullCatchUp} type="button">
@@ -1019,7 +1094,7 @@ function TraveltekUpdatesPage({ token }) {
           )}
         </div>
         <p className="muted-note">
-          Estimated calls for each batch: up to {Number(catchUpLimit || 0) + 1}. Automatic catch-up keeps running the next saved batch until complete, but this page must stay open.
+          Estimated calls for each batch: up to {safeCatchUpLimit + 1}. Max bookings is 500 per batch. Automatic catch-up keeps running the next saved batch until complete, but this page must stay open.
         </p>
         {autoCatchUpStatus ? (
           <p className="muted-note">
@@ -1352,6 +1427,14 @@ function wait(milliseconds) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
   });
+}
+
+function boundedNumber(value, fallback, min, max) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.floor(numberValue)));
 }
 
 function groupedCheckStatus(row, area) {
