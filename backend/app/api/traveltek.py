@@ -20,6 +20,7 @@ from app.schemas.traveltek import (
     TraveltekUpdatesResponse,
 )
 from app.services.traveltek_service import (
+    apply_traveltek_update_to_booking,
     import_traveltek_bookings_by_date_range,
     is_valid_traveltek_update_value,
     scan_active_bookings_for_traveltek_updates,
@@ -144,6 +145,10 @@ def update_traveltek_update_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Traveltek update was not found.")
 
     previous_status = update.status
+    applied_data = None
+    if next_status == "resolved":
+        applied_data = apply_traveltek_update_to_booking(db, update)
+
     update.status = next_status
     if next_status in {"resolved", "ignored"}:
         update.reviewed_at = datetime.now(UTC)
@@ -156,8 +161,8 @@ def update_traveltek_update_status(
             table_name="traveltek_booking_updates",
             record_id=update.id,
             description=f"Traveltek update changed from {previous_status} to {next_status}.",
-            before_data={"status": previous_status},
-            after_data={"status": next_status},
+            before_data={"status": previous_status, "booking_update": applied_data["before"] if applied_data else None},
+            after_data={"status": next_status, "booking_update": applied_data["after"] if applied_data else None},
         )
     )
     db.commit()

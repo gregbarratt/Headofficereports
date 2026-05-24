@@ -495,7 +495,7 @@ The Traveltek `getbookings` document says the import date range is a booking dat
 
 The booking import stores Traveltek booking framework fields including Traveltek booking ID, status, customer name, destination, elements, supplier references, departure date, return date, booking date, due date, total cost, total amount paid, outstanding, total due, due to suppliers, paid to supplier, expected supplier nett and profit.
 
-Traveltek total amount paid, outstanding, total due, due to suppliers, paid to supplier and profit are stored as cross-check figures. They are shown against SINGs customer receipts, TAPs supplier payments and calculated true profit, but they do not silently replace those actual sources.
+Traveltek total amount paid, outstanding, total due, due to suppliers, paid to supplier and profit are stored as cross-check figures. SINGs customer receipts are compared only with Traveltek total amount paid because SINGs does not hold the full amount due. TAPs supplier payments and calculated true profit are checked separately, and Traveltek values do not silently replace those actual sources.
 
 Traveltek is the main source for these booking framework fields:
 

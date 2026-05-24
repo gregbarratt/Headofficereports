@@ -48,19 +48,9 @@ FIELD_DEFINITIONS = {
         ),
         "parser": "text",
     },
-    "agent_in_charge": {
-        "label": "Agent in charge",
-        "candidates": ("agentincharge", "agent", "consultant", "consultantname", "salesperson", "bookedby"),
-        "parser": "text",
-    },
     "destination": {
         "label": "Destination",
         "candidates": ("destination", "resort", "region", "location"),
-        "parser": "text",
-    },
-    "travel_elements_raw": {
-        "label": "Travel elements",
-        "candidates": ("elements", "products", "producttype", "product", "bookingtype"),
         "parser": "text",
     },
     "supplier_references_raw": {
@@ -620,9 +610,10 @@ def extract_booking_values(flattened: dict[str, str]) -> dict[str, Any]:
     if imported_status is not None:
         values["normalised_status"] = normalise_booking_status(str(imported_status))
 
-    element_flags = parse_elements(values.get("travel_elements_raw"))
-    values.update(element_flags)
-    values["atol_review_status"] = determine_atol_review_status(element_flags)
+    if values.get("travel_elements_raw"):
+        element_flags = parse_elements(values.get("travel_elements_raw"))
+        values.update(element_flags)
+        values["atol_review_status"] = determine_atol_review_status(element_flags)
     return values
 
 
@@ -920,6 +911,46 @@ def create_update_proposal(
         )
     )
     return True
+
+
+def apply_traveltek_update_to_booking(db: Session, update: TraveltekBookingUpdate) -> dict[str, Any] | None:
+    if update.field_name not in REVIEW_FIELD_NAMES:
+        return None
+
+    definition = FIELD_DEFINITIONS[update.field_name]
+    try:
+        parsed_value = parse_traveltek_value(update.traveltek_value, definition["parser"])
+    except ValueError:
+        return None
+
+    if not is_plausible_traveltek_value(update.field_name, parsed_value):
+        return None
+
+    booking = db.get(Booking, update.booking_id) if update.booking_id else None
+    if booking is None:
+        booking = db.scalar(select(Booking).where(Booking.booking_ref == update.booking_ref))
+    if booking is None:
+        return None
+
+    before_data: dict[str, Any] = {"booking_ref": booking.booking_ref}
+    after_data: dict[str, Any] = {"booking_ref": booking.booking_ref}
+
+    if update.field_name == "imported_booking_status":
+        before_data["imported_booking_status"] = display_value(booking.imported_booking_status)
+        before_data["normalised_status"] = display_value(booking.normalised_status)
+        booking.imported_booking_status = display_value(parsed_value)
+        booking.normalised_status = normalise_booking_status(display_value(parsed_value))
+        after_data["imported_booking_status"] = display_value(booking.imported_booking_status)
+        after_data["normalised_status"] = display_value(booking.normalised_status)
+        return {"before": before_data, "after": after_data}
+
+    if not hasattr(booking, update.field_name):
+        return None
+
+    before_data[update.field_name] = display_value(getattr(booking, update.field_name))
+    setattr(booking, update.field_name, parsed_value)
+    after_data[update.field_name] = display_value(parsed_value)
+    return {"before": before_data, "after": after_data}
 
 
 def scan_active_bookings_for_traveltek_updates(

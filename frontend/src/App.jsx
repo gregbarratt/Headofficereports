@@ -695,7 +695,11 @@ function TraveltekUpdatesPage({ token }) {
     setError("");
     try {
       await updateTraveltekUpdateStatus({ token, updateId, status: nextStatus });
-      setMessage(`Traveltek suggestion marked as ${formatStatusLabel(nextStatus)}.`);
+      setMessage(
+        nextStatus === "resolved"
+          ? "Traveltek suggestion applied to the booking."
+          : `Traveltek suggestion marked as ${formatStatusLabel(nextStatus)}.`
+      );
       await loadUpdates(statusFilter);
     } catch (updateError) {
       setError(updateError.message || "Traveltek suggestion could not be updated.");
@@ -713,7 +717,11 @@ function TraveltekUpdatesPage({ token }) {
       await Promise.all(
         updatesToChange.map((update) => updateTraveltekUpdateStatus({ token, updateId: update.id, status: nextStatus }))
       );
-      setMessage(`${group.booking_ref} suggestions marked as ${formatStatusLabel(nextStatus)}.`);
+      setMessage(
+        nextStatus === "resolved"
+          ? `${group.booking_ref} suggestions applied to the booking.`
+          : `${group.booking_ref} suggestions marked as ${formatStatusLabel(nextStatus)}.`
+      );
       await loadUpdates(statusFilter);
     } catch (updateError) {
       setError(updateError.message || "Traveltek suggestions could not be updated.");
@@ -750,7 +758,7 @@ function TraveltekUpdatesPage({ token }) {
           <strong>{summary?.reviewing_count ?? 0}</strong>
         </div>
         <div>
-          <span>Resolved</span>
+          <span>Applied</span>
           <strong>{summary?.resolved_count ?? 0}</strong>
         </div>
         <div>
@@ -822,7 +830,7 @@ function TraveltekUpdatesPage({ token }) {
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
             <option value="open">Open</option>
             <option value="reviewing">Reviewing</option>
-            <option value="resolved">Resolved</option>
+            <option value="resolved">Applied</option>
             <option value="ignored">Ignored</option>
             <option value="all">All</option>
           </select>
@@ -873,7 +881,7 @@ function TraveltekUpdatesPage({ token }) {
                     onClick={() => handleGroupStatusChange(group, "resolved")}
                     type="button"
                   >
-                    Resolve all
+                    Apply all
                   </button>
                   <button
                     disabled={updatingGroupRef === group.booking_ref}
@@ -933,7 +941,7 @@ function TraveltekUpdatesPage({ token }) {
                           <td>{update.traveltek_value || "-"}</td>
                           <td>
                             <span className={`status-pill status-${update.status}`}>
-                              {formatStatusLabel(update.status)}
+                              {update.status === "resolved" ? "Applied" : formatStatusLabel(update.status)}
                             </span>
                           </td>
                           <td>{formatDateTime(update.detected_at)}</td>
@@ -954,7 +962,7 @@ function TraveltekUpdatesPage({ token }) {
                                   onClick={() => handleStatusChange(update.id, "resolved")}
                                   type="button"
                                 >
-                                  Resolve
+                                  Apply
                                 </button>
                               ) : null}
                               {update.status !== "ignored" ? (
@@ -1042,7 +1050,7 @@ function groupedCheckStatus(row, area) {
   const checks =
     area === "supplier"
       ? [row.supplier_expected_check, row.supplier_tt_check]
-      : [row.customer_expected_check, row.customer_tt_check];
+      : [row.customer_tt_check];
   if (checks.includes("mismatch")) {
     return "mismatch";
   }
@@ -1209,8 +1217,6 @@ function BookingChecksPage({ token }) {
       "Traveltek Total Amount Paid",
       "Traveltek Outstanding",
       "SINGs In",
-      "SINGs vs Traveltek",
-      "SINGs vs Traveltek Variance",
       "SINGs vs Traveltek Paid",
       "SINGs vs Traveltek Paid Variance",
       "Traveltek Total Due",
@@ -1243,8 +1249,6 @@ function BookingChecksPage({ token }) {
       row.customer_tt_total ?? "",
       row.traveltek_customer_outstanding ?? "",
       row.customer_sings_total ?? "",
-      checkLabel(row.customer_expected_check),
-      row.customer_expected_variance ?? "",
       checkLabel(row.customer_tt_check),
       row.customer_tt_variance ?? "",
       row.traveltek_total_due ?? "",
@@ -1306,7 +1310,7 @@ function BookingChecksPage({ token }) {
       </div>
 
       <p className="muted-note">
-          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. Traveltek finance values are imported for cross-checking.
+          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. SINGs is compared only against Traveltek Total Amount Paid, not the full booking value.
       </p>
 
       <div className="booking-check-filters">
@@ -1426,7 +1430,6 @@ function BookingChecksPage({ token }) {
               <th>Traveltek Total Amount Paid</th>
               <th>Traveltek Outstanding</th>
               <th>SINGs In</th>
-              <th>SINGs vs Traveltek</th>
               <th>SINGs vs Traveltek Paid</th>
               <th>Traveltek Total Due</th>
               <th>Traveltek Due To Suppliers</th>
@@ -1463,10 +1466,6 @@ function BookingChecksPage({ token }) {
                   <td>{formatMoney(row.traveltek_customer_outstanding)}</td>
                   <td>{formatMoney(row.customer_sings_total)}</td>
                   <td>
-                    <CheckBadge status={row.customer_expected_check} />
-                    <span className="variance-note">{formatMoney(row.customer_expected_variance)}</span>
-                  </td>
-                  <td>
                     <CheckBadge status={row.customer_tt_check} />
                     <span className="variance-note">{formatMoney(row.customer_tt_variance)}</span>
                   </td>
@@ -1500,7 +1499,7 @@ function BookingChecksPage({ token }) {
               ))
             ) : (
               <tr>
-                  <td colSpan="25">No booking checks match the current filters.</td>
+                  <td colSpan="24">No booking checks match the current filters.</td>
               </tr>
             )}
           </tbody>

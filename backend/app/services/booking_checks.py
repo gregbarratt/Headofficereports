@@ -184,12 +184,11 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
 
         supplier_expected_check = trusted_vs_expected_check(expected_supplier_total, supplier_taps_total)
         supplier_tt_check = trusted_vs_human_check(supplier_taps_total, supplier_tt_total)
-        customer_expected_check = trusted_vs_expected_check(gross_booking_value, customer_sings_total)
+        customer_expected_check = "not_checked"
         customer_tt_check = trusted_vs_human_check(customer_sings_total, customer_tt_total)
         row_review_status, row_review_note = review_status(
             supplier_expected_check,
             supplier_tt_check,
-            customer_expected_check,
             customer_tt_check,
         )
 
@@ -198,8 +197,6 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
             supplier_expected_variance = money(supplier_taps_total - expected_supplier_total)
 
         customer_expected_variance = None
-        if gross_booking_value is not None:
-            customer_expected_variance = money(customer_sings_total - gross_booking_value)
 
         rows.append(
             BookingCheckRow(
@@ -255,7 +252,7 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
         total_bookings=len(rows),
         supplier_expected_matches=sum(1 for row in rows if row.supplier_expected_check == "match"),
         supplier_tt_matches=sum(1 for row in rows if row.supplier_tt_check == "match"),
-        customer_expected_matches=sum(1 for row in rows if row.customer_expected_check == "match"),
+        customer_expected_matches=0,
         customer_tt_matches=sum(1 for row in rows if row.customer_tt_check == "match"),
         fully_matched=sum(1 for row in rows if row.review_status == "match"),
         needs_review=sum(1 for row in rows if row.review_status != "match"),
@@ -318,14 +315,12 @@ def build_booking_checks_summary(db: Session, limit: int = BOOKING_CHECK_ROW_LIM
         checks = (
             trusted_vs_expected_check(expected_supplier_total, supplier_taps_total),
             trusted_vs_human_check(supplier_taps_total, supplier_tt_total),
-            trusted_vs_expected_check(gross_booking_value, customer_sings_total),
             trusted_vs_human_check(customer_sings_total, customer_tt_total),
         )
 
         supplier_expected_matches += checks[0] == "match"
         supplier_tt_matches += checks[1] == "match"
-        customer_expected_matches += checks[2] == "match"
-        customer_tt_matches += checks[3] == "match"
+        customer_tt_matches += checks[2] == "match"
 
         row_review_status, _ = review_status(*checks)
         fully_matched += row_review_status == "match"
