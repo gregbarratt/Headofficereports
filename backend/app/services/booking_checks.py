@@ -20,7 +20,15 @@ from app.services.master_booking_import import parse_date, parse_int, parse_mone
 
 ZERO = Decimal("0.00")
 BOOKING_CHECK_ROW_LIMIT = 10000
-TRAVELTEK_AUTO_BOOKING_FIELDS = {"return_date", "passenger_count", "non_trusted_total_due"}
+TRAVELTEK_AUTO_BOOKING_FIELDS = {
+    "return_date",
+    "passenger_count",
+    "imported_customer_outstanding",
+    "imported_supplier_outstanding",
+    "non_trusted_total_due",
+    "non_trusted_total_received",
+    "non_trusted_paid_supplier",
+}
 ADJUSTABLE_FIELDS = {
     "gross_booking_value",
     "expected_supplier_total",
@@ -44,6 +52,13 @@ def parse_traveltek_auto_booking_value(field_name: str, raw_value: str | None):
             value = parse_int(raw_value)
             return value if value is not None and 0 < value <= 99 else None
         if field_name == "non_trusted_total_due":
+            return parse_money(raw_value)
+        if field_name in {
+            "imported_customer_outstanding",
+            "imported_supplier_outstanding",
+            "non_trusted_total_received",
+            "non_trusted_paid_supplier",
+        }:
             return parse_money(raw_value)
     except (TypeError, ValueError):
         return None

@@ -149,6 +149,10 @@ FIELD_DEFINITIONS = {
             "supplierbalancedue",
             "outstandingsupplier",
             "outstanding_supplier",
+            "totalsupplierdue",
+            "total_supplier_due",
+            "supplierstotaldue",
+            "suppliers_total_due",
         ),
         "parser": "money",
     },
@@ -174,7 +178,29 @@ FIELD_DEFINITIONS = {
     },
     "non_trusted_paid_supplier": {
         "label": "Traveltek paid to supplier",
-        "candidates": ("paidtosupplier", "paid_to_supplier", "paidsupplier", "paidsupp", "supplierpaid"),
+        "candidates": (
+            "paidtosupplier",
+            "paid_to_supplier",
+            "paidtosuppliers",
+            "paid_to_suppliers",
+            "paidsupplier",
+            "paidsuppliers",
+            "paidsupp",
+            "paidtosupp",
+            "supplierpaid",
+            "supplier_paid",
+            "supplierspaid",
+            "suppliers_paid",
+            "supplierpaidtotal",
+            "supplier_paid_total",
+            "totalsupplierpaid",
+            "total_supplier_paid",
+            "supplierstotalpaid",
+            "suppliers_total_paid",
+            "supplierpayment",
+            "supplierpayments",
+            "supplierpaymentsmade",
+        ),
         "parser": "money",
     },
     "non_trusted_projected_profit": {
@@ -202,7 +228,15 @@ FIELD_DEFINITIONS = {
         "parser": "money",
     },
 }
-AUTO_APPLY_FIELD_NAMES = {"non_trusted_total_due", "passenger_count", "return_date"}
+AUTO_APPLY_FIELD_NAMES = {
+    "return_date",
+    "passenger_count",
+    "imported_customer_outstanding",
+    "imported_supplier_outstanding",
+    "non_trusted_total_due",
+    "non_trusted_total_received",
+    "non_trusted_paid_supplier",
+}
 REVIEW_FIELD_NAMES = set(FIELD_DEFINITIONS) - AUTO_APPLY_FIELD_NAMES - {"non_trusted_projected_profit"}
 BOOKING_REFERENCE_CANDIDATES = (
     "bookingreference",
@@ -491,6 +525,52 @@ def value_from_candidates(flattened: dict[str, str], candidates: tuple[str, ...]
         value = normalised.get(normalise_key(candidate))
         if value not in {None, ""}:
             return value
+    return None
+
+
+FINANCIAL_KEY_EXCLUDES = {
+    "bookingid",
+    "bookingref",
+    "confirmation",
+    "date",
+    "method",
+    "name",
+    "reference",
+    "ref",
+    "status",
+}
+
+
+def derive_money_from_key_hints(
+    flattened: dict[str, str],
+    required_terms: tuple[str, ...],
+    any_terms: tuple[str, ...] = (),
+) -> Decimal | None:
+    for key, value in flattened.items():
+        normalised_key = normalise_key(key)
+        if any(excluded in normalised_key for excluded in FINANCIAL_KEY_EXCLUDES):
+            continue
+        if not all(term in normalised_key for term in required_terms):
+            continue
+        if any_terms and not any(term in normalised_key for term in any_terms):
+            continue
+        try:
+            amount = parse_money(value)
+        except ValueError:
+            continue
+        if amount is not None:
+            return amount
+    return None
+
+
+def derive_traveltek_money_value(
+    field_name: str,
+    flattened: dict[str, str],
+) -> Decimal | None:
+    if field_name == "non_trusted_paid_supplier":
+        return derive_money_from_key_hints(flattened, ("supplier",), ("paid", "payment"))
+    if field_name == "imported_supplier_outstanding":
+        return derive_money_from_key_hints(flattened, ("supplier",), ("due", "outstanding", "balance"))
     return None
 
 
@@ -930,6 +1010,8 @@ def extract_booking_values(flattened: dict[str, str], root: ElementTree.Element 
             parsed_value = parse_traveltek_value(raw_value, definition["parser"])
         except ValueError:
             parsed_value = None
+        if parsed_value is None and definition["parser"] == "money":
+            parsed_value = derive_traveltek_money_value(field_name, flattened)
         if is_plausible_traveltek_value(field_name, parsed_value):
             values[field_name] = parsed_value
 
@@ -1743,11 +1825,20 @@ def scan_active_bookings_for_traveltek_updates(
             run.api_call_count += 1
             traveltek_booking = fetch_booking_for_existing_booking(booking)
             run.checked_bookings += 1
+            auto_changes: list[dict[str, str | None]] = []
 
             for field_name, traveltek_value in traveltek_booking.values.items():
                 if field_name in AUTO_APPLY_FIELD_NAMES:
                     applied_data = apply_traveltek_value_to_booking(booking, field_name, traveltek_value)
                     if applied_data:
+                        auto_changes.append(
+                            {
+                                "field_name": field_name,
+                                "field_label": traveltek_field_label(field_name),
+                                "previous_value": applied_data["before"].get(field_name),
+                                "new_value": applied_data["after"].get(field_name),
+                            }
+                        )
                         db.add(
                             AuditLog(
                                 actor_user_id=actor_user_id,
@@ -1782,6 +1873,17 @@ def scan_active_bookings_for_traveltek_updates(
                     source=traveltek_booking.source,
                 ):
                     created_count += 1
+
+            if auto_changes:
+                add_traveltek_booking_change_log(
+                    db,
+                    booking_ref=booking.booking_ref,
+                    booking_id=booking.id,
+                    sync_run_id=run.id,
+                    changes=auto_changes,
+                    created=False,
+                    actor_user_id=actor_user_id,
+                )
         except TraveltekApiError as exc:
             errors.append(f"{booking.booking_ref}: {exc}")
         except Exception as exc:
