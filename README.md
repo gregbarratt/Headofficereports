@@ -516,6 +516,8 @@ The booking import stores Traveltek booking framework fields including Traveltek
 
 Traveltek total amount paid, outstanding, total due, due to suppliers, paid to supplier and profit are stored as cross-check figures. SINGs customer receipts are compared only with Traveltek total amount paid because SINGs does not hold the full amount due. TAPs supplier payments and calculated true profit are checked separately, and Traveltek values do not silently replace those actual sources.
 
+The Bookings page shows Traveltek customer paid and Traveltek supplier paid values beside the gross value and supplier nett, so Head Office can quickly see what Traveltek says has been received from the customer and paid out to suppliers.
+
 Traveltek Total Due, Return Date and Passenger Count are automatically refreshed on the booking record when Traveltek is checked. They appear in Booking Checks, but they do not create separate review suggestions. Traveltek projected profit is kept for reporting/cross-checking, but it no longer creates a Traveltek Updates review item.
 
 Traveltek finance cross-check values now also auto-refresh when Traveltek is checked: Total Amount Paid, Customer Outstanding, Due To Suppliers and Paid To Supplier. This keeps Booking Checks current without Head Office having to approve each cross-check value one by one.

@@ -494,7 +494,9 @@ function BookingsPage({ token }) {
       "Return",
       "Passenger Count",
       "Gross Value",
+      "Traveltek Customer Paid",
       "Supplier Nett",
+      "Traveltek Supplier Paid",
       "ATOL",
       "Last Updated",
     ];
@@ -511,7 +513,9 @@ function BookingsPage({ token }) {
       booking.return_date || "",
       booking.passenger_count ?? "",
       booking.gross_booking_value ?? "",
+      booking.non_trusted_total_received ?? "",
       booking.expected_supplier_nett ?? "",
+      booking.non_trusted_paid_supplier ?? "",
       booking.atol_review_status || "",
       booking.updated_at || "",
     ]);
@@ -560,7 +564,9 @@ function BookingsPage({ token }) {
                 <th>Return</th>
                 <th>Passenger Count</th>
                 <th>Gross Value</th>
+                <th>TT Customer Paid</th>
                 <th>Supplier Nett</th>
+                <th>TT Supplier Paid</th>
               <th>ATOL</th>
             </tr>
           </thead>
@@ -580,13 +586,15 @@ function BookingsPage({ token }) {
                     <td>{formatDate(booking.return_date)}</td>
                     <td>{booking.passenger_count ?? "-"}</td>
                     <td>{formatMoney(booking.gross_booking_value)}</td>
+                    <td>{formatMoney(booking.non_trusted_total_received)}</td>
                   <td>{formatMoney(booking.expected_supplier_nett)}</td>
+                  <td>{formatMoney(booking.non_trusted_paid_supplier)}</td>
                   <td>{booking.atol_review_status || "-"}</td>
                 </tr>
               ))
             ) : (
               <tr>
-                  <td colSpan="14">No bookings imported yet.</td>
+                  <td colSpan="16">No bookings imported yet.</td>
               </tr>
             )}
           </tbody>
