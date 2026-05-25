@@ -735,6 +735,7 @@ function TraveltekUpdatesPage({ token }) {
   const [isActiveMaintenanceRunning, setIsActiveMaintenanceRunning] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
   const [updatingGroupRef, setUpdatingGroupRef] = useState("");
+  const [showAdvancedTraveltekTools, setShowAdvancedTraveltekTools] = useState(false);
   const stopAutoCatchUpRef = useRef(false);
 
   function catchUpRequestValues() {
@@ -1265,184 +1266,195 @@ function TraveltekUpdatesPage({ token }) {
           )}
         </div>
 
-        <div className="section-heading">
-          <h3>Advanced catch-up controls</h3>
-          <p>Use these only when you want to change the catch-up dates, batch size or restart position.</p>
-        </div>
-        <div className="traveltek-toolbar">
-          <label>
-            Catch-up from
-            <input
-              onChange={(event) => setCatchUpStartDate(event.target.value)}
-              type="date"
-              value={catchUpStartDate}
-            />
-          </label>
-          <label>
-            Catch-up to
-            <input
-              onChange={(event) => setCatchUpEndDate(event.target.value)}
-              type="date"
-              value={catchUpEndDate}
-            />
-          </label>
-          <label>
-            Days per batch
-            <input
-              max="92"
-              min="1"
-              onChange={(event) => setCatchUpBatchDays(event.target.value)}
-              type="number"
-              value={catchUpBatchDays}
-            />
-          </label>
-          <label>
-            Max bookings
-            <input
-              max="500"
-              min="1"
-              onChange={(event) => setCatchUpLimit(event.target.value)}
-              type="number"
-              value={catchUpLimit}
-            />
-          </label>
-          <label className="checkbox-label">
-            <input
-              checked={catchUpResetProgress}
-              onChange={(event) => setCatchUpResetProgress(event.target.checked)}
-              type="checkbox"
-            />
-            Start again from catch-up from date
-          </label>
-          <button className="primary-button" disabled={isCatchUpRunning || isAutoCatchUpRunning || !configured} onClick={handleFullCatchUpBatch} type="button">
-            <RefreshCw size={18} aria-hidden="true" />
-            {isCatchUpRunning ? "Running batch" : "Run Next Catch-up Batch"}
+        <div className="traveltek-advanced-toggle">
+          <button className="secondary-button" onClick={() => setShowAdvancedTraveltekTools((isShown) => !isShown)} type="button">
+            {showAdvancedTraveltekTools ? "Hide advanced tools" : "Show advanced tools"}
           </button>
-          {isAutoCatchUpRunning ? (
-            <button className="secondary-button" disabled type="button">
-              Traveltek update running
-            </button>
-          ) : (
-            <button className="primary-button" disabled={isCatchUpRunning || !configured} onClick={handleAutoFullCatchUp} type="button">
-              <RefreshCw size={18} aria-hidden="true" />
-              Start Automatic Catch-up
-            </button>
-          )}
+          <p className="muted-note">Advanced tools are backup date-search options. Day-to-day work should use Find New OTC Bookings and Update Everything.</p>
         </div>
-        <p className="muted-note">
-          Estimated calls for each batch: up to {safeCatchUpLimit + 1}. Max bookings is 500 per batch. Automatic catch-up keeps running the next saved batch until complete, but this page must stay open.
-        </p>
-        {autoCatchUpStatus ? (
-          <p className="muted-note">
-            {autoCatchUpStatus} Batches run: {autoCatchUpBatchesRun}. Calls used: {autoCatchUpCallsUsed}.
-          </p>
-        ) : null}
-        {autoCatchUpLog.length ? (
-          <div className="traveltek-update-log">
-            <strong>Latest batches</strong>
-            <ul>
-              {autoCatchUpLog.map((line, index) => (
-                <li key={`${line}-${index}`}>{line}</li>
-              ))}
-            </ul>
+
+        {showAdvancedTraveltekTools ? (
+          <div className="traveltek-advanced-panel">
+            <div className="section-heading">
+              <h3>Advanced catch-up controls</h3>
+              <p>Use these only when you want to change the catch-up dates, batch size or restart position.</p>
+            </div>
+            <div className="traveltek-toolbar">
+              <label>
+                Catch-up from
+                <input
+                  onChange={(event) => setCatchUpStartDate(event.target.value)}
+                  type="date"
+                  value={catchUpStartDate}
+                />
+              </label>
+              <label>
+                Catch-up to
+                <input
+                  onChange={(event) => setCatchUpEndDate(event.target.value)}
+                  type="date"
+                  value={catchUpEndDate}
+                />
+              </label>
+              <label>
+                Days per batch
+                <input
+                  max="92"
+                  min="1"
+                  onChange={(event) => setCatchUpBatchDays(event.target.value)}
+                  type="number"
+                  value={catchUpBatchDays}
+                />
+              </label>
+              <label>
+                Max bookings
+                <input
+                  max="500"
+                  min="1"
+                  onChange={(event) => setCatchUpLimit(event.target.value)}
+                  type="number"
+                  value={catchUpLimit}
+                />
+              </label>
+              <label className="checkbox-label">
+                <input
+                  checked={catchUpResetProgress}
+                  onChange={(event) => setCatchUpResetProgress(event.target.checked)}
+                  type="checkbox"
+                />
+                Start again from catch-up from date
+              </label>
+              <button className="primary-button" disabled={isCatchUpRunning || isAutoCatchUpRunning || !configured} onClick={handleFullCatchUpBatch} type="button">
+                <RefreshCw size={18} aria-hidden="true" />
+                {isCatchUpRunning ? "Running batch" : "Run Next Catch-up Batch"}
+              </button>
+              {isAutoCatchUpRunning ? (
+                <button className="secondary-button" disabled type="button">
+                  Traveltek update running
+                </button>
+              ) : (
+                <button className="primary-button" disabled={isCatchUpRunning || !configured} onClick={handleAutoFullCatchUp} type="button">
+                  <RefreshCw size={18} aria-hidden="true" />
+                  Start Automatic Catch-up
+                </button>
+              )}
+            </div>
+            <p className="muted-note">
+              Estimated calls for each batch: up to {safeCatchUpLimit + 1}. Max bookings is 500 per batch. Automatic catch-up keeps running the next saved batch until complete, but this page must stay open.
+            </p>
+            {autoCatchUpStatus ? (
+              <p className="muted-note">
+                {autoCatchUpStatus} Batches run: {autoCatchUpBatchesRun}. Calls used: {autoCatchUpCallsUsed}.
+              </p>
+            ) : null}
+            {autoCatchUpLog.length ? (
+              <div className="traveltek-update-log">
+                <strong>Latest batches</strong>
+                <ul>
+                  {autoCatchUpLog.map((line, index) => (
+                    <li key={`${line}-${index}`}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <div className="section-heading">
+              <h3>Ongoing active update</h3>
+              <p>Pulls recent new bookings, then refreshes only bookings inside the active departure window.</p>
+            </div>
+            <div className="traveltek-toolbar">
+              <label>
+                New bookings from
+                <input
+                  onChange={(event) => setNewBookingStartDate(event.target.value)}
+                  type="date"
+                  value={newBookingStartDate}
+                />
+              </label>
+              <label>
+                New bookings to
+                <input
+                  onChange={(event) => setNewBookingEndDate(event.target.value)}
+                  type="date"
+                  value={newBookingEndDate}
+                />
+              </label>
+              <label>
+                New booking limit
+                <input
+                  max="500"
+                  min="1"
+                  onChange={(event) => setNewBookingLimit(event.target.value)}
+                  type="number"
+                  value={newBookingLimit}
+                />
+              </label>
+              <label>
+                Active refresh limit
+                <input
+                  max="500"
+                  min="1"
+                  onChange={(event) => setActiveRefreshLimit(event.target.value)}
+                  type="number"
+                  value={activeRefreshLimit}
+                />
+              </label>
+              <label>
+                Days after departure
+                <input
+                  max="365"
+                  min="1"
+                  onChange={(event) => setActiveWindowDays(event.target.value)}
+                  type="number"
+                  value={activeWindowDays}
+                />
+              </label>
+              <button className="primary-button" disabled={isActiveMaintenanceRunning || !configured} onClick={handleActiveMaintenance} type="button">
+                <RefreshCw size={18} aria-hidden="true" />
+                {isActiveMaintenanceRunning ? "Updating" : "Run Active Update"}
+              </button>
+            </div>
+            <p className="muted-note">
+              Estimated calls: up to {Number(newBookingLimit || 0) + Number(activeRefreshLimit || 0) + 1}. With the default 60 days, old departed bookings are skipped unless you pull them manually.
+            </p>
+
+            <div className="section-heading">
+              <h3>Manual one-off pull</h3>
+            </div>
+            <div className="traveltek-toolbar">
+              <label>
+                Booking date from
+                <input
+                  onChange={(event) => setImportStartDate(event.target.value)}
+                  type="date"
+                  value={importStartDate}
+                />
+              </label>
+              <label>
+                Booking date to
+                <input
+                  onChange={(event) => setImportEndDate(event.target.value)}
+                  type="date"
+                  value={importEndDate}
+                />
+              </label>
+              <label>
+                Max bookings
+                <input
+                  max="500"
+                  min="1"
+                  onChange={(event) => setImportLimit(event.target.value)}
+                  type="number"
+                  value={importLimit}
+                />
+              </label>
+              <button className="primary-button" disabled={isImporting || !configured} onClick={handleBookingImport} type="button">
+                <RefreshCw size={18} aria-hidden="true" />
+                {isImporting ? "Pulling" : "Pull Bookings From Traveltek"}
+              </button>
+            </div>
           </div>
         ) : null}
-
-        <div className="section-heading">
-          <h3>Ongoing active update</h3>
-          <p>Pulls recent new bookings, then refreshes only bookings inside the active departure window.</p>
-        </div>
-        <div className="traveltek-toolbar">
-          <label>
-            New bookings from
-            <input
-              onChange={(event) => setNewBookingStartDate(event.target.value)}
-              type="date"
-              value={newBookingStartDate}
-            />
-          </label>
-          <label>
-            New bookings to
-            <input
-              onChange={(event) => setNewBookingEndDate(event.target.value)}
-              type="date"
-              value={newBookingEndDate}
-            />
-          </label>
-          <label>
-            New booking limit
-            <input
-              max="500"
-              min="1"
-              onChange={(event) => setNewBookingLimit(event.target.value)}
-              type="number"
-              value={newBookingLimit}
-            />
-          </label>
-          <label>
-            Active refresh limit
-            <input
-              max="500"
-              min="1"
-              onChange={(event) => setActiveRefreshLimit(event.target.value)}
-              type="number"
-              value={activeRefreshLimit}
-            />
-          </label>
-          <label>
-            Days after departure
-            <input
-              max="365"
-              min="1"
-              onChange={(event) => setActiveWindowDays(event.target.value)}
-              type="number"
-              value={activeWindowDays}
-            />
-          </label>
-          <button className="primary-button" disabled={isActiveMaintenanceRunning || !configured} onClick={handleActiveMaintenance} type="button">
-            <RefreshCw size={18} aria-hidden="true" />
-            {isActiveMaintenanceRunning ? "Updating" : "Run Active Update"}
-          </button>
-        </div>
-        <p className="muted-note">
-          Estimated calls: up to {Number(newBookingLimit || 0) + Number(activeRefreshLimit || 0) + 1}. With the default 60 days, old departed bookings are skipped unless you pull them manually.
-        </p>
-
-        <div className="section-heading">
-          <h3>Manual one-off pull</h3>
-        </div>
-        <div className="traveltek-toolbar">
-          <label>
-            Booking date from
-            <input
-              onChange={(event) => setImportStartDate(event.target.value)}
-              type="date"
-              value={importStartDate}
-            />
-          </label>
-          <label>
-            Booking date to
-            <input
-              onChange={(event) => setImportEndDate(event.target.value)}
-              type="date"
-              value={importEndDate}
-            />
-          </label>
-          <label>
-            Max bookings
-            <input
-              max="500"
-              min="1"
-              onChange={(event) => setImportLimit(event.target.value)}
-              type="number"
-              value={importLimit}
-            />
-          </label>
-          <button className="primary-button" disabled={isImporting || !configured} onClick={handleBookingImport} type="button">
-            <RefreshCw size={18} aria-hidden="true" />
-            {isImporting ? "Pulling" : "Pull Bookings From Traveltek"}
-          </button>
-        </div>
 
         <div className="section-heading">
           <h3>Booking change log</h3>

@@ -481,6 +481,25 @@ nav button:disabled {
   flex: 0 0 auto;
 }
 
+.traveltek-advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0 0 18px;
+}
+
+.traveltek-advanced-toggle .muted-note {
+  margin: 0;
+}
+
+.traveltek-advanced-panel {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid #d7e0e4;
+  background: #f8fafb;
+}
+
 .traveltek-update-log {
   margin: 8px 0 16px;
   padding: 12px 14px;

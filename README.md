@@ -489,14 +489,12 @@ Do not commit API keys to GitHub.
 
 Traveltek can now replace the manual master booking CSV for booking data.
 
-The Traveltek Updates page has two actions:
+The Traveltek Updates page now keeps the normal Head Office actions visible:
 
 - Find new OTC bookings by checking only the next booking references after the highest OTC reference already stored
 - Update everything already in the Head Office database by booking reference or Traveltek booking ID
-- Run a full controlled catch-up, one booking-date batch at a time
-- Run an ongoing active update for recent new bookings and active/recent departures
-- Import bookings from Traveltek for a selected booking-date range
-- Check existing active bookings by booking reference and create review suggestions
+- Review the Booking change log
+- Review grouped Traveltek suggestions
 
 Use **Find New OTC Bookings** when Head Office knows Traveltek has created newer references, for example the system has `OTC-06677` but Traveltek has reached `OTC-06701`. This checks `OTC-06678` onward and imports only the references Traveltek returns, so it avoids pulling every older booking again.
 
@@ -504,7 +502,7 @@ The Traveltek `getbookings` document says the import date range is a booking dat
 
 For the main system refresh, use **Update Everything From Traveltek**. This refreshes the bookings already held in the Head Office database by Traveltek booking ID or booking reference, so it does not get stuck if Traveltek's booking-date search returns no rows. The browser page must stay open while it works.
 
-The advanced catch-up controls remain available for importing bookings that are not already in the Head Office database. Those controls still use Traveltek booking-date searches because that is how the Traveltek `getbookings` import works.
+The older date-search tools are still available under **Show advanced tools**. This keeps backup tools out of the way, but still allows Head Office to run a full controlled catch-up, an active-window update, or a one-off Traveltek booking-date pull when needed.
 
 For regular use after the catch-up, use **Ongoing active update**. It first imports recent new bookings by booking date, then refreshes only bookings whose departure date is within the active window. The default active window is 60 days after departure, so old departed bookings are not repeatedly checked.
 
