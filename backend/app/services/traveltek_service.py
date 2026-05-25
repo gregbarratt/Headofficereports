@@ -228,6 +228,29 @@ FIELD_DEFINITIONS = {
         "parser": "money",
     },
 }
+TRAVELTEK_OVERVIEW_MONEY_KEYS = {
+    "totalcost",
+    "holidayprice",
+    "totalamountpaid",
+    "outstanding",
+    "totaldue",
+    "duetosuppliers",
+    "duetosupplier",
+    "paidtosupplier",
+    "paidtosuppliers",
+    "profit",
+    "vat",
+    "refund",
+    "currencylossgain",
+}
+TRAVELTEK_EXACT_MONEY_KEYS = {
+    "gross_booking_value": ("totalcost", "holidayprice"),
+    "non_trusted_total_received": ("totalamountpaid",),
+    "imported_customer_outstanding": ("outstanding",),
+    "non_trusted_total_due": ("totaldue",),
+    "imported_supplier_outstanding": ("duetosuppliers", "duetosupplier"),
+    "non_trusted_paid_supplier": ("paidtosupplier", "paidtosuppliers"),
+}
 AUTO_APPLY_FIELD_NAMES = {
     "return_date",
     "passenger_count",
@@ -410,7 +433,7 @@ def collect_label_value_pairs(element: ElementTree.Element, output: dict[str, st
     if label and not value:
         value = direct_text(element)
     if label and value and len(label) <= 120 and len(value) <= 160 and normalise_key(label) != normalise_key(value):
-        output.setdefault(normalise_key(label), value)
+        set_label_value(output, label, value)
 
     child_values = {
         normalise_key(local_name(child.tag)): direct_text(child) or ""
@@ -426,7 +449,7 @@ def collect_label_value_pairs(element: ElementTree.Element, output: dict[str, st
         and len(child_value) <= 160
         and normalise_key(child_label) != normalise_key(child_value)
     ):
-        output.setdefault(normalise_key(child_label), child_value)
+        set_label_value(output, child_label, child_value)
 
     row_texts = [direct_text(child) for child in element if direct_text(child)]
     row_texts = [text for text in row_texts if text]
@@ -440,12 +463,28 @@ def collect_label_value_pairs(element: ElementTree.Element, output: dict[str, st
             and len(possible_value) <= 160
             and not re.search(r"\d{2,}[/.-]\d{1,2}[/.-]\d{2,4}", possible_label)
         ):
-            output.setdefault(normalise_key(possible_label), possible_value)
+            set_label_value(output, possible_label, possible_value)
 
     for child in element:
         collect_label_value_pairs(child, output)
 
     return output
+
+
+def set_label_value(output: dict[str, str], label: str, value: str) -> None:
+    key = normalise_key(label)
+    if key in TRAVELTEK_OVERVIEW_MONEY_KEYS and key in output:
+        try:
+            current_amount = parse_money(output[key])
+            next_amount = parse_money(value)
+        except ValueError:
+            current_amount = None
+            next_amount = None
+        if current_amount is not None and next_amount is not None:
+            if abs(next_amount) > abs(current_amount):
+                output[key] = value
+            return
+    output.setdefault(key, value)
 
 
 def looks_like_supplier_reference_key(key: str) -> bool:
@@ -514,7 +553,10 @@ def flatten_xml(element: ElementTree.Element, output: dict[str, str] | None = No
 
     if top_level:
         for key, value in collect_label_value_pairs(element).items():
-            output.setdefault(key, value)
+            if key in TRAVELTEK_OVERVIEW_MONEY_KEYS:
+                set_label_value(output, key, value)
+            else:
+                output.setdefault(key, value)
 
     return output
 
@@ -563,14 +605,32 @@ def derive_money_from_key_hints(
     return None
 
 
+def money_from_exact_keys(flattened: dict[str, str], candidate_keys: tuple[str, ...]) -> Decimal | None:
+    normalised = {normalise_key(key): value for key, value in flattened.items() if value not in {None, ""}}
+    for candidate in candidate_keys:
+        value = normalised.get(normalise_key(candidate))
+        if value in {None, ""}:
+            continue
+        try:
+            amount = parse_money(value)
+        except ValueError:
+            continue
+        if amount is not None:
+            return amount
+    return None
+
+
 def derive_traveltek_money_value(
     field_name: str,
     flattened: dict[str, str],
 ) -> Decimal | None:
+    exact_amount = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS.get(field_name, ()))
+    if exact_amount is not None:
+        return exact_amount
     if field_name == "non_trusted_paid_supplier":
-        return derive_money_from_key_hints(flattened, ("supplier",), ("paid", "payment"))
+        return derive_money_from_key_hints(flattened, ("supplier", "paid", "total"))
     if field_name == "imported_supplier_outstanding":
-        return derive_money_from_key_hints(flattened, ("supplier",), ("due", "outstanding", "balance"))
+        return derive_money_from_key_hints(flattened, ("supplier", "due"))
     return None
 
 
@@ -1014,13 +1074,15 @@ def extract_booking_values(flattened: dict[str, str], root: ElementTree.Element 
         values["booking_company"] = determine_booking_company(booking_ref)
 
     for field_name, definition in FIELD_DEFINITIONS.items():
-        raw_value = value_from_candidates(flattened, definition["candidates"])
-        try:
-            parsed_value = parse_traveltek_value(raw_value, definition["parser"])
-        except ValueError:
-            parsed_value = None
-        if parsed_value is None and definition["parser"] == "money":
+        parsed_value = None
+        if definition["parser"] == "money":
             parsed_value = derive_traveltek_money_value(field_name, flattened)
+        if parsed_value is None:
+            raw_value = value_from_candidates(flattened, definition["candidates"])
+            try:
+                parsed_value = parse_traveltek_value(raw_value, definition["parser"])
+            except ValueError:
+                parsed_value = None
         if is_plausible_traveltek_value(field_name, parsed_value):
             values[field_name] = parsed_value
 
