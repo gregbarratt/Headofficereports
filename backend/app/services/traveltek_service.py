@@ -990,7 +990,16 @@ def highest_existing_otc_booking_ref(db: Session) -> tuple[str | None, int]:
 
 def fetch_booking_for_existing_booking(booking: Booking) -> TraveltekBookingData:
     if booking.traveltek_booking_id:
-        return fetch_booking_detail({"bookingid": booking.traveltek_booking_id})
+        try:
+            return fetch_booking_detail({"bookingid": booking.traveltek_booking_id})
+        except TraveltekApiError as booking_id_error:
+            try:
+                return fetch_booking_by_reference(booking.booking_ref)
+            except TraveltekApiError as reference_error:
+                raise TraveltekApiError(
+                    f"Traveltek ID lookup failed: {booking_id_error} "
+                    f"Reference lookup failed: {reference_error}"
+                ) from reference_error
     return fetch_booking_by_reference(booking.booking_ref)
 
 

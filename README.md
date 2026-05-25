@@ -518,6 +518,8 @@ Traveltek Total Due, Return Date and Passenger Count are automatically refreshed
 
 Traveltek finance cross-check values now also auto-refresh when Traveltek is checked: Total Amount Paid, Customer Outstanding, Due To Suppliers and Paid To Supplier. This keeps Booking Checks current without Head Office having to approve each cross-check value one by one.
 
+When refreshing an existing booking, the system first tries the stored Traveltek booking ID. If Traveltek rejects that lookup, the system now falls back to the OTC booking reference before recording an error. This avoids failed refreshes where the booking exists but Traveltek will only return it by reference.
+
 Booking Checks now labels PAX as Passenger Count so it matches Traveltek wording. The Traveltek importer also counts passenger rows from the detailed portfolio if Traveltek does not send one simple PAX total. Each row also shows the last booking update date and time, so Head Office can see when a booking was last changed by an import, Traveltek refresh, or manual booking check amendment.
 
 Traveltek Updates now includes a Booking change log. Whenever a Traveltek import or refresh changes a booking, the system records the booking reference, the type of change, the field names, the old value and the new value. Cancellations, customer payment changes, gross value changes, supplier payment changes and balance changes are labelled so Head Office can review what has moved.
