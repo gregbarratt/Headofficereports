@@ -234,15 +234,17 @@ Phase 17 connects to the Felloh / SINGs API for customer payment sync. CSV/XLSX 
 
 Available upload types:
 
-- Master Booking Report
 - Supplier Payments TAPs
 - Supplier Payments TT (Human Input)
 - Customer Payments SINGs
 - Customer Payments TT (Human Input)
 - Bank / Trust Statement
 - Insurance Costs
+- Agent Allocation Import
 - Agent Commission Import
 - Refund Import
+
+The old Master Booking Report upload is hidden from Upload Centre because Traveltek is now the main booking source. This prevents an older master file from accidentally overwriting newer Traveltek booking data.
 
 Accepted file types:
 
@@ -338,6 +340,8 @@ Some TAPs exports also include `Collection`, `Payment`, or `State` status column
 Every supplier payment row is stored separately. Multiple payment lines for the same booking are not merged.
 
 The system matches supplier payments to bookings by `Booking Reference`.
+
+If a TAPs file has no booking reference column, the system still imports the rows as **unallocated TAPs payments**. They will not update Booking Checks until Head Office attaches each payment to the correct booking from the Supplier Payments TAPs page.
 
 Supplier payment sources:
 
@@ -519,6 +523,21 @@ Traveltek Updates now includes a Booking change log. Whenever a Traveltek import
 On Booking Checks, the main supplier payment match is TAPs Paid compared with Traveltek Paid To Supplier. Expected Supplier Cost remains visible as a balance guide, but it does not create the red supplier payment mismatch badge on Booking Checks.
 
 Booking Checks loads up to 10,000 booking rows. This prevents the old 5,000-row cap hiding bookings once the system has more than 5,000 records.
+
+## Agent Allocation Import
+
+Use **Upload Centre > Agent Allocation Import** for spreadsheets that allocate agents to bookings.
+
+The importer expects:
+
+- `Booking Reference`
+- `Agent Name`
+- optional `Customer Surname`
+- optional `Status`
+
+The system matches each row to an existing booking by booking reference, updates the booking's `Agent in charge` when the spreadsheet is different, and fills a blank customer surname if one is provided. It does not create a new booking from this file because the file is only an allocation list, not a booking master record.
+
+The Upload Centre notes show how many rows matched, how many booking agents were updated, how many were unchanged, and which rows could not be matched.
 
 The Bookings page loads up to 10,000 booking rows, can sort by booking reference from lowest to highest or highest to lowest, and can export the visible booking list to CSV.
 

@@ -41,7 +41,7 @@ COLUMN_ALIASES = {
     "associated_vat": ("associated vat", "vat"),
 }
 
-REQUIRED_FIELDS = {"booking_ref", "supplier_payment_amount"}
+REQUIRED_FIELDS = {"supplier_payment_amount"}
 QUERY_CHUNK_SIZE = 500
 
 
@@ -50,16 +50,27 @@ class SupplierPaymentImportResult:
     row_count: int = 0
     accepted_rows: int = 0
     rejected_rows: int = 0
+    matched_rows: int = 0
+    unmatched_rows: int = 0
     errors: list[str] = field(default_factory=list)
 
     @property
     def error_summary(self) -> str | None:
-        if not self.errors:
+        if not self.errors and self.unmatched_rows == 0:
             return None
+        summary = None
+        if self.unmatched_rows:
+            summary = (
+                f"{self.unmatched_rows} supplier payment row(s) imported without a booking match. "
+                "Use the Unallocated TAPs payments area to attach them to bookings."
+            )
+        if not self.errors:
+            return summary
         preview = self.errors[:10]
         remaining = len(self.errors) - len(preview)
         suffix = f" Plus {remaining} more error(s)." if remaining > 0 else ""
-        return " ".join(preview) + suffix
+        error_text = " ".join(preview) + suffix
+        return f"{summary} {error_text}" if summary else error_text
 
 
 def build_column_map(headers: list[str]) -> dict[str, str]:
@@ -272,6 +283,10 @@ def import_supplier_payment_report(
         booking_id = booking_ids_by_ref.get(values["booking_ref"] or "")
         values["booking_id"] = booking_id
         values["match_status"] = "matched" if booking_id else "unmatched"
+        if booking_id:
+            result.matched_rows += 1
+        else:
+            result.unmatched_rows += 1
         duplicate_key = values["duplicate_key"]
         values["is_duplicate"] = duplicate_key in duplicate_keys_in_this_upload or duplicate_key in existing_duplicate_keys
         duplicate_keys_in_this_upload.add(duplicate_key)

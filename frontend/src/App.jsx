@@ -410,6 +410,7 @@ function UploadCentre({ token }) {
               <th>Rows</th>
               <th>Accepted</th>
               <th>Rejected</th>
+              <th>Notes</th>
               <th>Uploaded</th>
             </tr>
           </thead>
@@ -426,12 +427,13 @@ function UploadCentre({ token }) {
                   <td>{batch.row_count}</td>
                   <td>{batch.accepted_rows}</td>
                   <td>{batch.rejected_rows}</td>
+                  <td>{batch.error_summary || "-"}</td>
                   <td>{formatDateTime(batch.uploaded_at)}</td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan="8">No upload batches yet.</td>
+                <td colSpan="9">No upload batches yet.</td>
               </tr>
             )}
           </tbody>

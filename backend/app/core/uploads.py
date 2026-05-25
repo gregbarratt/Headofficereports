@@ -1,5 +1,8 @@
-UPLOAD_TYPES = {
+ARCHIVED_UPLOAD_TYPES = {
     "master_booking": "Master Booking Report",
+}
+
+UPLOAD_TYPES = {
     "old_booking": "Old Bookings",
     "supplier_payment_taps": "Supplier Payments TAPs",
     "supplier_payment_tt": "Supplier Payments TT (Human Input)",
@@ -7,6 +10,7 @@ UPLOAD_TYPES = {
     "customer_payment_tt": "Customer Payments TT (Human Input)",
     "bank_statement": "Bank / Trust Statement",
     "insurance": "Insurance Costs",
+    "agent_allocation": "Agent Allocation Import",
     "agent_commission": "Agent Commission Import",
     "refund": "Refund Import",
 }
@@ -21,7 +25,7 @@ LEGACY_UPLOAD_TYPES = {
     "customer_payment": "Customer Payments SINGs",
 }
 
-ALL_UPLOAD_TYPES = {**UPLOAD_TYPES, **LEGACY_UPLOAD_TYPES, **SYSTEM_UPLOAD_TYPES}
+ALL_UPLOAD_TYPES = {**ARCHIVED_UPLOAD_TYPES, **UPLOAD_TYPES, **LEGACY_UPLOAD_TYPES, **SYSTEM_UPLOAD_TYPES}
 FILE_UPLOAD_TYPES = {**UPLOAD_TYPES, **LEGACY_UPLOAD_TYPES}
 
 ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".xlsx"}
