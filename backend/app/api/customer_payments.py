@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
@@ -35,7 +35,23 @@ ZERO = Decimal("0.00")
 def money(value: Decimal | None) -> Decimal:
     if value is None:
         return ZERO
+    if not isinstance(value, Decimal):
+        value = Decimal(str(value))
     return value.quantize(Decimal("0.01"))
+
+
+def decimal_total(db: Session, column, *conditions) -> Decimal:
+    statement = select(func.coalesce(func.sum(column), ZERO))
+    if conditions:
+        statement = statement.where(*conditions)
+    return money(db.scalar(statement))
+
+
+def row_count(db: Session, *conditions) -> int:
+    statement = select(func.count(CustomerPayment.id))
+    if conditions:
+        statement = statement.where(*conditions)
+    return int(db.scalar(statement) or 0)
 
 
 @router.get("", response_model=CustomerPaymentListResponse)
@@ -49,26 +65,16 @@ def list_customer_payments(
         .limit(200)
     )
     payments = list(db.scalars(payment_statement))
-    all_payments = list(db.scalars(select(CustomerPayment)))
-
-    gross_total = sum((money(payment.gross_amount) for payment in all_payments), ZERO)
-    fee_total = sum((money(payment.fee_amount) for payment in all_payments), ZERO)
-    actual_fee_total = sum(
-        (money(payment.fee_amount) for payment in all_payments if not payment.fee_is_estimated),
-        ZERO,
-    )
-    estimated_fee_total = sum(
-        (money(payment.fee_amount) for payment in all_payments if payment.fee_is_estimated),
-        ZERO,
-    )
-    net_settled_total = sum((money(payment.net_settled_amount) for payment in all_payments), ZERO)
-    sings_payments = [payment for payment in all_payments if payment.payment_source == "sings"]
-    tt_payments = [payment for payment in all_payments if payment.payment_source == "tt"]
-    sings_gross_total = sum((money(payment.gross_amount) for payment in sings_payments), ZERO)
-    tt_gross_total = sum((money(payment.gross_amount) for payment in tt_payments), ZERO)
+    gross_total = decimal_total(db, CustomerPayment.gross_amount)
+    fee_total = decimal_total(db, CustomerPayment.fee_amount)
+    actual_fee_total = decimal_total(db, CustomerPayment.fee_amount, CustomerPayment.fee_is_estimated.is_(False))
+    estimated_fee_total = decimal_total(db, CustomerPayment.fee_amount, CustomerPayment.fee_is_estimated.is_(True))
+    net_settled_total = decimal_total(db, CustomerPayment.net_settled_amount)
+    sings_gross_total = decimal_total(db, CustomerPayment.gross_amount, CustomerPayment.payment_source == "sings")
+    tt_gross_total = decimal_total(db, CustomerPayment.gross_amount, CustomerPayment.payment_source == "tt")
 
     summary = CustomerPaymentSummaryRead(
-        total_rows=len(all_payments),
+        total_rows=row_count(db),
         gross_total=money(gross_total),
         fee_total=money(fee_total),
         actual_fee_total=money(actual_fee_total),
@@ -77,11 +83,9 @@ def list_customer_payments(
         sings_gross_total=money(sings_gross_total),
         tt_gross_total=money(tt_gross_total),
         source_variance=money(sings_gross_total - tt_gross_total),
-        matched_count=sum(
-            1 for payment in all_payments if payment.match_confidence in {"booking_ref", "invoice_ref"}
-        ),
-        lower_confidence_count=sum(1 for payment in all_payments if payment.match_confidence == "lower_confidence"),
-        unmatched_count=sum(1 for payment in all_payments if payment.match_confidence == "unmatched"),
+        matched_count=row_count(db, CustomerPayment.match_confidence.in_(["booking_ref", "invoice_ref"])),
+        lower_confidence_count=row_count(db, CustomerPayment.match_confidence == "lower_confidence"),
+        unmatched_count=row_count(db, CustomerPayment.match_confidence == "unmatched"),
     )
 
     return CustomerPaymentListResponse(payments=payments, summary=summary)

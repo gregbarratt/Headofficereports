@@ -45,10 +45,18 @@ async function apiRequest(path, options = {}) {
     ...fetchOptions.headers,
   };
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...fetchOptions,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...fetchOptions,
+      headers,
+    });
+  } catch {
+    throw new ApiError(
+      "The server did not respond. If you are syncing a large date range, use the background catch-up so the page does not time out.",
+      0
+    );
+  }
 
   if (!response.ok) {
     let message = "Request failed.";
@@ -197,8 +205,39 @@ export async function getBookings(token, limit = 10000) {
   return apiRequest(`/api/bookings?${query.toString()}`, { token });
 }
 
-export async function getBookingChecks(token) {
-  return apiRequest("/api/bookings/checks", { token });
+export async function getBookingChecks(token, filters = {}) {
+  const query = new URLSearchParams();
+  if (filters.limit) {
+    query.set("limit", String(filters.limit));
+  }
+  if (filters.search?.trim()) {
+    query.set("search", filters.search.trim());
+  }
+  if (filters.review && filters.review !== "all") {
+    query.set("review", filters.review);
+  }
+  if (filters.company && filters.company !== "all") {
+    query.set("company", filters.company);
+  }
+  if (filters.supplier && filters.supplier !== "all") {
+    query.set("supplier", filters.supplier);
+  }
+  if (filters.customer && filters.customer !== "all") {
+    query.set("customer", filters.customer);
+  }
+  if (filters.archive && filters.archive !== "active") {
+    query.set("archive", filters.archive);
+  }
+  if (filters.commissionReview && filters.commissionReview !== "all") {
+    query.set("commission_review", filters.commissionReview);
+  }
+  if (filters.departureFrom) {
+    query.set("departure_from", filters.departureFrom);
+  }
+  if (filters.departureTo) {
+    query.set("departure_to", filters.departureTo);
+  }
+  return apiRequest(`/api/bookings/checks${query.toString() ? `?${query.toString()}` : ""}`, { token });
 }
 
 export async function updateBookingCheckAdjustments({ token, bookingRef, adjustments }) {
@@ -206,6 +245,14 @@ export async function updateBookingCheckAdjustments({ token, bookingRef, adjustm
     method: "PUT",
     token,
     body: JSON.stringify(adjustments),
+  });
+}
+
+export async function updateBookingArchiveStatus({ token, bookingRef, values }) {
+  return apiRequest(`/api/bookings/checks/${encodeURIComponent(bookingRef)}/archive`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(values),
   });
 }
 

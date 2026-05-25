@@ -468,6 +468,7 @@ It uses the official Felloh flow:
 - `POST /agent/charges` to fetch actual processing charges where available
 
 The Customer Payments page has a manual **Sync Felloh** button with a date range.
+Short ranges of up to 14 days run live. Longer ranges are automatically started as a background catch-up so the browser does not time out or show a broken fetch message.
 
 The sync:
 
@@ -480,6 +481,7 @@ The sync:
 - falls back to payment method fee rules where Felloh charges are unavailable
 
 The Customer Payments page also has a **Start 2023 Catch-up** button. It starts a background Felloh sync from `2023-01-01` to the selected end date in 14-day blocks, then records the overall catch-up and each block in upload batch history.
+Customer payment summary totals are calculated in the database, which keeps the page responsive as the number of payment rows grows.
 
 The required private Render environment variables are:
 
@@ -527,6 +529,10 @@ Traveltek Updates now includes a Booking change log. Whenever a Traveltek import
 On Booking Checks, the main supplier payment match is TAPs Paid compared with Traveltek Paid To Supplier. Expected Supplier Cost remains visible as a balance guide, but it does not create the red supplier payment mismatch badge on Booking Checks.
 
 Booking Checks loads up to 10,000 booking rows. This prevents the old 5,000-row cap hiding bookings once the system has more than 5,000 records.
+
+Booking Checks now hides archived bookings by default. Use the departure date filters to find older completed bookings, then archive visible full-match rows once Head Office is happy that customer and supplier payments match. Archived bookings stay in the database and can be restored, but they are skipped by normal Booking Checks and routine Traveltek refreshes.
+
+If an old booking still needs agent commission review, mark it on Booking Checks before or after archiving it. This does not force every booking through commission checking; it only highlights the bookings Head Office wants to revisit.
 
 ## Agent Allocation Import
 

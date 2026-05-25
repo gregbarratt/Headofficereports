@@ -35,6 +35,11 @@ class BookingRead(BaseModel):
     extras_included: bool
     package_included: bool
     atol_review_status: str | None
+    is_archived: bool = False
+    archived_at: datetime | None = None
+    archive_note: str | None = None
+    agent_commission_review_required: bool = False
+    agent_commission_review_note: str | None = None
     last_master_upload_batch_id: int | None
     updated_at: datetime
 
@@ -89,6 +94,11 @@ class BookingCheckRow(BaseModel):
     traveltek_due_to_suppliers: Decimal | None
     traveltek_paid_to_supplier: Decimal | None
     traveltek_projected_profit: Decimal | None
+    is_archived: bool = False
+    archived_at: datetime | None = None
+    archive_note: str | None = None
+    agent_commission_review_required: bool = False
+    agent_commission_review_note: str | None = None
     manual_adjustments: dict[str, Decimal]
     manual_adjustment_note: str | None
     has_manual_adjustment: bool
@@ -110,6 +120,9 @@ class BookingChecksSummary(BaseModel):
 class BookingChecksResponse(BaseModel):
     summary: BookingChecksSummary
     bookings: list[BookingCheckRow]
+    total_matching: int | None = None
+    returned_count: int | None = None
+    limit: int | None = None
 
 
 class BookingCheckAdjustmentUpdate(BaseModel):
@@ -120,3 +133,10 @@ class BookingCheckAdjustmentUpdate(BaseModel):
     customer_sings_total: Decimal | None = None
     customer_tt_total: Decimal | None = None
     note: str | None = None
+
+
+class BookingArchiveUpdate(BaseModel):
+    is_archived: bool | None = None
+    archive_note: str | None = None
+    agent_commission_review_required: bool | None = None
+    agent_commission_review_note: str | None = None

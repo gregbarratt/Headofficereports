@@ -1437,7 +1437,7 @@ def run_full_catchup_batch(
 
 def candidate_active_bookings(db: Session, limit: int, active_window_days: int = 0) -> list[Booking]:
     today = date.today()
-    statement = select(Booking)
+    statement = select(Booking).where(Booking.is_archived.is_(False))
     if active_window_days > 0:
         active_cutoff_date = today - timedelta(days=active_window_days)
         statement = statement.where(or_(Booking.normalised_status.is_(None), Booking.normalised_status != "cancelled"))
@@ -1457,7 +1457,7 @@ def candidate_existing_bookings_for_update_everything(
     reset_progress: bool,
 ) -> tuple[list[Booking], str | None]:
     cursor = None if reset_progress else get_setting_value(db, UPDATE_EVERYTHING_CURSOR_KEY)
-    statement = select(Booking).order_by(Booking.booking_ref.desc()).limit(limit)
+    statement = select(Booking).where(Booking.is_archived.is_(False)).order_by(Booking.booking_ref.desc()).limit(limit)
     if cursor:
         statement = statement.where(Booking.booking_ref < cursor)
     bookings = list(db.scalars(statement))
@@ -1541,6 +1541,7 @@ def run_update_everything_existing_booking_batch(
     last_booking_ref = bookings[-1].booking_ref
     more_bookings = db.scalar(
         select(Booking.id)
+        .where(Booking.is_archived.is_(False))
         .where(Booking.booking_ref < last_booking_ref)
         .order_by(Booking.booking_ref.desc())
         .limit(1)

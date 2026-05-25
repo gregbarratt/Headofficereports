@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.reporting import (
@@ -20,6 +20,7 @@ from app.services.master_booking_import import parse_date, parse_int, parse_mone
 
 ZERO = Decimal("0.00")
 BOOKING_CHECK_ROW_LIMIT = 10000
+BOOKING_CHECK_FAST_PAGE_LIMIT = 250
 TRAVELTEK_AUTO_BOOKING_FIELDS = {
     "return_date",
     "passenger_count",
@@ -248,13 +249,220 @@ def adjustment_note(adjustments: dict[str, BookingCheckAdjustment]) -> str | Non
     return " | ".join(notes) if notes else None
 
 
-def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> BookingChecksResponse:
+def grouped_check_status(row: BookingCheckRow, check_group: str) -> str:
+    checks = (
+        (row.supplier_expected_check, row.supplier_tt_check)
+        if check_group == "supplier"
+        else (row.customer_expected_check, row.customer_tt_check)
+    )
+    if any(check == "mismatch" for check in checks):
+        return "mismatch"
+    if all(check == "match" or check == "not_checked" for check in checks):
+        return "match"
+    return "waiting"
+
+
+def build_booking_check_row(
+    booking: Booking,
+    supplier_totals: dict[tuple[str, str], Decimal],
+    customer_totals: dict[tuple[str, str], Decimal],
+    insurance_totals: dict[str, Decimal],
+    adjustments_by_booking: dict[str, dict[str, BookingCheckAdjustment]],
+) -> BookingCheckRow:
+    raw_supplier_taps_total = supplier_totals.get((booking.booking_ref, "taps"), ZERO)
+    raw_supplier_tt_total = (
+        money(booking.non_trusted_paid_supplier)
+        if booking.non_trusted_paid_supplier is not None
+        else supplier_totals.get((booking.booking_ref, "tt"), ZERO)
+    )
+    raw_customer_sings_total = customer_totals.get((booking.booking_ref, "sings"), ZERO)
+    raw_customer_tt_total = (
+        money(booking.non_trusted_total_received)
+        if booking.non_trusted_total_received is not None
+        else customer_totals.get((booking.booking_ref, "tt"), ZERO)
+    )
+    insurance_cost_total = insurance_totals.get(booking.booking_ref, ZERO)
+
+    raw_expected_supplier_total = None
+    if booking.expected_supplier_nett is not None:
+        raw_expected_supplier_total = money(booking.expected_supplier_nett) + insurance_cost_total
+
+    adjustments = adjustments_by_booking.get(booking.booking_ref, {})
+    gross_booking_value = adjusted_amount(adjustments, "gross_booking_value", booking.gross_booking_value)
+    expected_supplier_total = adjusted_amount(
+        adjustments,
+        "expected_supplier_total",
+        raw_expected_supplier_total,
+    )
+    supplier_taps_total = money(adjusted_amount(adjustments, "supplier_taps_total", raw_supplier_taps_total))
+    supplier_tt_total = money(adjusted_amount(adjustments, "supplier_tt_total", raw_supplier_tt_total))
+    customer_sings_total = money(adjusted_amount(adjustments, "customer_sings_total", raw_customer_sings_total))
+    customer_tt_total = money(adjusted_amount(adjustments, "customer_tt_total", raw_customer_tt_total))
+
+    supplier_expected_check = trusted_vs_expected_check(expected_supplier_total, supplier_taps_total)
+    supplier_tt_check = trusted_vs_human_check(supplier_taps_total, supplier_tt_total)
+    customer_expected_check = "not_checked"
+    customer_tt_check = trusted_vs_human_check(customer_sings_total, customer_tt_total)
+    row_review_status, row_review_note = review_status(
+        supplier_tt_check,
+        customer_tt_check,
+    )
+
+    supplier_expected_variance = None
+    if expected_supplier_total is not None:
+        supplier_expected_variance = money(supplier_taps_total - expected_supplier_total)
+
+    return BookingCheckRow(
+        booking_ref=booking.booking_ref,
+        traveltek_booking_id=booking.traveltek_booking_id,
+        booking_company=booking.booking_company,
+        normalised_status=booking.normalised_status,
+        customer_last_name=booking.customer_last_name,
+        agent_in_charge=booking.agent_in_charge,
+        destination=booking.destination,
+        travel_elements_raw=booking.travel_elements_raw,
+        supplier_references_raw=booking.supplier_references_raw,
+        departure_date=booking.departure_date,
+        return_date=booking.return_date,
+        passenger_count=booking.passenger_count,
+        gross_booking_value=gross_booking_value,
+        expected_supplier_nett=booking.expected_supplier_nett,
+        insurance_cost_total=money(insurance_cost_total),
+        expected_supplier_total=expected_supplier_total,
+        supplier_taps_total=supplier_taps_total,
+        supplier_tt_total=supplier_tt_total,
+        supplier_expected_variance=supplier_expected_variance,
+        supplier_tt_variance=money(supplier_taps_total - supplier_tt_total),
+        supplier_expected_check=supplier_expected_check,
+        supplier_tt_check=supplier_tt_check,
+        customer_sings_total=customer_sings_total,
+        customer_tt_total=customer_tt_total,
+        customer_expected_variance=None,
+        customer_tt_variance=money(customer_sings_total - customer_tt_total),
+        customer_expected_check=customer_expected_check,
+        customer_tt_check=customer_tt_check,
+        review_status=row_review_status,
+        review_note=row_review_note,
+        raw_gross_booking_value=booking.gross_booking_value,
+        raw_expected_supplier_total=raw_expected_supplier_total,
+        raw_supplier_taps_total=money(raw_supplier_taps_total),
+        raw_supplier_tt_total=money(raw_supplier_tt_total),
+        raw_customer_sings_total=money(raw_customer_sings_total),
+        raw_customer_tt_total=money(raw_customer_tt_total),
+        traveltek_total_due=booking.non_trusted_total_due,
+        traveltek_total_amount_paid=booking.non_trusted_total_received,
+        traveltek_customer_outstanding=booking.imported_customer_outstanding,
+        traveltek_due_to_suppliers=booking.imported_supplier_outstanding,
+        traveltek_paid_to_supplier=booking.non_trusted_paid_supplier,
+        traveltek_projected_profit=booking.non_trusted_projected_profit,
+        is_archived=booking.is_archived,
+        archived_at=booking.archived_at,
+        archive_note=booking.archive_note,
+        agent_commission_review_required=booking.agent_commission_review_required,
+        agent_commission_review_note=booking.agent_commission_review_note,
+        manual_adjustments=adjustment_values(adjustments),
+        manual_adjustment_note=adjustment_note(adjustments),
+        has_manual_adjustment=bool(adjustments),
+        updated_at=booking.updated_at,
+    )
+
+
+def booking_search_statement(search: str, company_filter: str):
+    statement = select(Booking).order_by(Booking.departure_date.desc().nullslast(), Booking.updated_at.desc(), Booking.id.desc())
+    if company_filter != "all":
+        statement = statement.where(Booking.booking_company == company_filter)
+
+    search_value = search.strip()
+    if search_value:
+        pattern = f"%{search_value}%"
+        statement = statement.where(
+            or_(
+                Booking.booking_ref.ilike(pattern),
+                Booking.customer_last_name.ilike(pattern),
+                Booking.agent_in_charge.ilike(pattern),
+                Booking.destination.ilike(pattern),
+                Booking.travel_elements_raw.ilike(pattern),
+                Booking.normalised_status.ilike(pattern),
+            )
+        )
+    return statement
+
+
+def parse_filter_date(value: str | None) -> date | None:
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def filtered_booking_statement(
+    search: str = "",
+    company_filter: str = "all",
+    archive_filter: str = "active",
+    commission_review_filter: str = "all",
+    departure_from: str = "",
+    departure_to: str = "",
+):
+    statement = booking_search_statement(search, company_filter)
+
+    if archive_filter == "archived":
+        statement = statement.where(Booking.is_archived.is_(True))
+    elif archive_filter != "all":
+        statement = statement.where(Booking.is_archived.is_(False))
+
+    if commission_review_filter == "flagged":
+        statement = statement.where(Booking.agent_commission_review_required.is_(True))
+    elif commission_review_filter == "not_flagged":
+        statement = statement.where(Booking.agent_commission_review_required.is_(False))
+
+    start_date = parse_filter_date(departure_from)
+    end_date = parse_filter_date(departure_to)
+    if start_date:
+        statement = statement.where(Booking.departure_date >= start_date)
+    if end_date:
+        statement = statement.where(Booking.departure_date <= end_date)
+
+    return statement
+
+
+def row_matches_filters(row: BookingCheckRow, review_filter: str, supplier_filter: str, customer_filter: str) -> bool:
+    if review_filter != "all" and row.review_status != review_filter:
+        return False
+    if supplier_filter != "all" and grouped_check_status(row, "supplier") != supplier_filter:
+        return False
+    if customer_filter != "all" and grouped_check_status(row, "customer") != customer_filter:
+        return False
+    return True
+
+
+def build_booking_checks(
+    db: Session,
+    limit: int = BOOKING_CHECK_FAST_PAGE_LIMIT,
+    search: str = "",
+    review_filter: str = "all",
+    company_filter: str = "all",
+    supplier_filter: str = "all",
+    customer_filter: str = "all",
+    archive_filter: str = "active",
+    commission_review_filter: str = "all",
+    departure_from: str = "",
+    departure_to: str = "",
+) -> BookingChecksResponse:
     apply_pending_traveltek_auto_booking_fields(db)
+    safe_limit = max(1, min(limit, BOOKING_CHECK_ROW_LIMIT))
     bookings = list(
         db.scalars(
-            select(Booking)
-            .order_by(Booking.departure_date.desc().nullslast(), Booking.updated_at.desc(), Booking.id.desc())
-            .limit(limit)
+            filtered_booking_statement(
+                search=search,
+                company_filter=company_filter,
+                archive_filter=archive_filter,
+                commission_review_filter=commission_review_filter,
+                departure_from=departure_from,
+                departure_to=departure_to,
+            )
         )
     )
     supplier_totals = grouped_supplier_totals(db)
@@ -263,124 +471,60 @@ def build_booking_checks(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> B
     adjustments_by_booking = grouped_adjustments(db)
 
     rows: list[BookingCheckRow] = []
+    total_matching = 0
     for booking in bookings:
-        raw_supplier_taps_total = supplier_totals.get((booking.booking_ref, "taps"), ZERO)
-        raw_supplier_tt_total = (
-            money(booking.non_trusted_paid_supplier)
-            if booking.non_trusted_paid_supplier is not None
-            else supplier_totals.get((booking.booking_ref, "tt"), ZERO)
+        row = build_booking_check_row(
+            booking,
+            supplier_totals,
+            customer_totals,
+            insurance_totals,
+            adjustments_by_booking,
         )
-        raw_customer_sings_total = customer_totals.get((booking.booking_ref, "sings"), ZERO)
-        raw_customer_tt_total = (
-            money(booking.non_trusted_total_received)
-            if booking.non_trusted_total_received is not None
-            else customer_totals.get((booking.booking_ref, "tt"), ZERO)
-        )
-        insurance_cost_total = insurance_totals.get(booking.booking_ref, ZERO)
+        if not row_matches_filters(row, review_filter, supplier_filter, customer_filter):
+            continue
+        total_matching += 1
+        if len(rows) < safe_limit:
+            rows.append(row)
 
-        raw_expected_supplier_total = None
-        if booking.expected_supplier_nett is not None:
-            raw_expected_supplier_total = money(booking.expected_supplier_nett) + insurance_cost_total
-
-        adjustments = adjustments_by_booking.get(booking.booking_ref, {})
-        gross_booking_value = adjusted_amount(adjustments, "gross_booking_value", booking.gross_booking_value)
-        expected_supplier_total = adjusted_amount(
-            adjustments,
-            "expected_supplier_total",
-            raw_expected_supplier_total,
-        )
-        supplier_taps_total = money(adjusted_amount(adjustments, "supplier_taps_total", raw_supplier_taps_total))
-        supplier_tt_total = money(adjusted_amount(adjustments, "supplier_tt_total", raw_supplier_tt_total))
-        customer_sings_total = money(adjusted_amount(adjustments, "customer_sings_total", raw_customer_sings_total))
-        customer_tt_total = money(adjusted_amount(adjustments, "customer_tt_total", raw_customer_tt_total))
-
-        supplier_expected_check = trusted_vs_expected_check(expected_supplier_total, supplier_taps_total)
-        supplier_tt_check = trusted_vs_human_check(supplier_taps_total, supplier_tt_total)
-        customer_expected_check = "not_checked"
-        customer_tt_check = trusted_vs_human_check(customer_sings_total, customer_tt_total)
-        row_review_status, row_review_note = review_status(
-            supplier_tt_check,
-            customer_tt_check,
-        )
-
-        supplier_expected_variance = None
-        if expected_supplier_total is not None:
-            supplier_expected_variance = money(supplier_taps_total - expected_supplier_total)
-
-        customer_expected_variance = None
-
-        rows.append(
-            BookingCheckRow(
-                booking_ref=booking.booking_ref,
-                traveltek_booking_id=booking.traveltek_booking_id,
-                booking_company=booking.booking_company,
-                normalised_status=booking.normalised_status,
-                customer_last_name=booking.customer_last_name,
-                agent_in_charge=booking.agent_in_charge,
-                destination=booking.destination,
-                travel_elements_raw=booking.travel_elements_raw,
-                supplier_references_raw=booking.supplier_references_raw,
-                departure_date=booking.departure_date,
-                return_date=booking.return_date,
-                passenger_count=booking.passenger_count,
-                gross_booking_value=gross_booking_value,
-                expected_supplier_nett=booking.expected_supplier_nett,
-                insurance_cost_total=money(insurance_cost_total),
-                expected_supplier_total=expected_supplier_total,
-                supplier_taps_total=supplier_taps_total,
-                supplier_tt_total=supplier_tt_total,
-                supplier_expected_variance=supplier_expected_variance,
-                supplier_tt_variance=money(supplier_taps_total - supplier_tt_total),
-                supplier_expected_check=supplier_expected_check,
-                supplier_tt_check=supplier_tt_check,
-                customer_sings_total=customer_sings_total,
-                customer_tt_total=customer_tt_total,
-                customer_expected_variance=customer_expected_variance,
-                customer_tt_variance=money(customer_sings_total - customer_tt_total),
-                customer_expected_check=customer_expected_check,
-                customer_tt_check=customer_tt_check,
-                review_status=row_review_status,
-                review_note=row_review_note,
-                raw_gross_booking_value=booking.gross_booking_value,
-                raw_expected_supplier_total=raw_expected_supplier_total,
-                raw_supplier_taps_total=money(raw_supplier_taps_total),
-                raw_supplier_tt_total=money(raw_supplier_tt_total),
-                raw_customer_sings_total=money(raw_customer_sings_total),
-                raw_customer_tt_total=money(raw_customer_tt_total),
-                traveltek_total_due=booking.non_trusted_total_due,
-                traveltek_total_amount_paid=booking.non_trusted_total_received,
-                traveltek_customer_outstanding=booking.imported_customer_outstanding,
-                traveltek_due_to_suppliers=booking.imported_supplier_outstanding,
-                traveltek_paid_to_supplier=booking.non_trusted_paid_supplier,
-                traveltek_projected_profit=booking.non_trusted_projected_profit,
-                manual_adjustments=adjustment_values(adjustments),
-                manual_adjustment_note=adjustment_note(adjustments),
-                has_manual_adjustment=bool(adjustments),
-                updated_at=booking.updated_at,
-            )
-        )
-
-    summary = BookingChecksSummary(
-        total_bookings=len(rows),
-        supplier_expected_matches=sum(1 for row in rows if row.supplier_expected_check == "match"),
-        supplier_tt_matches=sum(1 for row in rows if row.supplier_tt_check == "match"),
-        customer_expected_matches=0,
-        customer_tt_matches=sum(1 for row in rows if row.customer_tt_check == "match"),
-        fully_matched=sum(1 for row in rows if row.review_status == "match"),
-        needs_review=sum(1 for row in rows if row.review_status != "match"),
-        error_count=sum(1 for row in rows if row.review_status == "mismatch"),
-        awaiting_count=sum(1 for row in rows if row.review_status == "waiting"),
+    summary = build_booking_checks_summary(
+        db,
+        search=search,
+        company_filter=company_filter,
+        archive_filter=archive_filter,
+        commission_review_filter=commission_review_filter,
+        departure_from=departure_from,
+        departure_to=departure_to,
     )
-    return BookingChecksResponse(summary=summary, bookings=rows)
+    return BookingChecksResponse(
+        summary=summary,
+        bookings=rows,
+        total_matching=total_matching,
+        returned_count=len(rows),
+        limit=safe_limit,
+    )
 
 
-def build_booking_checks_summary(db: Session, limit: int = BOOKING_CHECK_ROW_LIMIT) -> BookingChecksSummary:
+def build_booking_checks_summary(
+    db: Session,
+    limit: int = BOOKING_CHECK_ROW_LIMIT,
+    search: str = "",
+    company_filter: str = "all",
+    archive_filter: str = "active",
+    commission_review_filter: str = "all",
+    departure_from: str = "",
+    departure_to: str = "",
+) -> BookingChecksSummary:
     apply_pending_traveltek_auto_booking_fields(db)
     bookings = list(
         db.scalars(
-            select(Booking)
-            .order_by(Booking.departure_date.desc().nullslast(), Booking.updated_at.desc(), Booking.id.desc())
-            .limit(limit)
+            filtered_booking_statement(
+                search=search,
+                company_filter=company_filter,
+                archive_filter=archive_filter,
+                commission_review_filter=commission_review_filter,
+                departure_from=departure_from,
+                departure_to=departure_to,
+            ).limit(limit)
         )
     )
     supplier_totals = grouped_supplier_totals(db)
@@ -397,48 +541,20 @@ def build_booking_checks_summary(db: Session, limit: int = BOOKING_CHECK_ROW_LIM
     awaiting_count = 0
 
     for booking in bookings:
-        raw_supplier_taps_total = supplier_totals.get((booking.booking_ref, "taps"), ZERO)
-        raw_supplier_tt_total = (
-            money(booking.non_trusted_paid_supplier)
-            if booking.non_trusted_paid_supplier is not None
-            else supplier_totals.get((booking.booking_ref, "tt"), ZERO)
+        row = build_booking_check_row(
+            booking,
+            supplier_totals,
+            customer_totals,
+            insurance_totals,
+            adjustments_by_booking,
         )
-        raw_customer_sings_total = customer_totals.get((booking.booking_ref, "sings"), ZERO)
-        raw_customer_tt_total = (
-            money(booking.non_trusted_total_received)
-            if booking.non_trusted_total_received is not None
-            else customer_totals.get((booking.booking_ref, "tt"), ZERO)
-        )
-        insurance_cost_total = insurance_totals.get(booking.booking_ref, ZERO)
 
-        raw_expected_supplier_total = None
-        if booking.expected_supplier_nett is not None:
-            raw_expected_supplier_total = money(booking.expected_supplier_nett) + insurance_cost_total
-
-        adjustments = adjustments_by_booking.get(booking.booking_ref, {})
-        gross_booking_value = adjusted_amount(adjustments, "gross_booking_value", booking.gross_booking_value)
-        expected_supplier_total = adjusted_amount(
-            adjustments,
-            "expected_supplier_total",
-            raw_expected_supplier_total,
-        )
-        supplier_taps_total = money(adjusted_amount(adjustments, "supplier_taps_total", raw_supplier_taps_total))
-        supplier_tt_total = money(adjusted_amount(adjustments, "supplier_tt_total", raw_supplier_tt_total))
-        customer_sings_total = money(adjusted_amount(adjustments, "customer_sings_total", raw_customer_sings_total))
-        customer_tt_total = money(adjusted_amount(adjustments, "customer_tt_total", raw_customer_tt_total))
-
-        supplier_expected_check = trusted_vs_expected_check(expected_supplier_total, supplier_taps_total)
-        supplier_tt_check = trusted_vs_human_check(supplier_taps_total, supplier_tt_total)
-        customer_tt_check = trusted_vs_human_check(customer_sings_total, customer_tt_total)
-
-        supplier_expected_matches += supplier_expected_check == "match"
-        supplier_tt_matches += supplier_tt_check == "match"
-        customer_tt_matches += customer_tt_check == "match"
-
-        row_review_status, _ = review_status(supplier_tt_check, customer_tt_check)
-        fully_matched += row_review_status == "match"
-        error_count += row_review_status == "mismatch"
-        awaiting_count += row_review_status == "waiting"
+        supplier_expected_matches += row.supplier_expected_check == "match"
+        supplier_tt_matches += row.supplier_tt_check == "match"
+        customer_tt_matches += row.customer_tt_check == "match"
+        fully_matched += row.review_status == "match"
+        error_count += row.review_status == "mismatch"
+        awaiting_count += row.review_status == "waiting"
 
     total_bookings = len(bookings)
     return BookingChecksSummary(

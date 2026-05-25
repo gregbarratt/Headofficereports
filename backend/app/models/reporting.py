@@ -82,6 +82,17 @@ class Booking(Base):
     package_included: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     atol_review_status: Mapped[str | None] = mapped_column(String(120), nullable=True)
     atol_certificate_issued: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), index=True, nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archive_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agent_commission_review_required: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=false(),
+        index=True,
+        nullable=False,
+    )
+    agent_commission_review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_master_upload_batch_id: Mapped[int | None] = mapped_column(ForeignKey("upload_batches.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

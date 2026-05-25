@@ -68,6 +68,7 @@ import {
   storeToken,
   syncFellohCustomerPayments,
   syncTraveltekActiveBookings,
+  updateBookingArchiveStatus,
   updateBookingCheckAdjustments,
   updateEmailRecipient,
   updateExceptionStatus,
@@ -96,6 +97,7 @@ const navItems = [
 ];
 
 const FELLOH_CATCH_UP_START_DATE = "2023-01-01";
+const FELLOH_LIVE_SYNC_MAX_DAYS = 14;
 const TRAVELTEK_FULL_CATCH_UP_START_DATE = "2023-01-30";
 const TRAVELTEK_ACTIVE_WINDOW_DAYS = 60;
 
@@ -234,6 +236,18 @@ function defaultSyncStartDate() {
   const dateValue = new Date();
   dateValue.setDate(dateValue.getDate() - 30);
   return toDateInputValue(dateValue);
+}
+
+function selectedDateRangeDays(startDate, endDate) {
+  if (!startDate || !endDate) {
+    return null;
+  }
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+  return Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 }
 
 function isTraveltekNoRowsMessage(value) {
@@ -1778,59 +1792,78 @@ function BookingChecksPage({ token }) {
   const [companyFilter, setCompanyFilter] = useState("all");
   const [supplierFilter, setSupplierFilter] = useState("all");
   const [customerFilter, setCustomerFilter] = useState("all");
+  const [archiveFilter, setArchiveFilter] = useState("active");
+  const [commissionReviewFilter, setCommissionReviewFilter] = useState("all");
+  const [departureFrom, setDepartureFrom] = useState("");
+  const [departureTo, setDepartureTo] = useState("");
   const [editingRef, setEditingRef] = useState("");
   const [draft, setDraft] = useState({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [visibleLimit, setVisibleLimit] = useState(250);
+  const [totalMatching, setTotalMatching] = useState(0);
   const bookingChecksTopScrollRef = useRef(null);
   const bookingChecksTableScrollRef = useRef(null);
   const [bookingChecksTableWidth, setBookingChecksTableWidth] = useState(1500);
 
-  function loadBookingChecks() {
-    return getBookingChecks(token)
+  function loadBookingChecks(nextLimit = visibleLimit) {
+    setIsLoading(true);
+    return getBookingChecks(token, {
+      limit: nextLimit,
+      search,
+      review: reviewFilter,
+      company: companyFilter,
+      supplier: supplierFilter,
+      customer: customerFilter,
+      archive: archiveFilter,
+      commissionReview: commissionReviewFilter,
+      departureFrom,
+      departureTo,
+    })
       .then((data) => {
         setRows(data.bookings);
         setSummary(data.summary);
+        setTotalMatching(data.total_matching ?? data.bookings.length);
         setError("");
       })
-      .catch((loadError) => setError(loadError.message || "Booking checks could not load."));
+      .catch((loadError) => setError(loadError.message || "Booking checks could not load."))
+      .finally(() => setIsLoading(false));
   }
 
   useEffect(() => {
-    loadBookingChecks();
-  }, [token]);
+    setVisibleLimit(250);
+  }, [
+    search,
+    reviewFilter,
+    companyFilter,
+    supplierFilter,
+    customerFilter,
+    archiveFilter,
+    commissionReviewFilter,
+    departureFrom,
+    departureTo,
+  ]);
 
-  const filteredRows = rows.filter((row) => {
-    const searchValue = search.trim().toLowerCase();
-    if (
-      searchValue &&
-      ![
-        row.booking_ref,
-        row.customer_last_name,
-        row.agent_in_charge,
-        row.destination,
-        row.travel_elements_raw,
-        row.normalised_status,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(searchValue)
-    ) {
-      return false;
-    }
-    if (reviewFilter !== "all" && row.review_status !== reviewFilter) {
-      return false;
-    }
-    if (companyFilter !== "all" && row.booking_company !== companyFilter) {
-      return false;
-    }
-    if (supplierFilter !== "all" && groupedCheckStatus(row, "supplier") !== supplierFilter) {
-      return false;
-    }
-    if (customerFilter !== "all" && groupedCheckStatus(row, "customer") !== customerFilter) {
-      return false;
-    }
-    return true;
-  });
+  useEffect(() => {
+    const loadTimer = window.setTimeout(() => {
+      loadBookingChecks();
+    }, 350);
+    return () => window.clearTimeout(loadTimer);
+  }, [
+    token,
+    search,
+    reviewFilter,
+    companyFilter,
+    supplierFilter,
+    customerFilter,
+    archiveFilter,
+    commissionReviewFilter,
+    departureFrom,
+    departureTo,
+    visibleLimit,
+  ]);
+
+  const filteredRows = rows;
   const editingRow = rows.find((row) => row.booking_ref === editingRef);
 
   useEffect(() => {
@@ -1892,13 +1925,12 @@ function BookingChecksPage({ token }) {
     }
 
     try {
-      const data = await updateBookingCheckAdjustments({
+      await updateBookingCheckAdjustments({
         token,
         bookingRef: row.booking_ref,
         adjustments,
       });
-      setRows(data.bookings);
-      setSummary(data.summary);
+      await loadBookingChecks();
       setEditingRef("");
       setDraft({});
       setMessage(`Saved manual check values for ${row.booking_ref}.`);
@@ -1914,7 +1946,7 @@ function BookingChecksPage({ token }) {
     setError("");
     setMessage("");
     try {
-      const data = await updateBookingCheckAdjustments({
+      await updateBookingCheckAdjustments({
         token,
         bookingRef: row.booking_ref,
         adjustments: {
@@ -1927,13 +1959,90 @@ function BookingChecksPage({ token }) {
           note: null,
         },
       });
-      setRows(data.bookings);
-      setSummary(data.summary);
+      await loadBookingChecks();
       setEditingRef("");
       setDraft({});
       setMessage(`Cleared manual check values for ${row.booking_ref}.`);
     } catch (clearError) {
       setError(clearError.message || "Manual adjustment could not be cleared.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function updateArchiveStatus(row, values, successMessage) {
+    setIsSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await updateBookingArchiveStatus({
+        token,
+        bookingRef: row.booking_ref,
+        values,
+      });
+      await loadBookingChecks();
+      setMessage(successMessage);
+    } catch (archiveError) {
+      setError(archiveError.message || "Booking archive status could not be updated.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function archiveBooking(row) {
+    updateArchiveStatus(
+      row,
+      {
+        is_archived: true,
+        archive_note: "Archived from Booking Checks after Head Office review.",
+      },
+      `${row.booking_ref} has been archived.`
+    );
+  }
+
+  function restoreBooking(row) {
+    updateArchiveStatus(row, { is_archived: false }, `${row.booking_ref} has been restored to active Booking Checks.`);
+  }
+
+  function toggleCommissionReview(row) {
+    const nextValue = !row.agent_commission_review_required;
+    updateArchiveStatus(
+      row,
+      {
+        agent_commission_review_required: nextValue,
+        agent_commission_review_note: nextValue ? "Marked for Head Office commission review." : null,
+      },
+      nextValue
+        ? `${row.booking_ref} has been marked for agent commission review.`
+        : `${row.booking_ref} no longer needs agent commission review.`
+    );
+  }
+
+  async function archiveShownFullMatches() {
+    const rowsToArchive = filteredRows.filter((row) => row.review_status === "match" && !row.is_archived);
+    if (!rowsToArchive.length) {
+      setMessage("No visible full-match bookings are available to archive.");
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      for (const row of rowsToArchive) {
+        await updateBookingArchiveStatus({
+          token,
+          bookingRef: row.booking_ref,
+          values: {
+            is_archived: true,
+            archive_note: "Bulk archived from Booking Checks after Head Office review.",
+          },
+        });
+      }
+      await loadBookingChecks();
+      setMessage(`Archived ${rowsToArchive.length} visible full-match booking(s).`);
+    } catch (bulkError) {
+      setError(bulkError.message || "Visible full-match bookings could not be archived.");
     } finally {
       setIsSaving(false);
     }
@@ -1971,6 +2080,11 @@ function BookingChecksPage({ token }) {
       "Review Note",
       "Manual Adjustment",
       "Manual Adjustment Note",
+      "Archived",
+      "Archived At",
+      "Archive Note",
+      "Agent Commission Review",
+      "Agent Commission Review Note",
     ];
     const csvRows = filteredRows.map((row) => [
       row.booking_ref,
@@ -2003,6 +2117,11 @@ function BookingChecksPage({ token }) {
       row.review_note || "",
       row.has_manual_adjustment ? "Yes" : "No",
       row.manual_adjustment_note || "",
+      row.is_archived ? "Yes" : "No",
+      row.archived_at || "",
+      row.archive_note || "",
+      row.agent_commission_review_required ? "Yes" : "No",
+      row.agent_commission_review_note || "",
     ]);
     downloadCsv("booking-checks.csv", headers, csvRows);
   }
@@ -2097,10 +2216,52 @@ function BookingChecksPage({ token }) {
             <option value="waiting">Awaiting</option>
           </select>
         </label>
+        <label>
+          Departure from
+          <input type="date" value={departureFrom} onChange={(event) => setDepartureFrom(event.target.value)} />
+        </label>
+        <label>
+          Departure to
+          <input type="date" value={departureTo} onChange={(event) => setDepartureTo(event.target.value)} />
+        </label>
+        <label>
+          Archive
+          <select value={archiveFilter} onChange={(event) => setArchiveFilter(event.target.value)}>
+            <option value="active">Active only</option>
+            <option value="archived">Archived only</option>
+            <option value="all">Active and archived</option>
+          </select>
+        </label>
+        <label>
+          Agent commission
+          <select value={commissionReviewFilter} onChange={(event) => setCommissionReviewFilter(event.target.value)}>
+            <option value="all">All</option>
+            <option value="flagged">Marked for review</option>
+            <option value="not_flagged">Not marked</option>
+          </select>
+        </label>
       </div>
 
       <div className="booking-check-actions">
-        <p className="muted-note">Showing {filteredRows.length} of {rows.length} booking check row(s).</p>
+        <p className="muted-note">
+          {isLoading ? "Loading booking checks..." : `Showing ${filteredRows.length} of ${totalMatching} matching booking check row(s).`}
+        </p>
+        <button
+          className="secondary-button"
+          disabled={isLoading || filteredRows.length >= totalMatching}
+          onClick={() => setVisibleLimit((currentLimit) => currentLimit + 250)}
+          type="button"
+        >
+          Show more rows
+        </button>
+        <button
+          className="secondary-button"
+          disabled={isLoading || isSaving || !filteredRows.some((row) => row.review_status === "match" && !row.is_archived)}
+          onClick={archiveShownFullMatches}
+          type="button"
+        >
+          Archive visible full matches
+        </button>
         <button className="secondary-button" disabled={!filteredRows.length} onClick={exportBookingChecksCsv} type="button">
           <FileSpreadsheet size={18} aria-hidden="true" />
           Download CSV
@@ -2188,6 +2349,8 @@ function BookingChecksPage({ token }) {
                 <th>Expected Supplier Balance</th>
                 <th>Traveltek Profit</th>
                 <th>Review</th>
+                <th>Archive</th>
+                <th>Commission</th>
                 <th>Amend</th>
             </tr>
           </thead>
@@ -2237,6 +2400,32 @@ function BookingChecksPage({ token }) {
                     ) : null}
                   </td>
                   <td>
+                    <span className={`status-pill ${row.is_archived ? "status-resolved" : "status-open"}`}>
+                      {row.is_archived ? "Archived" : "Active"}
+                    </span>
+                    {row.archived_at ? <span className="variance-note">{formatDateTime(row.archived_at)}</span> : null}
+                    {row.archive_note ? <span className="variance-note">{row.archive_note}</span> : null}
+                    <button
+                      className="table-action-button"
+                      disabled={isSaving}
+                      onClick={() => (row.is_archived ? restoreBooking(row) : archiveBooking(row))}
+                      type="button"
+                    >
+                      {row.is_archived ? "Restore" : "Archive"}
+                    </button>
+                  </td>
+                  <td>
+                    <span className={`status-pill ${row.agent_commission_review_required ? "status-reviewing" : "status-resolved"}`}>
+                      {row.agent_commission_review_required ? "Check" : "No check"}
+                    </span>
+                    {row.agent_commission_review_note ? (
+                      <span className="variance-note">{row.agent_commission_review_note}</span>
+                    ) : null}
+                    <button className="table-action-button" disabled={isSaving} onClick={() => toggleCommissionReview(row)} type="button">
+                      {row.agent_commission_review_required ? "Clear" : "Mark"}
+                    </button>
+                  </td>
+                  <td>
                     <button className="table-action-button" onClick={() => startEditing(row)} type="button">
                       Amend
                     </button>
@@ -2245,7 +2434,7 @@ function BookingChecksPage({ token }) {
               ))
             ) : (
               <tr>
-                  <td colSpan="25">No booking checks match the current filters.</td>
+                  <td colSpan="27">No booking checks match the current filters.</td>
               </tr>
             )}
           </tbody>
@@ -2648,6 +2837,21 @@ function CustomerPaymentsPage({ token }) {
     setSyncWarnings([]);
     setIsSyncing(true);
     try {
+      const rangeDays = selectedDateRangeDays(syncStartDate, syncEndDate);
+      if (rangeDays && rangeDays > FELLOH_LIVE_SYNC_MAX_DAYS) {
+        setIsBackfilling(true);
+        const result = await startFellohCustomerPaymentBackfill({
+          token,
+          startDate: syncStartDate,
+          endDate: syncEndDate,
+          chunkDays: FELLOH_LIVE_SYNC_MAX_DAYS,
+        });
+        setSyncMessage(
+          `${result.message} This ${rangeDays}-day range is running in the background so the page does not time out.`
+        );
+        return;
+      }
+
       const result = await syncFellohCustomerPayments({
         token,
         startDate: syncStartDate,
@@ -2662,6 +2866,7 @@ function CustomerPaymentsPage({ token }) {
       setError(syncError.message || "Felloh sync failed.");
     } finally {
       setIsSyncing(false);
+      setIsBackfilling(false);
     }
   }
 
@@ -2722,13 +2927,17 @@ function CustomerPaymentsPage({ token }) {
         </label>
         <button className="primary-button" disabled={isSyncing || isBackfilling} type="submit">
           <RefreshCw size={18} aria-hidden="true" />
-          {isSyncing ? "Syncing" : "Sync Felloh"}
+          {isSyncing ? "Working" : "Sync Felloh"}
         </button>
         <button className="secondary-button" disabled={isSyncing || isBackfilling} onClick={handleFellohBackfill} type="button">
           <RefreshCw size={18} aria-hidden="true" />
           {isBackfilling ? "Starting" : "Start 2023 Catch-up"}
         </button>
       </form>
+      <p className="muted-note">
+        Felloh live sync runs up to {FELLOH_LIVE_SYNC_MAX_DAYS} days at a time. Bigger ranges start in the background
+        and can be checked in Upload Centre.
+      </p>
 
       <div className="summary-strip">
         <div>
