@@ -342,6 +342,17 @@ export async function runTraveltekUpdateEverythingBatch({ token, limit, resetPro
   });
 }
 
+export async function scanNewTraveltekOtcReferences({ token, maxReferences, stopAfterMissing }) {
+  return apiRequest("/api/traveltek/scan-new-otc-references", {
+    method: "POST",
+    token,
+    body: JSON.stringify({
+      max_references: maxReferences,
+      stop_after_missing: stopAfterMissing,
+    }),
+  });
+}
+
 export async function runTraveltekActiveMaintenance({
   token,
   newBookingStartDate,

@@ -35,6 +35,11 @@ class TraveltekUpdateEverythingBatchRequest(BaseModel):
     reset_progress: bool = False
 
 
+class TraveltekNewReferenceScanRequest(BaseModel):
+    max_references: int = Field(default=25, ge=1, le=200)
+    stop_after_missing: int = Field(default=10, ge=1, le=50)
+
+
 class TraveltekSyncRunRead(BaseModel):
     id: int
     status: str
@@ -106,6 +111,17 @@ class TraveltekUpdateEverythingBatchResponse(BaseModel):
     complete: bool
     next_booking_ref: str | None
     estimated_calls_this_batch: int
+    message: str
+
+
+class TraveltekNewReferenceScanResponse(BaseModel):
+    run: TraveltekSyncRunRead
+    started_after_booking_ref: str | None
+    first_checked_booking_ref: str | None
+    last_checked_booking_ref: str | None
+    created_count: int
+    updated_count: int
+    missing_count: int
     message: str
 
 

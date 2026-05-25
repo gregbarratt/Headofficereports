@@ -885,6 +885,29 @@ def fetch_booking_by_reference(booking_ref: str) -> TraveltekBookingData:
     return fetch_booking_detail({"bookingreference": booking_ref})
 
 
+def format_otc_booking_ref(number_value: int) -> str:
+    return f"OTC-{number_value:05d}"
+
+
+def booking_ref_number(booking_ref: str | None) -> int | None:
+    if not booking_ref:
+        return None
+    match = re.fullmatch(r"OTC-(\d+)", str(booking_ref).strip().upper())
+    return int(match.group(1)) if match else None
+
+
+def highest_existing_otc_booking_ref(db: Session) -> tuple[str | None, int]:
+    highest_number = 0
+    highest_ref = None
+    booking_refs = db.scalars(select(Booking.booking_ref).where(Booking.booking_ref.like("OTC-%"))).all()
+    for booking_ref in booking_refs:
+        number_value = booking_ref_number(booking_ref)
+        if number_value is not None and number_value > highest_number:
+            highest_number = number_value
+            highest_ref = format_otc_booking_ref(number_value)
+    return highest_ref, highest_number
+
+
 def fetch_booking_for_existing_booking(booking: Booking) -> TraveltekBookingData:
     if booking.traveltek_booking_id:
         return fetch_booking_detail({"bookingid": booking.traveltek_booking_id})
@@ -1118,7 +1141,7 @@ def import_traveltek_bookings_by_date_range(
                 successful_attempt = attempt_name
                 break
             attempt_errors.append(f"{attempt_name}: Traveltek returned no booking rows.")
-        except TraveltekApiError as exc:
+        except TraveltekApiError:
             attempt_errors.append(f"{attempt_name}: {exc}")
 
     if not booking_elements:
@@ -1475,6 +1498,116 @@ def run_update_everything_existing_booking_batch(
         "next_booking_ref": None if complete else last_booking_ref,
         "estimated_calls_this_batch": max_limit,
         "message": "Existing booking batch refreshed from Traveltek.",
+    }
+
+
+def scan_new_otc_booking_references(
+    db: Session,
+    max_references: int,
+    stop_after_missing: int,
+    actor_user_id: int | None,
+) -> dict[str, Any]:
+    run = TraveltekSyncRun(sync_type="new_otc_reference_scan", requested_by_user_id=actor_user_id)
+    db.add(run)
+    db.flush()
+
+    if not settings.traveltek_api_configured:
+        run.status = "failed"
+        run.error_summary = "Traveltek API is not configured in Render yet."
+        run.finished_at = datetime.now(UTC)
+        db.commit()
+        db.refresh(run)
+        return {
+            "run": run,
+            "started_after_booking_ref": None,
+            "first_checked_booking_ref": None,
+            "last_checked_booking_ref": None,
+            "created_count": 0,
+            "updated_count": 0,
+            "missing_count": 0,
+            "message": "Traveltek API is not configured in Render yet.",
+        }
+
+    highest_ref, highest_number = highest_existing_otc_booking_ref(db)
+    max_calls = min(max_references, settings.traveltek_max_calls_per_run)
+    consecutive_missing = 0
+    missing_count = 0
+    created_count = 0
+    updated_count = 0
+    first_checked_ref = None
+    last_checked_ref = None
+
+    for number_value in range(highest_number + 1, highest_number + max_calls + 1):
+        booking_ref = format_otc_booking_ref(number_value)
+        first_checked_ref = first_checked_ref or booking_ref
+        last_checked_ref = booking_ref
+        run.api_call_count += 1
+        try:
+            traveltek_booking = fetch_booking_by_reference(booking_ref)
+            values = dict(traveltek_booking.values)
+            values["booking_ref"] = booking_ref
+            imported_ref, created, changed, changes, booking_id = apply_booking_values_from_traveltek(db, values)
+            run.checked_bookings += 1
+            consecutive_missing = 0
+            if created:
+                created_count += 1
+            elif changed:
+                updated_count += 1
+            add_traveltek_booking_change_log(
+                db,
+                booking_ref=imported_ref,
+                booking_id=booking_id,
+                sync_run_id=run.id,
+                changes=changes,
+                created=created,
+                actor_user_id=actor_user_id,
+            )
+        except TraveltekApiError as exc:
+            missing_count += 1
+            consecutive_missing += 1
+            if consecutive_missing >= stop_after_missing:
+                break
+
+    run.proposals_created = created_count + updated_count
+    run.status = "completed"
+    run.error_summary = None
+    run.finished_at = datetime.now(UTC)
+    db.add(
+        AuditLog(
+            actor_user_id=actor_user_id,
+            action="traveltek_new_otc_reference_scan",
+            table_name="traveltek_sync_runs",
+            record_id=run.id,
+            description=(
+                f"Traveltek new reference scan checked {run.api_call_count} OTC reference(s), "
+                f"created {created_count} booking(s), and updated {updated_count} booking(s)."
+            ),
+            after_data={
+                "started_after_booking_ref": highest_ref,
+                "first_checked_booking_ref": first_checked_ref,
+                "last_checked_booking_ref": last_checked_ref,
+                "created": created_count,
+                "updated": updated_count,
+                "missing": missing_count,
+                "api_calls": run.api_call_count,
+            },
+        )
+    )
+    db.commit()
+    db.refresh(run)
+    message = (
+        f"Checked new OTC references after {highest_ref or 'none'}. "
+        f"Created {created_count}, updated {updated_count}, missing/not found {missing_count}."
+    )
+    return {
+        "run": run,
+        "started_after_booking_ref": highest_ref,
+        "first_checked_booking_ref": first_checked_ref,
+        "last_checked_booking_ref": last_checked_ref,
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "missing_count": missing_count,
+        "message": message,
     }
 
 

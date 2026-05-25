@@ -17,6 +17,8 @@ from app.schemas.traveltek import (
     TraveltekChangeLogRead,
     TraveltekFullCatchUpBatchRequest,
     TraveltekFullCatchUpBatchResponse,
+    TraveltekNewReferenceScanRequest,
+    TraveltekNewReferenceScanResponse,
     TraveltekStatusResponse,
     TraveltekSyncRequest,
     TraveltekSyncRunRead,
@@ -34,6 +36,7 @@ from app.services.traveltek_service import (
     run_active_maintenance_update,
     run_full_catchup_batch,
     run_update_everything_existing_booking_batch,
+    scan_new_otc_booking_references,
     scan_active_bookings_for_traveltek_updates,
     traveltek_field_label,
 )
@@ -236,6 +239,23 @@ def run_update_everything_next_batch(
             db=db,
             limit=min(request.limit, settings.traveltek_max_calls_per_run),
             reset_progress=request.reset_progress,
+            actor_user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/scan-new-otc-references", response_model=TraveltekNewReferenceScanResponse)
+def scan_new_otc_references(
+    request: TraveltekNewReferenceScanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> dict:
+    try:
+        return scan_new_otc_booking_references(
+            db=db,
+            max_references=min(request.max_references, settings.traveltek_max_calls_per_run),
+            stop_after_missing=request.stop_after_missing,
             actor_user_id=current_user.id,
         )
     except ValueError as exc:

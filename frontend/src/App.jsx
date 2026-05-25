@@ -62,6 +62,7 @@ import {
   runTraveltekActiveMaintenance,
   runTraveltekFullCatchUpBatch,
   runTraveltekUpdateEverythingBatch,
+  scanNewTraveltekOtcReferences,
   sendWeeklyEmail,
   startFellohCustomerPaymentBackfill,
   storeToken,
@@ -718,10 +719,13 @@ function TraveltekUpdatesPage({ token }) {
   const [newBookingLimit, setNewBookingLimit] = useState(100);
   const [activeRefreshLimit, setActiveRefreshLimit] = useState(100);
   const [activeWindowDays, setActiveWindowDays] = useState(TRAVELTEK_ACTIVE_WINDOW_DAYS);
+  const [newReferenceLimit, setNewReferenceLimit] = useState(25);
+  const [newReferenceMissingStop, setNewReferenceMissingStop] = useState(10);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isScanningNewRefs, setIsScanningNewRefs] = useState(false);
   const [isCatchUpRunning, setIsCatchUpRunning] = useState(false);
   const [isAutoCatchUpRunning, setIsAutoCatchUpRunning] = useState(false);
   const [autoCatchUpStatus, setAutoCatchUpStatus] = useState("");
@@ -1087,6 +1091,30 @@ function TraveltekUpdatesPage({ token }) {
     }
   }
 
+  async function handleNewReferenceScan() {
+    setIsScanningNewRefs(true);
+    setMessage("");
+    setError("");
+    try {
+      const result = await scanNewTraveltekOtcReferences({
+        token,
+        maxReferences: Number(newReferenceLimit),
+        stopAfterMissing: Number(newReferenceMissingStop),
+      });
+      setMessage(
+        `${result.message} Checked ${result.first_checked_booking_ref || "-"} to ${result.last_checked_booking_ref || "-"}. Traveltek calls used: ${result.run.api_call_count}.`
+      );
+      if (result.run.error_summary) {
+        setError(redactSensitiveText(result.run.error_summary));
+      }
+      await refreshTraveltekPage(statusFilter, changeLogFilter);
+    } catch (scanError) {
+      setError(scanError.message || "Traveltek new reference scan could not run.");
+    } finally {
+      setIsScanningNewRefs(false);
+    }
+  }
+
   async function handleStatusChange(updateId, nextStatus) {
     setUpdatingId(updateId);
     setMessage("");
@@ -1183,6 +1211,40 @@ function TraveltekUpdatesPage({ token }) {
             <p className="form-error">Last Traveltek issue: {redactSensitiveText(latestRun.error_summary)}</p>
           )
         ) : null}
+
+        <div className="section-heading">
+          <h3>Find new OTC bookings</h3>
+          <p>Checks only the next OTC references after the highest booking already in this system.</p>
+        </div>
+        <div className="traveltek-toolbar">
+          <label>
+            References to check
+            <input
+              max="200"
+              min="1"
+              onChange={(event) => setNewReferenceLimit(event.target.value)}
+              type="number"
+              value={newReferenceLimit}
+            />
+          </label>
+          <label>
+            Stop after missing
+            <input
+              max="50"
+              min="1"
+              onChange={(event) => setNewReferenceMissingStop(event.target.value)}
+              type="number"
+              value={newReferenceMissingStop}
+            />
+          </label>
+          <button className="primary-button" disabled={isScanningNewRefs || !configured} onClick={handleNewReferenceScan} type="button">
+            <RefreshCw size={18} aria-hidden="true" />
+            {isScanningNewRefs ? "Checking" : "Find New OTC Bookings"}
+          </button>
+        </div>
+        <p className="muted-note">
+          Example: if the last booking is OTC-06677, this checks OTC-06678 onward and imports any new bookings Traveltek returns.
+        </p>
 
         <div className="traveltek-simple-update">
           <div>
@@ -2515,6 +2577,7 @@ function CustomerPaymentsPage({ token }) {
   const [payments, setPayments] = useState([]);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
+  const [paymentSortOrder, setPaymentSortOrder] = useState("payment_date_desc");
   const [syncStartDate, setSyncStartDate] = useState(defaultSyncStartDate());
   const [syncEndDate, setSyncEndDate] = useState(toDateInputValue(new Date()));
   const [syncMessage, setSyncMessage] = useState("");
@@ -2534,6 +2597,35 @@ function CustomerPaymentsPage({ token }) {
   useEffect(() => {
     loadCustomerPayments();
   }, [token]);
+
+  const sortedPayments = [...payments].sort((left, right) => {
+    if (paymentSortOrder === "booking_ref_asc" || paymentSortOrder === "booking_ref_desc") {
+      const leftRef = String(left.booking_ref || "").trim();
+      const rightRef = String(right.booking_ref || "").trim();
+      if (!leftRef && rightRef) {
+        return 1;
+      }
+      if (leftRef && !rightRef) {
+        return -1;
+      }
+      const comparison = leftRef.localeCompare(rightRef, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+      return paymentSortOrder === "booking_ref_desc" ? -comparison : comparison;
+    }
+
+    const leftDate = left.payment_date || "";
+    const rightDate = right.payment_date || "";
+    const dateComparison = rightDate.localeCompare(leftDate);
+    if (dateComparison !== 0) {
+      return dateComparison;
+    }
+    return String(right.booking_ref || "").localeCompare(String(left.booking_ref || ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
 
   async function handleFellohSync(event) {
     event.preventDefault();
@@ -2663,6 +2755,17 @@ function CustomerPaymentsPage({ token }) {
         </div>
       </div>
 
+      <div className="booking-page-actions">
+        <label>
+          Row order
+          <select value={paymentSortOrder} onChange={(event) => setPaymentSortOrder(event.target.value)}>
+            <option value="payment_date_desc">Payment date, newest first</option>
+            <option value="booking_ref_asc">Booking ref, lowest to highest</option>
+            <option value="booking_ref_desc">Booking ref, highest to lowest</option>
+          </select>
+        </label>
+      </div>
+
       <div className="table-wrap">
         <table>
           <thead>
@@ -2684,8 +2787,8 @@ function CustomerPaymentsPage({ token }) {
             </tr>
           </thead>
           <tbody>
-            {payments.length ? (
-              payments.map((payment) => (
+            {sortedPayments.length ? (
+              sortedPayments.map((payment) => (
                 <tr key={payment.id}>
                   <td>{formatDate(payment.payment_date)}</td>
                   <td>{formatSourceLabel(payment.payment_source)}</td>

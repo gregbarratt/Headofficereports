@@ -327,11 +327,13 @@ Mapped fields:
 The TAPs export format is also supported directly. For TAPs files, the importer maps:
 
 - `Bkg Reference` as the booking reference
-- the first `Collection` column as the supplier payment date
+- `Collection Date` as the supplier payment date
 - `Supplier Name` as the supplier
 - `Collected` as the actual amount paid
 
 Important: TAPs `Value` is treated as an attempted/requested value only. The system uses `Collected` for actual supplier paid totals, so `NotPaid` rows with `Collected` as `0.00` do not inflate supplier reconciliation.
+
+Some TAPs exports also include `Collection`, `Payment`, or `State` status columns with values such as `Successful`, `Failed`, `Collected`, or `NotPaid`. These are not used as dates.
 
 Every supplier payment row is stored separately. Multiple payment lines for the same booking are not merged.
 
@@ -443,6 +445,7 @@ The Customer Payments page shows:
 - net settled amount
 - booking match confidence
 - unmatched payment count
+- row ordering by payment date or booking reference
 
 ## Felloh / SINGs API Integration
 
@@ -488,11 +491,14 @@ Traveltek can now replace the manual master booking CSV for booking data.
 
 The Traveltek Updates page has two actions:
 
+- Find new OTC bookings by checking only the next booking references after the highest OTC reference already stored
 - Update everything already in the Head Office database by booking reference or Traveltek booking ID
 - Run a full controlled catch-up, one booking-date batch at a time
 - Run an ongoing active update for recent new bookings and active/recent departures
 - Import bookings from Traveltek for a selected booking-date range
 - Check existing active bookings by booking reference and create review suggestions
+
+Use **Find New OTC Bookings** when Head Office knows Traveltek has created newer references, for example the system has `OTC-06677` but Traveltek has reached `OTC-06701`. This checks `OTC-06678` onward and imports only the references Traveltek returns, so it avoids pulling every older booking again.
 
 The Traveltek `getbookings` document says the import date range is a booking date range. The Traveltek Updates page therefore searches by booking date only. The system stores Traveltek departure and return dates on the booking record, then Head Office can review by travel date inside Booking Checks.
 
