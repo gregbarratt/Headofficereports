@@ -530,6 +530,10 @@ For these Traveltek finance figures, the importer prioritises the main portfolio
 
 The importer now also scans for exact Traveltek overview labels such as **Paid To Supplier**, **Due to Suppliers**, **Total Due** and **Total Amount Paid** in the API response text. If those labels are present, their values win over lower-level payment fields.
 
+Traveltek financial rows can contain two label/value pairs on one row. The importer reads both sides of those rows so right-hand values such as **Paid To Supplier** are not missed.
+
+For **Paid To Supplier**, the importer compares the structured overview value, any supplier-paid line values and the derived value from `Traveltek Total Due - Traveltek Due To Suppliers`, then keeps the largest total-style amount. This prevents a smaller line value, such as `3127.00`, from overriding a portfolio total such as `29719.85`.
+
 If Traveltek sends supplier-paid values as multiple payment lines, the importer adds those supplier-paid lines together before updating the booking. This prevents Booking Checks from showing only the first supplier payment line.
 
 Where Traveltek's API response gives a smaller line-level paid value, the system derives **Paid To Supplier** from the Traveltek overview figures:

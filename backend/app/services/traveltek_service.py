@@ -473,9 +473,9 @@ def collect_label_value_pairs(element: ElementTree.Element, output: dict[str, st
 
     row_texts = [direct_text(child) for child in element if direct_text(child)]
     row_texts = [text for text in row_texts if text]
-    if len(row_texts) >= 2:
-        possible_label = row_texts[0]
-        possible_value = row_texts[1]
+    for index in range(0, len(row_texts) - 1, 2):
+        possible_label = row_texts[index]
+        possible_value = row_texts[index + 1]
         if (
             possible_label
             and possible_value
@@ -648,7 +648,7 @@ def money_from_text_labels(root: ElementTree.Element | None, labels: tuple[str, 
         return None
     for label in labels:
         pattern = re.compile(
-            rf"{re.escape(label)}\s*[:\-]?\s*(?:£|\?)?\s*(\(?-?\d[\d,]*(?:\.\d{{2}})?\)?)",
+            rf"{re.escape(label)}[^\d£?()-]{{0,80}}(?:£|\?)?\s*(\(?-?\d[\d,]*(?:\.\d{{2}})?\)?)",
             re.IGNORECASE,
         )
         match = pattern.search(text)
@@ -661,6 +661,13 @@ def money_from_text_labels(root: ElementTree.Element | None, labels: tuple[str, 
         if amount is not None:
             return amount
     return None
+
+
+def largest_money_value(values: list[Decimal | None]) -> Decimal | None:
+    valid_values = [value for value in values if value is not None]
+    if not valid_values:
+        return None
+    return max(valid_values, key=lambda amount: abs(amount)).quantize(Decimal("0.01"))
 
 
 def money_values_from_xml_keys(root: ElementTree.Element | None, candidate_keys: tuple[str, ...]) -> list[Decimal]:
@@ -716,33 +723,31 @@ def derive_traveltek_money_value(
     flattened: dict[str, str],
     root: ElementTree.Element | None = None,
 ) -> Decimal | None:
+    exact_amount = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS.get(field_name, ()))
+    if field_name == "non_trusted_paid_supplier":
+        paid_from_lines = supplier_paid_total_from_lines(flattened, root)
+        derived_from_totals = derive_paid_supplier_from_traveltek_totals(flattened)
+        hinted_amount = derive_money_from_key_hints(flattened, ("supplier", "paid", "total"))
+        best_paid_amount = largest_money_value([exact_amount, paid_from_lines, derived_from_totals, hinted_amount])
+        if best_paid_amount is not None:
+            return best_paid_amount
+    if field_name == "imported_supplier_outstanding":
+        total_due = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_total_due"])
+        paid_to_supplier = derive_traveltek_money_value("non_trusted_paid_supplier", flattened, root)
+        derived_due = None
+        if total_due is not None and paid_to_supplier is not None and total_due >= paid_to_supplier:
+            derived_due = (total_due - paid_to_supplier).quantize(Decimal("0.01"))
+        hinted_due = derive_money_from_key_hints(flattened, ("supplier", "due"))
+        best_due_amount = largest_money_value([exact_amount, derived_due, hinted_due])
+        if best_due_amount is not None:
+            return best_due_amount
+
     labelled_amount = money_from_text_labels(root, TRAVELTEK_TEXT_MONEY_LABELS.get(field_name, ()))
     if labelled_amount is not None:
         return labelled_amount
 
-    exact_amount = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS.get(field_name, ()))
-    if field_name == "non_trusted_paid_supplier":
-        paid_from_lines = supplier_paid_total_from_lines(flattened, root)
-        if paid_from_lines is not None and (exact_amount is None or abs(paid_from_lines) > abs(exact_amount)):
-            return paid_from_lines
-        derived_from_totals = derive_paid_supplier_from_traveltek_totals(flattened)
-        if derived_from_totals is not None and (
-            exact_amount is None or abs(derived_from_totals) > abs(exact_amount)
-        ):
-            return derived_from_totals
-    if field_name == "imported_supplier_outstanding":
-        total_due = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_total_due"])
-        paid_from_lines = supplier_paid_total_from_lines(flattened, root)
-        if total_due is not None and paid_from_lines is not None and total_due >= paid_from_lines:
-            derived_due = (total_due - paid_from_lines).quantize(Decimal("0.01"))
-            if exact_amount is None or (exact_amount == Decimal("0.00") and derived_due > Decimal("0.00")):
-                return derived_due
     if exact_amount is not None:
         return exact_amount
-    if field_name == "non_trusted_paid_supplier":
-        return derive_money_from_key_hints(flattened, ("supplier", "paid", "total"))
-    if field_name == "imported_supplier_outstanding":
-        return derive_money_from_key_hints(flattened, ("supplier", "due"))
     return None
 
 
