@@ -536,6 +536,8 @@ For **Paid To Supplier**, the importer compares the structured overview value, a
 
 If Traveltek sends supplier-paid values as multiple payment lines, the importer adds those supplier-paid lines together before updating the booking. This prevents Booking Checks from showing only the first supplier payment line.
 
+The importer also recognises repeated Traveltek payment rows where the row is labelled as a supplier payment and has an amount/value field. Successful supplier payment rows are added together; failed supplier payment rows and customer payment rows are ignored. This covers Traveltek responses where the Financial Details screen total is built from several payment-section entries.
+
 Where Traveltek's API response gives a smaller line-level paid value, the system derives **Paid To Supplier** from the Traveltek overview figures:
 
 ```text

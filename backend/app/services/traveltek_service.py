@@ -271,6 +271,49 @@ TRAVELTEK_SUPPLIER_PAID_LINE_KEYS = (
     "supplierpayments",
     "supplierpaymentsmade",
 )
+TRAVELTEK_SUPPLIER_PAYMENT_ROW_NAMES = {
+    "supplierpayment",
+    "supplierpayments",
+    "supplierpaymentrow",
+    "suppliertransaction",
+    "suppliertransactions",
+    "payment",
+    "paymentrow",
+    "transaction",
+    "row",
+}
+TRAVELTEK_SUPPLIER_PAYMENT_AMOUNT_KEYS = {
+    "amount",
+    "value",
+    "paymentamount",
+    "paymentvalue",
+    "paidamount",
+    "paidvalue",
+    "collected",
+    "total",
+}
+TRAVELTEK_SUPPLIER_PAYMENT_AMOUNT_EXCLUDES = {
+    "balance",
+    "charge",
+    "date",
+    "due",
+    "fee",
+    "id",
+    "outstanding",
+    "ref",
+    "reference",
+    "tax",
+    "vat",
+}
+TRAVELTEK_SUPPLIER_PAYMENT_FAILED_WORDS = {
+    "cancelled",
+    "canceled",
+    "failed",
+    "notpaid",
+    "not paid",
+    "rejected",
+    "void",
+}
 AUTO_APPLY_FIELD_NAMES = {
     "return_date",
     "passenger_count",
@@ -697,8 +740,105 @@ def money_values_from_xml_keys(root: ElementTree.Element | None, candidate_keys:
     return values
 
 
+def direct_child_values(element: ElementTree.Element) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for attr_name, attr_value in element.attrib.items():
+        text = str(attr_value).strip()
+        if text:
+            values.setdefault(normalise_key(attr_name), text)
+    for child in element:
+        text = direct_text(child)
+        if text:
+            values.setdefault(normalise_key(local_name(child.tag)), text)
+        for attr_name, attr_value in child.attrib.items():
+            attr_text = str(attr_value).strip()
+            if attr_text:
+                values.setdefault(normalise_key(attr_name), attr_text)
+    return values
+
+
+def has_nested_payment_rows(element: ElementTree.Element) -> bool:
+    for child in element:
+        child_name = normalise_key(local_name(child.tag))
+        if child_name in TRAVELTEK_SUPPLIER_PAYMENT_ROW_NAMES:
+            return True
+    return False
+
+
+def row_text_blob(element_name: str, child_values: dict[str, str]) -> str:
+    return " ".join([element_name, *child_values.keys(), *child_values.values()]).lower()
+
+
+def row_is_failed_payment(text_blob: str) -> bool:
+    normalised_blob = normalise_key(text_blob)
+    return any(word in text_blob or normalise_key(word) in normalised_blob for word in TRAVELTEK_SUPPLIER_PAYMENT_FAILED_WORDS)
+
+
+def row_looks_like_supplier_payment(element_name: str, child_values: dict[str, str]) -> bool:
+    text_blob = row_text_blob(element_name, child_values)
+    if row_is_failed_payment(text_blob):
+        return False
+    normalised_blob = normalise_key(text_blob)
+    if element_name in {
+        "supplierpayment",
+        "supplierpayments",
+        "supplierpaymentrow",
+        "suppliertransaction",
+        "suppliertransactions",
+    }:
+        return True
+    return "supplier" in normalised_blob and ("payment" in normalised_blob or "paid" in normalised_blob)
+
+
+def money_values_from_supplier_payment_rows(root: ElementTree.Element | None) -> list[Decimal]:
+    if root is None:
+        return []
+
+    values: list[Decimal] = []
+    for element in root.iter():
+        element_name = normalise_key(local_name(element.tag))
+        if element_name not in TRAVELTEK_SUPPLIER_PAYMENT_ROW_NAMES:
+            continue
+        if has_nested_payment_rows(element):
+            continue
+
+        child_values = direct_child_values(element)
+        if not row_looks_like_supplier_payment(element_name, child_values):
+            continue
+
+        amount_options: list[Decimal] = []
+        for key, value in child_values.items():
+            if any(excluded in key for excluded in TRAVELTEK_SUPPLIER_PAYMENT_AMOUNT_EXCLUDES):
+                continue
+            if key not in TRAVELTEK_SUPPLIER_PAYMENT_AMOUNT_KEYS and not (
+                "amount" in key or "value" in key or "paid" in key or "collected" in key
+            ):
+                continue
+            try:
+                amount = parse_money(value)
+            except ValueError:
+                continue
+            if amount is not None and amount > Decimal("0.00"):
+                amount_options.append(amount)
+
+        if not amount_options and element_name in TRAVELTEK_SUPPLIER_PAID_LINE_KEYS:
+            try:
+                amount = parse_money(direct_text(element))
+            except ValueError:
+                amount = None
+            if amount is not None and amount > Decimal("0.00"):
+                amount_options.append(amount)
+
+        if amount_options:
+            values.append(max(amount_options, key=lambda amount: abs(amount)).quantize(Decimal("0.01")))
+
+    return values
+
+
 def supplier_paid_total_from_lines(flattened: dict[str, str], root: ElementTree.Element | None) -> Decimal | None:
-    line_values = money_values_from_xml_keys(root, TRAVELTEK_SUPPLIER_PAID_LINE_KEYS)
+    row_values = money_values_from_supplier_payment_rows(root)
+    exact_values = money_values_from_xml_keys(root, TRAVELTEK_SUPPLIER_PAID_LINE_KEYS)
+    line_values = row_values if row_values else exact_values
     if not line_values:
         return None
     total = sum(line_values, Decimal("0.00")).quantize(Decimal("0.01"))
@@ -728,9 +868,11 @@ def derive_traveltek_money_value(
         paid_from_lines = supplier_paid_total_from_lines(flattened, root)
         derived_from_totals = derive_paid_supplier_from_traveltek_totals(flattened)
         hinted_amount = derive_money_from_key_hints(flattened, ("supplier", "paid", "total"))
-        best_paid_amount = largest_money_value([exact_amount, paid_from_lines, derived_from_totals, hinted_amount])
+        best_paid_amount = largest_money_value([exact_amount, paid_from_lines, hinted_amount])
         if best_paid_amount is not None:
             return best_paid_amount
+        if derived_from_totals is not None:
+            return derived_from_totals
     if field_name == "imported_supplier_outstanding":
         total_due = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_total_due"])
         paid_to_supplier = derive_traveltek_money_value("non_trusted_paid_supplier", flattened, root)
