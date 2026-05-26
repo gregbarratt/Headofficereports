@@ -520,6 +520,8 @@ The Bookings page shows Traveltek customer paid and Traveltek supplier paid valu
 
 Booking Checks shows the raw Traveltek **Paid To Supplier** value in the Traveltek column. If Head Office has manually amended that supplier comparison value, the row also shows the manual value being used for the check so it is clear when a manual adjustment is affecting the match result.
 
+Booking Checks also has a **Refresh TT** button on each row. This refreshes that single booking directly from Traveltek, updates the stored booking values, and ignores any older pending automatic Traveltek suggestions for that booking so stale values cannot be applied back onto the row.
+
 Traveltek Total Due, Return Date and Passenger Count are automatically refreshed on the booking record when Traveltek is checked. They appear in Booking Checks, but they do not create separate review suggestions. Traveltek projected profit is kept for reporting/cross-checking, but it no longer creates a Traveltek Updates review item.
 
 Traveltek finance cross-check values now also auto-refresh when Traveltek is checked: Total Amount Paid, Customer Outstanding, Due To Suppliers and Paid To Supplier. This keeps Booking Checks current without Head Office having to approve each cross-check value one by one.

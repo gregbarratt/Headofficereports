@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_super_admin
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.reporting import AuditLog, TraveltekBookingUpdate, TraveltekSyncRun
+from app.models.reporting import AuditLog, Booking, TraveltekBookingUpdate, TraveltekSyncRun
 from app.models.user import User
 from app.schemas.traveltek import (
     TraveltekActiveMaintenanceRequest,
@@ -19,6 +19,7 @@ from app.schemas.traveltek import (
     TraveltekFullCatchUpBatchResponse,
     TraveltekNewReferenceScanRequest,
     TraveltekNewReferenceScanResponse,
+    TraveltekSingleBookingRefreshResponse,
     TraveltekStatusResponse,
     TraveltekSyncRequest,
     TraveltekSyncRunRead,
@@ -29,8 +30,11 @@ from app.schemas.traveltek import (
     TraveltekUpdatesResponse,
 )
 from app.services.traveltek_service import (
+    AUTO_APPLY_FIELD_NAMES,
     add_traveltek_booking_change_log,
+    apply_booking_values_from_traveltek,
     apply_traveltek_update_to_booking,
+    fetch_booking_for_existing_booking,
     import_traveltek_bookings_by_date_range,
     is_valid_traveltek_update_value,
     run_active_maintenance_update,
@@ -260,6 +264,92 @@ def scan_new_otc_references(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/bookings/{booking_ref}/refresh", response_model=TraveltekSingleBookingRefreshResponse)
+def refresh_single_traveltek_booking(
+    booking_ref: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin),
+) -> dict:
+    normalised_ref = booking_ref.strip().upper()
+    booking = db.scalar(select(Booking).where(Booking.booking_ref == normalised_ref))
+    if booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking was not found.")
+
+    run = TraveltekSyncRun(sync_type="single_booking_refresh", requested_by_user_id=current_user.id)
+    db.add(run)
+    db.flush()
+
+    try:
+        traveltek_booking = fetch_booking_for_existing_booking(booking)
+        run.api_call_count = 1
+        imported_ref, created, changed, changes, booking_id = apply_booking_values_from_traveltek(
+            db,
+            traveltek_booking.values,
+        )
+        run.checked_bookings = 1
+        run.proposals_created = 1 if changed else 0
+        run.status = "completed"
+        run.finished_at = datetime.now(UTC)
+
+        if changes:
+            add_traveltek_booking_change_log(
+                db,
+                booking_ref=imported_ref,
+                booking_id=booking_id,
+                sync_run_id=run.id,
+                changes=changes,
+                created=created,
+                actor_user_id=current_user.id,
+            )
+
+        stale_updates = list(
+            db.scalars(
+                select(TraveltekBookingUpdate).where(
+                    TraveltekBookingUpdate.booking_ref == imported_ref,
+                    TraveltekBookingUpdate.field_name.in_(AUTO_APPLY_FIELD_NAMES),
+                    TraveltekBookingUpdate.status.in_(("open", "reviewing")),
+                )
+            )
+        )
+        for update in stale_updates:
+            update.status = "ignored"
+            update.reviewed_at = datetime.now(UTC)
+            update.reviewed_by_user_id = current_user.id
+
+        db.add(
+            AuditLog(
+                actor_user_id=current_user.id,
+                action="traveltek_single_booking_refresh",
+                table_name="bookings",
+                record_id=booking_id,
+                description=f"Refreshed {imported_ref} directly from Traveltek.",
+                before_data={"booking_ref": normalised_ref},
+                after_data={
+                    "booking_ref": imported_ref,
+                    "changed": changed,
+                    "changes": changes,
+                    "ignored_stale_auto_updates": len(stale_updates),
+                    "extracted": traveltek_booking.source.get("extracted", {}),
+                },
+            )
+        )
+        db.commit()
+        return {
+            "booking_ref": imported_ref,
+            "status": run.status,
+            "changed": changed,
+            "changes": changes,
+            "extracted": traveltek_booking.source.get("extracted", {}),
+            "message": f"{imported_ref} refreshed from Traveltek. {len(stale_updates)} old auto update(s) ignored.",
+        }
+    except Exception as exc:
+        run.status = "failed"
+        run.error_summary = str(exc)
+        run.finished_at = datetime.now(UTC)
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Traveltek refresh failed: {exc}") from exc
 
 
 @router.patch("/updates/{update_id}", response_model=TraveltekBookingUpdateRead)

@@ -59,6 +59,7 @@ import {
   loginSuperAdmin,
   logoutSuperAdmin,
   onAuthExpired,
+  refreshTraveltekBooking,
   runTraveltekActiveMaintenance,
   runTraveltekFullCatchUpBatch,
   runTraveltekUpdateEverythingBatch,
@@ -1808,6 +1809,7 @@ function BookingChecksPage({ token }) {
   const [draft, setDraft] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshingTraveltekRef, setRefreshingTraveltekRef] = useState("");
   const [visibleLimit, setVisibleLimit] = useState(250);
   const [totalMatching, setTotalMatching] = useState(0);
   const bookingChecksTopScrollRef = useRef(null);
@@ -2024,6 +2026,25 @@ function BookingChecksPage({ token }) {
         ? `${row.booking_ref} has been marked for agent commission review.`
         : `${row.booking_ref} no longer needs agent commission review.`
     );
+  }
+
+  async function refreshBookingFromTraveltek(row) {
+    setRefreshingTraveltekRef(row.booking_ref);
+    setError("");
+    setMessage("");
+    try {
+      const result = await refreshTraveltekBooking({ token, bookingRef: row.booking_ref });
+      await loadBookingChecks();
+      const paidToSupplier = result.extracted?.non_trusted_paid_supplier;
+      const dueToSuppliers = result.extracted?.imported_supplier_outstanding;
+      setMessage(
+        `${row.booking_ref} refreshed from Traveltek. Paid To Supplier: ${formatMoney(paidToSupplier)}. Due to Suppliers: ${formatMoney(dueToSuppliers)}.`
+      );
+    } catch (refreshError) {
+      setError(refreshError.message || "Traveltek booking refresh could not run.");
+    } finally {
+      setRefreshingTraveltekRef("");
+    }
   }
 
   async function archiveShownFullMatches() {
@@ -2441,6 +2462,14 @@ function BookingChecksPage({ token }) {
                     </button>
                   </td>
                   <td>
+                    <button
+                      className="table-action-button"
+                      disabled={refreshingTraveltekRef === row.booking_ref}
+                      onClick={() => refreshBookingFromTraveltek(row)}
+                      type="button"
+                    >
+                      {refreshingTraveltekRef === row.booking_ref ? "Refreshing" : "Refresh TT"}
+                    </button>
                     <button className="table-action-button" onClick={() => startEditing(row)} type="button">
                       Amend
                     </button>

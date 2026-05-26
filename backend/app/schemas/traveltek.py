@@ -125,6 +125,15 @@ class TraveltekNewReferenceScanResponse(BaseModel):
     message: str
 
 
+class TraveltekSingleBookingRefreshResponse(BaseModel):
+    booking_ref: str
+    status: str
+    changed: bool
+    changes: list[dict[str, str | None]]
+    extracted: dict[str, str | None]
+    message: str
+
+
 class TraveltekChangeLogRead(BaseModel):
     id: int
     booking_ref: str | None

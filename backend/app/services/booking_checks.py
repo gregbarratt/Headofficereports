@@ -451,7 +451,6 @@ def build_booking_checks(
     departure_from: str = "",
     departure_to: str = "",
 ) -> BookingChecksResponse:
-    apply_pending_traveltek_auto_booking_fields(db)
     safe_limit = max(1, min(limit, BOOKING_CHECK_ROW_LIMIT))
     bookings = list(
         db.scalars(
@@ -514,7 +513,6 @@ def build_booking_checks_summary(
     departure_from: str = "",
     departure_to: str = "",
 ) -> BookingChecksSummary:
-    apply_pending_traveltek_auto_booking_fields(db)
     bookings = list(
         db.scalars(
             filtered_booking_statement(

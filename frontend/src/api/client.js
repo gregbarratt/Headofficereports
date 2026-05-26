@@ -256,6 +256,13 @@ export async function updateBookingArchiveStatus({ token, bookingRef, values }) 
   });
 }
 
+export async function refreshTraveltekBooking({ token, bookingRef }) {
+  return apiRequest(`/api/traveltek/bookings/${encodeURIComponent(bookingRef)}/refresh`, {
+    method: "POST",
+    token,
+  });
+}
+
 export async function getCustomerPayments(token) {
   return apiRequest("/api/customer-payments", { token });
 }
