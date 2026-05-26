@@ -251,6 +251,17 @@ TRAVELTEK_EXACT_MONEY_KEYS = {
     "imported_supplier_outstanding": ("duetosuppliers", "duetosupplier"),
     "non_trusted_paid_supplier": ("paidtosupplier", "paidtosuppliers"),
 }
+TRAVELTEK_SUPPLIER_PAID_LINE_KEYS = (
+    "paidtosupplier",
+    "paidtosuppliers",
+    "paidsupplier",
+    "paidsuppliers",
+    "supplierpaid",
+    "supplierspaid",
+    "supplierpayment",
+    "supplierpayments",
+    "supplierpaymentsmade",
+)
 AUTO_APPLY_FIELD_NAMES = {
     "return_date",
     "passenger_count",
@@ -620,6 +631,45 @@ def money_from_exact_keys(flattened: dict[str, str], candidate_keys: tuple[str, 
     return None
 
 
+def money_values_from_xml_keys(root: ElementTree.Element | None, candidate_keys: tuple[str, ...]) -> list[Decimal]:
+    if root is None:
+        return []
+    normalised_candidates = {normalise_key(key) for key in candidate_keys}
+    values: list[Decimal] = []
+
+    def add_money(value: str | None) -> None:
+        if value in {None, ""}:
+            return
+        try:
+            amount = parse_money(value)
+        except ValueError:
+            return
+        if amount is not None:
+            values.append(amount)
+
+    for element in root.iter():
+        element_key = normalise_key(local_name(element.tag))
+        if element_key in normalised_candidates:
+            add_money((element.text or "").strip())
+        for attr_name, attr_value in element.attrib.items():
+            if normalise_key(attr_name) in normalised_candidates:
+                add_money(str(attr_value).strip())
+
+    return values
+
+
+def supplier_paid_total_from_lines(flattened: dict[str, str], root: ElementTree.Element | None) -> Decimal | None:
+    line_values = money_values_from_xml_keys(root, TRAVELTEK_SUPPLIER_PAID_LINE_KEYS)
+    if not line_values:
+        return None
+    total = sum(line_values, Decimal("0.00")).quantize(Decimal("0.01"))
+    total_due = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_total_due"])
+    if total_due is not None and total > total_due + Decimal("0.01"):
+        under_total_due = [value for value in line_values if value <= total_due]
+        return max(under_total_due).quantize(Decimal("0.01")) if under_total_due else None
+    return total
+
+
 def derive_paid_supplier_from_traveltek_totals(flattened: dict[str, str]) -> Decimal | None:
     total_due = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_total_due"])
     due_to_suppliers = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["imported_supplier_outstanding"])
@@ -632,14 +682,25 @@ def derive_paid_supplier_from_traveltek_totals(flattened: dict[str, str]) -> Dec
 def derive_traveltek_money_value(
     field_name: str,
     flattened: dict[str, str],
+    root: ElementTree.Element | None = None,
 ) -> Decimal | None:
     exact_amount = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS.get(field_name, ()))
     if field_name == "non_trusted_paid_supplier":
+        paid_from_lines = supplier_paid_total_from_lines(flattened, root)
+        if paid_from_lines is not None and (exact_amount is None or abs(paid_from_lines) > abs(exact_amount)):
+            return paid_from_lines
         derived_from_totals = derive_paid_supplier_from_traveltek_totals(flattened)
         if derived_from_totals is not None and (
             exact_amount is None or abs(derived_from_totals) > abs(exact_amount)
         ):
             return derived_from_totals
+    if field_name == "imported_supplier_outstanding":
+        total_due = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_total_due"])
+        paid_from_lines = supplier_paid_total_from_lines(flattened, root)
+        if total_due is not None and paid_from_lines is not None and total_due >= paid_from_lines:
+            derived_due = (total_due - paid_from_lines).quantize(Decimal("0.01"))
+            if exact_amount is None or (exact_amount == Decimal("0.00") and derived_due > Decimal("0.00")):
+                return derived_due
     if exact_amount is not None:
         return exact_amount
     if field_name == "non_trusted_paid_supplier":
@@ -1091,7 +1152,7 @@ def extract_booking_values(flattened: dict[str, str], root: ElementTree.Element 
     for field_name, definition in FIELD_DEFINITIONS.items():
         parsed_value = None
         if definition["parser"] == "money":
-            parsed_value = derive_traveltek_money_value(field_name, flattened)
+            parsed_value = derive_traveltek_money_value(field_name, flattened, root)
         if parsed_value is None:
             raw_value = value_from_candidates(flattened, definition["candidates"])
             try:

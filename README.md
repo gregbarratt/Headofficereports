@@ -524,6 +524,8 @@ Traveltek finance cross-check values now also auto-refresh when Traveltek is che
 
 For these Traveltek finance figures, the importer prioritises the main portfolio **Financial Details** totals. This is important for values such as **Paid To Supplier**, where Traveltek may also return smaller line-level payment values elsewhere in the response.
 
+If Traveltek sends supplier-paid values as multiple payment lines, the importer adds those supplier-paid lines together before updating the booking. This prevents Booking Checks from showing only the first supplier payment line.
+
 Where Traveltek's API response gives a smaller line-level paid value, the system derives **Paid To Supplier** from the Traveltek overview figures:
 
 ```text
