@@ -538,6 +538,8 @@ If Traveltek sends supplier-paid values as multiple payment lines, the importer 
 
 The importer also recognises repeated Traveltek payment rows where the row is labelled as a supplier payment and has an amount/value field. Successful supplier payment rows are added together; failed supplier payment rows and customer payment rows are ignored. This covers Traveltek responses where the Financial Details screen total is built from several payment-section entries.
 
+When **Refresh TT** is used, Booking Checks shows a Traveltek evidence panel. The panel lists the exact lookup used, known Financial Details totals, recognised supplier payment rows, and safe field/label samples from the Traveltek response that mention supplier, paid, payment, due, balance or totals. Passwords, auth values and session keys are not shown. This helps Head Office prove whether Traveltek sent **Paid To Supplier** in the API response and what field name it used.
+
 Where Traveltek's API response gives a smaller line-level paid value, the system derives **Paid To Supplier** from the Traveltek overview figures:
 
 ```text

@@ -318,6 +318,30 @@ TRAVELTEK_SUPPLIER_PAYMENT_FAILED_WORDS = {
     "rejected",
     "void",
 }
+TRAVELTEK_DIAGNOSTIC_RELEVANT_TERMS = {
+    "balance",
+    "cost",
+    "due",
+    "nett",
+    "outstanding",
+    "paid",
+    "payment",
+    "profit",
+    "supplier",
+    "total",
+    "vat",
+}
+TRAVELTEK_DIAGNOSTIC_SENSITIVE_TERMS = {
+    "apikey",
+    "auth",
+    "credential",
+    "key",
+    "password",
+    "secret",
+    "sessionkey",
+    "token",
+    "username",
+}
 AUTO_APPLY_FIELD_NAMES = {
     "return_date",
     "passenger_count",
@@ -883,6 +907,103 @@ def serialise_money_values(values: list[Decimal]) -> list[str]:
     return [serialise_money(value) or "" for value in values]
 
 
+def compact_diagnostic_text(value: Any, max_length: int = 140) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    if len(text) <= max_length:
+        return redact_sensitive_text(text)
+    return redact_sensitive_text(text[: max_length - 3] + "...")
+
+
+def diagnostic_text_is_sensitive(*parts: Any) -> bool:
+    combined = normalise_key(" ".join(str(part or "") for part in parts))
+    return any(term in combined for term in TRAVELTEK_DIAGNOSTIC_SENSITIVE_TERMS)
+
+
+def diagnostic_text_is_relevant(*parts: Any) -> bool:
+    combined = normalise_key(" ".join(str(part or "") for part in parts))
+    return any(term in combined for term in TRAVELTEK_DIAGNOSTIC_RELEVANT_TERMS)
+
+
+def traveltek_relevant_flattened_fields(flattened: dict[str, str], limit: int = 80) -> list[dict[str, str]]:
+    fields: list[dict[str, str]] = []
+    for key, value in sorted(flattened.items()):
+        if diagnostic_text_is_sensitive(key, value):
+            continue
+        if not diagnostic_text_is_relevant(key, value):
+            continue
+        fields.append(
+            {
+                "key": compact_diagnostic_text(key, 90),
+                "value": compact_diagnostic_text(value),
+            }
+        )
+        if len(fields) >= limit:
+            break
+    return fields
+
+
+def traveltek_relevant_label_values(root: ElementTree.Element | None, limit: int = 60) -> list[dict[str, str]]:
+    if root is None:
+        return []
+    fields: list[dict[str, str]] = []
+    for label, value in sorted(collect_label_value_pairs(root).items()):
+        if diagnostic_text_is_sensitive(label, value):
+            continue
+        if not diagnostic_text_is_relevant(label, value):
+            continue
+        fields.append(
+            {
+                "label": compact_diagnostic_text(label, 90),
+                "value": compact_diagnostic_text(value),
+            }
+        )
+        if len(fields) >= limit:
+            break
+    return fields
+
+
+def traveltek_relevant_xml_fields(root: ElementTree.Element | None, limit: int = 80) -> list[dict[str, Any]]:
+    if root is None:
+        return []
+
+    fields: list[dict[str, Any]] = []
+
+    def walk(element: ElementTree.Element, parents: list[str]) -> None:
+        if len(fields) >= limit:
+            return
+
+        tag = local_name(element.tag)
+        path = [*parents, tag]
+        text = (element.text or "").strip()
+        attributes = {
+            local_name(attr_name): compact_diagnostic_text(attr_value)
+            for attr_name, attr_value in element.attrib.items()
+            if str(attr_value).strip()
+            and not diagnostic_text_is_sensitive(attr_name, attr_value)
+        }
+
+        searchable_parts = [tag, text, *attributes.keys(), *attributes.values()]
+        if (
+            not diagnostic_text_is_sensitive(*path, *searchable_parts)
+            and diagnostic_text_is_relevant(*searchable_parts)
+        ):
+            field: dict[str, Any] = {
+                "path": compact_diagnostic_text(" > ".join(path[-6:]), 160),
+                "tag": tag,
+            }
+            if text:
+                field["text"] = compact_diagnostic_text(text)
+            if attributes:
+                field["attributes"] = attributes
+            fields.append(field)
+
+        for child in element:
+            walk(child, path)
+
+    walk(root, [])
+    return fields
+
+
 def traveltek_finance_diagnostics(flattened: dict[str, str], root: ElementTree.Element | None) -> dict[str, Any]:
     overview_pairs = collect_label_value_pairs(root) if root is not None else {}
     exact_paid_values = money_values_from_xml_keys(root, TRAVELTEK_SUPPLIER_PAID_LINE_KEYS)
@@ -911,6 +1032,9 @@ def traveltek_finance_diagnostics(flattened: dict[str, str], root: ElementTree.E
         "supplier_payment_row_count": len(supplier_payment_row_values),
         "supplier_payment_row_total": serialise_money(supplier_payment_row_total),
         "derived_paid_to_supplier": serialise_money(derive_paid_supplier_from_traveltek_totals(flattened)),
+        "relevant_label_values": traveltek_relevant_label_values(root),
+        "relevant_flattened_fields": traveltek_relevant_flattened_fields(flattened),
+        "relevant_xml_fields": traveltek_relevant_xml_fields(root),
     }
 
 
@@ -1330,6 +1454,7 @@ def fetch_booking_detail(attributes: dict[str, str]) -> TraveltekBookingData:
     flattened = flatten_xml(root)
     values = extract_booking_values(flattened, root)
     diagnostics = traveltek_finance_diagnostics(flattened, root)
+    diagnostics["lookup"] = dict(attributes)
     diagnostics["chosen_paid_to_supplier"] = display_value(values.get("non_trusted_paid_supplier"))
     diagnostics["chosen_due_to_suppliers"] = display_value(values.get("imported_supplier_outstanding"))
     supplier_references = collect_supplier_references(root, flattened)

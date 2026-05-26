@@ -667,6 +667,31 @@ nav button:disabled {
   color: #344b55;
 }
 
+.traveltek-diagnostic-list {
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #d4e3e8;
+  border-radius: 5px;
+  background: #ffffff;
+}
+
+.traveltek-diagnostic-list summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.traveltek-diagnostic-list ul {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.traveltek-diagnostic-list li {
+  overflow-wrap: anywhere;
+  color: #344b55;
+}
+
 .section-heading {
   margin: 20px 0 10px;
 }

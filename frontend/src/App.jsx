@@ -216,6 +216,36 @@ function formatDiagnosticMoneyList(values) {
   return values.map((value) => formatMoney(value)).join(", ");
 }
 
+function formatDiagnosticLookup(lookup) {
+  if (!lookup || typeof lookup !== "object") {
+    return "-";
+  }
+  const entries = Object.entries(lookup).filter(([, value]) => value !== null && value !== undefined && value !== "");
+  if (entries.length === 0) {
+    return "-";
+  }
+  return entries.map(([key, value]) => `${key}: ${value}`).join(", ");
+}
+
+function formatTraveltekDiagnosticItem(item) {
+  if (!item || typeof item !== "object") {
+    return String(item ?? "-");
+  }
+  if ("label" in item) {
+    return `${item.label}: ${item.value || "-"}`;
+  }
+  if ("key" in item) {
+    return `${item.key}: ${item.value || "-"}`;
+  }
+  const attributes = item.attributes
+    ? Object.entries(item.attributes)
+        .map(([key, value]) => `${key}=${value}`)
+        .join(", ")
+    : "";
+  const valueParts = [item.text, attributes].filter(Boolean).join(" | ");
+  return `${item.path || item.tag || "field"}${valueParts ? `: ${valueParts}` : ""}`;
+}
+
 function textMatches(value, search) {
   const searchValue = search.trim().toLowerCase();
   if (!searchValue) {
@@ -2168,6 +2198,23 @@ function BookingChecksPage({ token }) {
     downloadCsv("booking-checks.csv", headers, csvRows);
   }
 
+  function renderTraveltekDiagnosticList(title, items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return null;
+    }
+    return (
+      <details className="traveltek-diagnostic-list" open>
+        <summary>{title}</summary>
+        <ul>
+          {items.slice(0, 20).map((item, index) => (
+            <li key={`${title}-${index}`}>{formatTraveltekDiagnosticItem(item)}</li>
+          ))}
+        </ul>
+        {items.length > 20 ? <span>{items.length - 20} more Traveltek field(s) hidden.</span> : null}
+      </details>
+    );
+  }
+
   function renderTraveltekDiagnosticBlock(title, diagnostics) {
     if (!diagnostics) {
       return null;
@@ -2175,6 +2222,7 @@ function BookingChecksPage({ token }) {
     return (
       <div className="traveltek-diagnostic-block">
         <strong>{title}</strong>
+        <span>Lookup used: {formatDiagnosticLookup(diagnostics.lookup)}</span>
         <span>Financial Details Paid To Supplier: {formatMoney(diagnostics.financial_details_paid_to_supplier)}</span>
         <span>Financial Details Due To Suppliers: {formatMoney(diagnostics.financial_details_due_to_suppliers)}</span>
         <span>Traveltek Total Due: {formatMoney(diagnostics.traveltek_total_due)}</span>
@@ -2184,6 +2232,9 @@ function BookingChecksPage({ token }) {
         <span>Exact Paid To Supplier values: {formatDiagnosticMoneyList(diagnostics.exact_paid_to_supplier_values)}</span>
         <span>Text Paid To Supplier values: {formatDiagnosticMoneyList(diagnostics.text_paid_to_supplier_values)}</span>
         <span>Chosen Paid To Supplier: {formatMoney(diagnostics.chosen_paid_to_supplier)}</span>
+        {renderTraveltekDiagnosticList("Relevant Traveltek labels", diagnostics.relevant_label_values)}
+        {renderTraveltekDiagnosticList("Relevant Traveltek flat fields", diagnostics.relevant_flattened_fields)}
+        {renderTraveltekDiagnosticList("Relevant Traveltek XML fields", diagnostics.relevant_xml_fields)}
       </div>
     );
   }
