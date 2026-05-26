@@ -2393,7 +2393,14 @@ function BookingChecksPage({ token }) {
                   <td>{formatMoney(row.traveltek_due_to_suppliers)}</td>
                   <td>{formatMoney(row.expected_supplier_total)}</td>
                   <td>{formatMoney(row.supplier_taps_total)}</td>
-                  <td>{formatMoney(row.supplier_tt_total)}</td>
+                  <td>
+                    {formatMoney(row.traveltek_paid_to_supplier ?? row.raw_supplier_tt_total)}
+                    {row.manual_adjustments?.supplier_tt_total !== undefined ? (
+                      <span className="variance-note">
+                        Manual used: {formatMoney(row.supplier_tt_total)}
+                      </span>
+                    ) : null}
+                  </td>
                     <td>
                       <CheckBadge status={row.supplier_tt_check} />
                       <span className="variance-note">{formatMoney(row.supplier_tt_variance)}</span>

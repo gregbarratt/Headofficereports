@@ -518,11 +518,15 @@ Traveltek total amount paid, outstanding, total due, due to suppliers, paid to s
 
 The Bookings page shows Traveltek customer paid and Traveltek supplier paid values beside the gross value and supplier nett, so Head Office can quickly see what Traveltek says has been received from the customer and paid out to suppliers.
 
+Booking Checks shows the raw Traveltek **Paid To Supplier** value in the Traveltek column. If Head Office has manually amended that supplier comparison value, the row also shows the manual value being used for the check so it is clear when a manual adjustment is affecting the match result.
+
 Traveltek Total Due, Return Date and Passenger Count are automatically refreshed on the booking record when Traveltek is checked. They appear in Booking Checks, but they do not create separate review suggestions. Traveltek projected profit is kept for reporting/cross-checking, but it no longer creates a Traveltek Updates review item.
 
 Traveltek finance cross-check values now also auto-refresh when Traveltek is checked: Total Amount Paid, Customer Outstanding, Due To Suppliers and Paid To Supplier. This keeps Booking Checks current without Head Office having to approve each cross-check value one by one.
 
 For these Traveltek finance figures, the importer prioritises the main portfolio **Financial Details** totals. This is important for values such as **Paid To Supplier**, where Traveltek may also return smaller line-level payment values elsewhere in the response.
+
+The importer now also scans for exact Traveltek overview labels such as **Paid To Supplier**, **Due to Suppliers**, **Total Due** and **Total Amount Paid** in the API response text. If those labels are present, their values win over lower-level payment fields.
 
 If Traveltek sends supplier-paid values as multiple payment lines, the importer adds those supplier-paid lines together before updating the booking. This prevents Booking Checks from showing only the first supplier payment line.
 

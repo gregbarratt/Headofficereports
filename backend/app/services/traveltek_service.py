@@ -251,6 +251,15 @@ TRAVELTEK_EXACT_MONEY_KEYS = {
     "imported_supplier_outstanding": ("duetosuppliers", "duetosupplier"),
     "non_trusted_paid_supplier": ("paidtosupplier", "paidtosuppliers"),
 }
+TRAVELTEK_TEXT_MONEY_LABELS = {
+    "gross_booking_value": ("Total Cost", "Holiday Price"),
+    "non_trusted_total_received": ("Total Amount Paid",),
+    "imported_customer_outstanding": ("Outstanding",),
+    "non_trusted_total_due": ("Total Due",),
+    "imported_supplier_outstanding": ("Due to Suppliers", "Due to Supplier"),
+    "non_trusted_paid_supplier": ("Paid To Supplier", "Paid To Suppliers"),
+    "non_trusted_projected_profit": ("Profit",),
+}
 TRAVELTEK_SUPPLIER_PAID_LINE_KEYS = (
     "paidtosupplier",
     "paidtosuppliers",
@@ -631,6 +640,29 @@ def money_from_exact_keys(flattened: dict[str, str], candidate_keys: tuple[str, 
     return None
 
 
+def money_from_text_labels(root: ElementTree.Element | None, labels: tuple[str, ...]) -> Decimal | None:
+    if root is None:
+        return None
+    text = direct_text(root) or ""
+    if not text:
+        return None
+    for label in labels:
+        pattern = re.compile(
+            rf"{re.escape(label)}\s*[:\-]?\s*(?:£|\?)?\s*(\(?-?\d[\d,]*(?:\.\d{{2}})?\)?)",
+            re.IGNORECASE,
+        )
+        match = pattern.search(text)
+        if not match:
+            continue
+        try:
+            amount = parse_money(match.group(1))
+        except ValueError:
+            continue
+        if amount is not None:
+            return amount
+    return None
+
+
 def money_values_from_xml_keys(root: ElementTree.Element | None, candidate_keys: tuple[str, ...]) -> list[Decimal]:
     if root is None:
         return []
@@ -684,6 +716,10 @@ def derive_traveltek_money_value(
     flattened: dict[str, str],
     root: ElementTree.Element | None = None,
 ) -> Decimal | None:
+    labelled_amount = money_from_text_labels(root, TRAVELTEK_TEXT_MONEY_LABELS.get(field_name, ()))
+    if labelled_amount is not None:
+        return labelled_amount
+
     exact_amount = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS.get(field_name, ()))
     if field_name == "non_trusted_paid_supplier":
         paid_from_lines = supplier_paid_total_from_lines(flattened, root)
