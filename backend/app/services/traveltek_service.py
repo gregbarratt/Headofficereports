@@ -1134,12 +1134,91 @@ def fetch_booking_detail(attributes: dict[str, str]) -> TraveltekBookingData:
             "extracted": {key: display_value(value) for key, value in values.items()},
             "supplier_references": supplier_references,
             "sample": element_to_source(root),
+            "api_calls": 1,
         },
     )
 
 
 def fetch_booking_by_reference(booking_ref: str) -> TraveltekBookingData:
     return fetch_booking_detail({"bookingreference": booking_ref})
+
+
+def money_value(values: dict[str, Any], key: str) -> Decimal | None:
+    value = values.get(key)
+    if value is None:
+        return None
+    try:
+        return Decimal(value).quantize(Decimal("0.01"))
+    except Exception:
+        return None
+
+
+def traveltek_detail_looks_incomplete(data: TraveltekBookingData) -> bool:
+    values = data.values
+    total_due = money_value(values, "non_trusted_total_due")
+    paid_to_supplier = money_value(values, "non_trusted_paid_supplier")
+    due_to_suppliers = money_value(values, "imported_supplier_outstanding")
+
+    if total_due is None or total_due <= Decimal("0.00"):
+        return paid_to_supplier is None
+
+    if paid_to_supplier is None:
+        return True
+
+    if due_to_suppliers is None:
+        return paid_to_supplier < total_due
+
+    expected_total = (paid_to_supplier + due_to_suppliers).quantize(Decimal("0.01"))
+    return abs(expected_total - total_due) > Decimal("1.00") and paid_to_supplier < total_due
+
+
+def merge_traveltek_booking_data(primary: TraveltekBookingData, secondary: TraveltekBookingData) -> TraveltekBookingData:
+    values = dict(primary.values)
+    source_values = [primary.values, secondary.values]
+
+    for key, value in secondary.values.items():
+        if values.get(key) in {None, ""} and value not in {None, ""}:
+            values[key] = value
+
+    for key in (
+        "non_trusted_paid_supplier",
+        "imported_supplier_outstanding",
+        "non_trusted_total_due",
+        "non_trusted_total_received",
+        "gross_booking_value",
+        "expected_supplier_nett",
+    ):
+        money_options = [money_value(next_values, key) for next_values in source_values]
+        best_value = largest_money_value(money_options)
+        if best_value is not None:
+            values[key] = best_value
+
+    primary_total_due = money_value(values, "non_trusted_total_due")
+    primary_due_to_suppliers = money_value(values, "imported_supplier_outstanding")
+    primary_paid_to_supplier = money_value(values, "non_trusted_paid_supplier")
+    if (
+        primary_total_due is not None
+        and primary_due_to_suppliers is not None
+        and primary_due_to_suppliers >= Decimal("0.00")
+        and (primary_paid_to_supplier is None or primary_paid_to_supplier + primary_due_to_suppliers < primary_total_due)
+    ):
+        values["non_trusted_paid_supplier"] = (primary_total_due - primary_due_to_suppliers).quantize(Decimal("0.01"))
+
+    primary_source = primary.source
+    secondary_source = secondary.source
+    return TraveltekBookingData(
+        values=values,
+        source={
+            **primary_source,
+            "lookup": {
+                "primary": primary_source.get("lookup"),
+                "secondary": secondary_source.get("lookup"),
+            },
+            "extracted": {key: display_value(value) for key, value in values.items()},
+            "lookup_notes": "Merged Traveltek booking ID lookup with booking reference lookup.",
+            "api_calls": int(primary_source.get("api_calls") or 1) + int(secondary_source.get("api_calls") or 1),
+        },
+    )
 
 
 def format_otc_booking_ref(number_value: int) -> str:
@@ -1168,7 +1247,11 @@ def highest_existing_otc_booking_ref(db: Session) -> tuple[str | None, int]:
 def fetch_booking_for_existing_booking(booking: Booking) -> TraveltekBookingData:
     if booking.traveltek_booking_id:
         try:
-            return fetch_booking_detail({"bookingid": booking.traveltek_booking_id})
+            booking_id_data = fetch_booking_detail({"bookingid": booking.traveltek_booking_id})
+            if not traveltek_detail_looks_incomplete(booking_id_data):
+                return booking_id_data
+            reference_data = fetch_booking_by_reference(booking.booking_ref)
+            return merge_traveltek_booking_data(booking_id_data, reference_data)
         except TraveltekApiError as booking_id_error:
             try:
                 return fetch_booking_by_reference(booking.booking_ref)
@@ -1694,8 +1777,8 @@ def run_update_everything_existing_booking_batch(
     changed_count = 0
     for booking in bookings:
         try:
-            run.api_call_count += 1
             traveltek_booking = fetch_booking_for_existing_booking(booking)
+            run.api_call_count += int(traveltek_booking.source.get("api_calls") or 1)
             values = dict(traveltek_booking.values)
             # This refresh is for a booking we already hold; keep our booking key to avoid
             # creating a duplicate if Traveltek also returns an external reference.
@@ -2011,8 +2094,8 @@ def scan_active_bookings_for_traveltek_updates(
 
     for booking in bookings:
         try:
-            run.api_call_count += 1
             traveltek_booking = fetch_booking_for_existing_booking(booking)
+            run.api_call_count += int(traveltek_booking.source.get("api_calls") or 1)
             run.checked_bookings += 1
             auto_changes: list[dict[str, str | None]] = []
 

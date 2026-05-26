@@ -283,7 +283,7 @@ def refresh_single_traveltek_booking(
 
     try:
         traveltek_booking = fetch_booking_for_existing_booking(booking)
-        run.api_call_count = 1
+        run.api_call_count = int(traveltek_booking.source.get("api_calls") or 1)
         imported_ref, created, changed, changes, booking_id = apply_booking_values_from_traveltek(
             db,
             traveltek_booking.values,

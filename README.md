@@ -544,6 +544,8 @@ Traveltek Total Due - Traveltek Due To Suppliers = Traveltek Paid To Supplier
 
 When refreshing an existing booking, the system first tries the stored Traveltek booking ID. If Traveltek rejects that lookup, the system now falls back to the OTC booking reference before recording an error. This avoids failed refreshes where the booking exists but Traveltek will only return it by reference.
 
+If the Traveltek booking ID lookup succeeds but looks financially incomplete, for example **Paid To Supplier** is missing or does not add up with **Total Due** and **Due To Suppliers**, the system also checks the same booking by OTC booking reference and merges the better supplier figures. This matches the working Traveltek/Postman flow that uses `bookingreference`.
+
 Booking Checks now labels PAX as Passenger Count so it matches Traveltek wording. The Traveltek importer also counts passenger rows from the detailed portfolio if Traveltek does not send one simple PAX total. Each row also shows the last booking update date and time, so Head Office can see when a booking was last changed by an import, Traveltek refresh, or manual booking check amendment.
 
 Traveltek Updates now includes a Booking change log. Whenever a Traveltek import or refresh changes a booking, the system records the booking reference, the type of change, the field names, the old value and the new value. Cancellations, customer payment changes, gross value changes, supplier payment changes and balance changes are labelled so Head Office can review what has moved.
