@@ -620,11 +620,26 @@ def money_from_exact_keys(flattened: dict[str, str], candidate_keys: tuple[str, 
     return None
 
 
+def derive_paid_supplier_from_traveltek_totals(flattened: dict[str, str]) -> Decimal | None:
+    total_due = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_total_due"])
+    due_to_suppliers = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["imported_supplier_outstanding"])
+    if total_due is None or due_to_suppliers is None:
+        return None
+    paid_to_supplier = (total_due - due_to_suppliers).quantize(Decimal("0.01"))
+    return paid_to_supplier if paid_to_supplier >= Decimal("0.00") else None
+
+
 def derive_traveltek_money_value(
     field_name: str,
     flattened: dict[str, str],
 ) -> Decimal | None:
     exact_amount = money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS.get(field_name, ()))
+    if field_name == "non_trusted_paid_supplier":
+        derived_from_totals = derive_paid_supplier_from_traveltek_totals(flattened)
+        if derived_from_totals is not None and (
+            exact_amount is None or abs(derived_from_totals) > abs(exact_amount)
+        ):
+            return derived_from_totals
     if exact_amount is not None:
         return exact_amount
     if field_name == "non_trusted_paid_supplier":
