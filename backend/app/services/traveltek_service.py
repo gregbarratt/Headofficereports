@@ -280,6 +280,10 @@ TRAVELTEK_SUPPLIER_PAYMENT_ROW_NAMES = {
     "payment",
     "paymentrow",
     "transaction",
+    "item",
+    "detail",
+    "record",
+    "entry",
     "row",
 }
 TRAVELTEK_SUPPLIER_PAYMENT_AMOUNT_KEYS = {
@@ -713,6 +717,28 @@ def largest_money_value(values: list[Decimal | None]) -> Decimal | None:
     return max(valid_values, key=lambda amount: abs(amount)).quantize(Decimal("0.01"))
 
 
+def money_values_from_text_labels(root: ElementTree.Element | None, labels: tuple[str, ...]) -> list[Decimal]:
+    if root is None:
+        return []
+    text = direct_text(root) or ""
+    if not text:
+        return []
+    values: list[Decimal] = []
+    for label in labels:
+        pattern = re.compile(
+            rf"{re.escape(label)}[^\dÂ£?()-]{{0,80}}(?:Â£|\?)?\s*(\(?-?\d[\d,]*(?:\.\d{{2}})?\)?)",
+            re.IGNORECASE,
+        )
+        for match in pattern.finditer(text):
+            try:
+                amount = parse_money(match.group(1))
+            except ValueError:
+                continue
+            if amount is not None:
+                values.append(amount)
+    return values
+
+
 def money_values_from_xml_keys(root: ElementTree.Element | None, candidate_keys: tuple[str, ...]) -> list[Decimal]:
     if root is None:
         return []
@@ -847,6 +873,45 @@ def supplier_paid_total_from_lines(flattened: dict[str, str], root: ElementTree.
         under_total_due = [value for value in line_values if value <= total_due]
         return max(under_total_due).quantize(Decimal("0.01")) if under_total_due else None
     return total
+
+
+def serialise_money(value: Decimal | None) -> str | None:
+    return str(value.quantize(Decimal("0.01"))) if value is not None else None
+
+
+def serialise_money_values(values: list[Decimal]) -> list[str]:
+    return [serialise_money(value) or "" for value in values]
+
+
+def traveltek_finance_diagnostics(flattened: dict[str, str], root: ElementTree.Element | None) -> dict[str, Any]:
+    overview_pairs = collect_label_value_pairs(root) if root is not None else {}
+    exact_paid_values = money_values_from_xml_keys(root, TRAVELTEK_SUPPLIER_PAID_LINE_KEYS)
+    supplier_payment_row_values = money_values_from_supplier_payment_rows(root)
+    supplier_payment_row_total = (
+        sum(supplier_payment_row_values, Decimal("0.00")).quantize(Decimal("0.01"))
+        if supplier_payment_row_values
+        else None
+    )
+
+    return {
+        "financial_details_paid_to_supplier": serialise_money(
+            money_from_exact_keys(overview_pairs, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_paid_supplier"])
+        ),
+        "financial_details_due_to_suppliers": serialise_money(
+            money_from_exact_keys(overview_pairs, TRAVELTEK_EXACT_MONEY_KEYS["imported_supplier_outstanding"])
+        ),
+        "traveltek_total_due": serialise_money(
+            money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_total_due"])
+        ),
+        "exact_paid_to_supplier_values": serialise_money_values(exact_paid_values),
+        "text_paid_to_supplier_values": serialise_money_values(
+            money_values_from_text_labels(root, TRAVELTEK_TEXT_MONEY_LABELS["non_trusted_paid_supplier"])
+        ),
+        "supplier_payment_row_values": serialise_money_values(supplier_payment_row_values),
+        "supplier_payment_row_count": len(supplier_payment_row_values),
+        "supplier_payment_row_total": serialise_money(supplier_payment_row_total),
+        "derived_paid_to_supplier": serialise_money(derive_paid_supplier_from_traveltek_totals(flattened)),
+    }
 
 
 def derive_paid_supplier_from_traveltek_totals(flattened: dict[str, str]) -> Decimal | None:
@@ -1264,6 +1329,9 @@ def fetch_booking_detail(attributes: dict[str, str]) -> TraveltekBookingData:
     root = call_traveltek("getportfolio", attributes, secure_endpoint=True)
     flattened = flatten_xml(root)
     values = extract_booking_values(flattened, root)
+    diagnostics = traveltek_finance_diagnostics(flattened, root)
+    diagnostics["chosen_paid_to_supplier"] = display_value(values.get("non_trusted_paid_supplier"))
+    diagnostics["chosen_due_to_suppliers"] = display_value(values.get("imported_supplier_outstanding"))
     supplier_references = collect_supplier_references(root, flattened)
     if supplier_references:
         values["supplier_references_raw"] = " | ".join(supplier_references)
@@ -1274,6 +1342,7 @@ def fetch_booking_detail(attributes: dict[str, str]) -> TraveltekBookingData:
             "endpoint": "secure",
             "lookup": attributes,
             "extracted": {key: display_value(value) for key, value in values.items()},
+            "diagnostics": diagnostics,
             "supplier_references": supplier_references,
             "sample": element_to_source(root),
             "api_calls": 1,
@@ -1341,13 +1410,19 @@ def merge_traveltek_booking_data(primary: TraveltekBookingData, secondary: Trave
     if (
         primary_total_due is not None
         and primary_due_to_suppliers is not None
-        and primary_due_to_suppliers >= Decimal("0.00")
+        and primary_due_to_suppliers > Decimal("0.00")
         and (primary_paid_to_supplier is None or primary_paid_to_supplier + primary_due_to_suppliers < primary_total_due)
     ):
         values["non_trusted_paid_supplier"] = (primary_total_due - primary_due_to_suppliers).quantize(Decimal("0.01"))
 
     primary_source = primary.source
     secondary_source = secondary.source
+    diagnostics = {
+        "primary": primary_source.get("diagnostics"),
+        "secondary": secondary_source.get("diagnostics"),
+        "chosen_paid_to_supplier": display_value(values.get("non_trusted_paid_supplier")),
+        "chosen_due_to_suppliers": display_value(values.get("imported_supplier_outstanding")),
+    }
     return TraveltekBookingData(
         values=values,
         source={
@@ -1357,6 +1432,7 @@ def merge_traveltek_booking_data(primary: TraveltekBookingData, secondary: Trave
                 "secondary": secondary_source.get("lookup"),
             },
             "extracted": {key: display_value(value) for key, value in values.items()},
+            "diagnostics": diagnostics,
             "lookup_notes": "Merged Traveltek booking ID lookup with booking reference lookup.",
             "api_calls": int(primary_source.get("api_calls") or 1) + int(secondary_source.get("api_calls") or 1),
         },

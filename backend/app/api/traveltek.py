@@ -332,6 +332,7 @@ def refresh_single_traveltek_booking(
                     "changes": changes,
                     "ignored_stale_auto_updates": len(stale_updates),
                     "extracted": traveltek_booking.source.get("extracted", {}),
+                    "diagnostics": traveltek_booking.source.get("diagnostics"),
                 },
             )
         )
@@ -342,6 +343,7 @@ def refresh_single_traveltek_booking(
             "changed": changed,
             "changes": changes,
             "extracted": traveltek_booking.source.get("extracted", {}),
+            "diagnostics": traveltek_booking.source.get("diagnostics"),
             "message": f"{imported_ref} refreshed from Traveltek. {len(stale_updates)} old auto update(s) ignored.",
         }
     except Exception as exc:

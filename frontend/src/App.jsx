@@ -209,6 +209,13 @@ function formatMoney(value) {
   }).format(Number(value));
 }
 
+function formatDiagnosticMoneyList(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return "-";
+  }
+  return values.map((value) => formatMoney(value)).join(", ");
+}
+
 function textMatches(value, search) {
   const searchValue = search.trim().toLowerCase();
   if (!searchValue) {
@@ -1810,6 +1817,7 @@ function BookingChecksPage({ token }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshingTraveltekRef, setRefreshingTraveltekRef] = useState("");
+  const [lastTraveltekDiagnostics, setLastTraveltekDiagnostics] = useState(null);
   const [visibleLimit, setVisibleLimit] = useState(250);
   const [totalMatching, setTotalMatching] = useState(0);
   const bookingChecksTopScrollRef = useRef(null);
@@ -2032,11 +2040,16 @@ function BookingChecksPage({ token }) {
     setRefreshingTraveltekRef(row.booking_ref);
     setError("");
     setMessage("");
+    setLastTraveltekDiagnostics(null);
     try {
       const result = await refreshTraveltekBooking({ token, bookingRef: row.booking_ref });
       await loadBookingChecks();
       const paidToSupplier = result.extracted?.non_trusted_paid_supplier;
       const dueToSuppliers = result.extracted?.imported_supplier_outstanding;
+      setLastTraveltekDiagnostics({
+        booking_ref: row.booking_ref,
+        diagnostics: result.diagnostics || null,
+      });
       setMessage(
         `${row.booking_ref} refreshed from Traveltek. Paid To Supplier: ${formatMoney(paidToSupplier)}. Due to Suppliers: ${formatMoney(dueToSuppliers)}.`
       );
@@ -2155,6 +2168,48 @@ function BookingChecksPage({ token }) {
     downloadCsv("booking-checks.csv", headers, csvRows);
   }
 
+  function renderTraveltekDiagnosticBlock(title, diagnostics) {
+    if (!diagnostics) {
+      return null;
+    }
+    return (
+      <div className="traveltek-diagnostic-block">
+        <strong>{title}</strong>
+        <span>Financial Details Paid To Supplier: {formatMoney(diagnostics.financial_details_paid_to_supplier)}</span>
+        <span>Financial Details Due To Suppliers: {formatMoney(diagnostics.financial_details_due_to_suppliers)}</span>
+        <span>Traveltek Total Due: {formatMoney(diagnostics.traveltek_total_due)}</span>
+        <span>Supplier payment row count: {diagnostics.supplier_payment_row_count ?? 0}</span>
+        <span>Supplier payment row values: {formatDiagnosticMoneyList(diagnostics.supplier_payment_row_values)}</span>
+        <span>Supplier payment row total: {formatMoney(diagnostics.supplier_payment_row_total)}</span>
+        <span>Exact Paid To Supplier values: {formatDiagnosticMoneyList(diagnostics.exact_paid_to_supplier_values)}</span>
+        <span>Text Paid To Supplier values: {formatDiagnosticMoneyList(diagnostics.text_paid_to_supplier_values)}</span>
+        <span>Chosen Paid To Supplier: {formatMoney(diagnostics.chosen_paid_to_supplier)}</span>
+      </div>
+    );
+  }
+
+  function renderTraveltekDiagnostics() {
+    if (!lastTraveltekDiagnostics?.diagnostics) {
+      return null;
+    }
+    const diagnostics = lastTraveltekDiagnostics.diagnostics;
+    return (
+      <div className="traveltek-diagnostics">
+        <strong>Traveltek refresh evidence for {lastTraveltekDiagnostics.booking_ref}</strong>
+        {diagnostics.primary || diagnostics.secondary ? (
+          <div className="traveltek-diagnostic-grid">
+            {renderTraveltekDiagnosticBlock("Booking ID lookup", diagnostics.primary)}
+            {renderTraveltekDiagnosticBlock("Booking reference lookup", diagnostics.secondary)}
+          </div>
+        ) : (
+          <div className="traveltek-diagnostic-grid">
+            {renderTraveltekDiagnosticBlock("Traveltek lookup", diagnostics)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <section className="panel booking-checks-panel">
       <div className="panel-heading">
@@ -2167,6 +2222,7 @@ function BookingChecksPage({ token }) {
 
       {error ? <p className="form-error">{error}</p> : null}
       {message ? <p className="form-success">{message}</p> : null}
+      {renderTraveltekDiagnostics()}
 
       <div className="summary-strip booking-checks-summary">
         <div>

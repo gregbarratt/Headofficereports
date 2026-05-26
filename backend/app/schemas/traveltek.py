@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -131,6 +132,7 @@ class TraveltekSingleBookingRefreshResponse(BaseModel):
     changed: bool
     changes: list[dict[str, str | None]]
     extracted: dict[str, str | None]
+    diagnostics: dict[str, Any] | None = None
     message: str
 
 

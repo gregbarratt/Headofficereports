@@ -641,6 +641,32 @@ nav button:disabled {
   font-weight: 700;
 }
 
+.traveltek-diagnostics {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid #bdd7df;
+  border-radius: 6px;
+  background: #f5fbfd;
+}
+
+.traveltek-diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.traveltek-diagnostic-block {
+  display: grid;
+  gap: 4px;
+  font-size: 0.82rem;
+}
+
+.traveltek-diagnostic-block span {
+  color: #344b55;
+}
+
 .section-heading {
   margin: 20px 0 10px;
 }
