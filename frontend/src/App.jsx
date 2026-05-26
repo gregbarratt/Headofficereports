@@ -2225,6 +2225,7 @@ function BookingChecksPage({ token }) {
         <span>Lookup used: {formatDiagnosticLookup(diagnostics.lookup)}</span>
         <span>Financial Details Paid To Supplier: {formatMoney(diagnostics.financial_details_paid_to_supplier)}</span>
         <span>Financial Details Due To Suppliers: {formatMoney(diagnostics.financial_details_due_to_suppliers)}</span>
+        <span>Traveltek supplier due field: {formatMoney(diagnostics.reliable_supplier_due_value)}</span>
         <span>Traveltek Total Due: {formatMoney(diagnostics.traveltek_total_due)}</span>
         <span>Supplier payment row count: {diagnostics.supplier_payment_row_count ?? 0}</span>
         <span>Supplier payment row values: {formatDiagnosticMoneyList(diagnostics.supplier_payment_row_values)}</span>

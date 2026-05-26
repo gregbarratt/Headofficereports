@@ -540,6 +540,8 @@ The importer also recognises repeated Traveltek payment rows where the row is la
 
 When **Refresh TT** is used, Booking Checks shows a Traveltek evidence panel. The panel lists the exact lookup used, known Financial Details totals, recognised supplier payment rows, and safe field/label samples from the Traveltek response that mention supplier, paid, payment, due, balance or totals. Passwords, auth values and session keys are not shown. This helps Head Office prove whether Traveltek sent **Paid To Supplier** in the API response and what field name it used.
 
+Traveltek's portfolio API can send the supplier paid value as `paidtoop`. The importer treats that as **Traveltek Paid To Supplier**. Traveltek can also send the supplier balance due as `currentdue` or `currentdueto`, which is used as **Traveltek Due To Suppliers**.
+
 Where Traveltek's API response gives a smaller line-level paid value, the system derives **Paid To Supplier** from the Traveltek overview figures:
 
 ```text

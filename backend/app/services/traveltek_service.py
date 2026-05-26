@@ -141,6 +141,12 @@ FIELD_DEFINITIONS = {
     "imported_supplier_outstanding": {
         "label": "Traveltek due to suppliers",
         "candidates": (
+            "currentdue",
+            "currentdueto",
+            "currentduetosupplier",
+            "currentduetosuppliers",
+            "currentsupplierdue",
+            "currentsuppliersdue",
             "duetosuppliers",
             "due_to_suppliers",
             "duetosupplier",
@@ -179,6 +185,10 @@ FIELD_DEFINITIONS = {
     "non_trusted_paid_supplier": {
         "label": "Traveltek paid to supplier",
         "candidates": (
+            "paidtoop",
+            "paid_to_op",
+            "paidtooperator",
+            "paid_to_operator",
             "paidtosupplier",
             "paid_to_supplier",
             "paidtosuppliers",
@@ -248,8 +258,17 @@ TRAVELTEK_EXACT_MONEY_KEYS = {
     "non_trusted_total_received": ("totalamountpaid",),
     "imported_customer_outstanding": ("outstanding",),
     "non_trusted_total_due": ("totaldue",),
-    "imported_supplier_outstanding": ("duetosuppliers", "duetosupplier"),
-    "non_trusted_paid_supplier": ("paidtosupplier", "paidtosuppliers"),
+    "imported_supplier_outstanding": (
+        "currentdue",
+        "currentdueto",
+        "currentduetosupplier",
+        "currentduetosuppliers",
+        "currentsupplierdue",
+        "currentsuppliersdue",
+        "duetosuppliers",
+        "duetosupplier",
+    ),
+    "non_trusted_paid_supplier": ("paidtoop", "paidtooperator", "paidtosupplier", "paidtosuppliers"),
 }
 TRAVELTEK_TEXT_MONEY_LABELS = {
     "gross_booking_value": ("Total Cost", "Holiday Price"),
@@ -261,6 +280,8 @@ TRAVELTEK_TEXT_MONEY_LABELS = {
     "non_trusted_projected_profit": ("Profit",),
 }
 TRAVELTEK_SUPPLIER_PAID_LINE_KEYS = (
+    "paidtoop",
+    "paidtooperator",
     "paidtosupplier",
     "paidtosuppliers",
     "paidsupplier",
@@ -270,6 +291,14 @@ TRAVELTEK_SUPPLIER_PAID_LINE_KEYS = (
     "supplierpayment",
     "supplierpayments",
     "supplierpaymentsmade",
+)
+TRAVELTEK_RELIABLE_SUPPLIER_DUE_KEYS = (
+    "currentdue",
+    "currentdueto",
+    "currentduetosupplier",
+    "currentduetosuppliers",
+    "currentsupplierdue",
+    "currentsuppliersdue",
 )
 TRAVELTEK_SUPPLIER_PAYMENT_ROW_NAMES = {
     "supplierpayment",
@@ -1007,6 +1036,7 @@ def traveltek_relevant_xml_fields(root: ElementTree.Element | None, limit: int =
 def traveltek_finance_diagnostics(flattened: dict[str, str], root: ElementTree.Element | None) -> dict[str, Any]:
     overview_pairs = collect_label_value_pairs(root) if root is not None else {}
     exact_paid_values = money_values_from_xml_keys(root, TRAVELTEK_SUPPLIER_PAID_LINE_KEYS)
+    reliable_supplier_due = money_from_exact_keys(flattened, TRAVELTEK_RELIABLE_SUPPLIER_DUE_KEYS)
     supplier_payment_row_values = money_values_from_supplier_payment_rows(root)
     supplier_payment_row_total = (
         sum(supplier_payment_row_values, Decimal("0.00")).quantize(Decimal("0.01"))
@@ -1021,6 +1051,7 @@ def traveltek_finance_diagnostics(flattened: dict[str, str], root: ElementTree.E
         "financial_details_due_to_suppliers": serialise_money(
             money_from_exact_keys(overview_pairs, TRAVELTEK_EXACT_MONEY_KEYS["imported_supplier_outstanding"])
         ),
+        "reliable_supplier_due_value": serialise_money(reliable_supplier_due),
         "traveltek_total_due": serialise_money(
             money_from_exact_keys(flattened, TRAVELTEK_EXACT_MONEY_KEYS["non_trusted_total_due"])
         ),
