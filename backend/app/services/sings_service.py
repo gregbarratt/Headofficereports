@@ -13,9 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_session_factory
-from app.models.reporting import AuditLog, Booking, CustomerPayment, UploadBatch
+from app.models.reporting import AuditLog, Booking, CustomerPayment, PaymentMethodRule, UploadBatch
 from app.services.customer_payment_import import (
     calculate_estimated_fee,
+    fetch_bookings_by_ref,
     find_booking_by_reference,
     find_lower_confidence_booking,
     find_payment_method_rule,
@@ -327,6 +328,8 @@ def upsert_felloh_transaction(
     db: Session,
     transaction: dict[str, Any],
     charge_totals_by_transaction: dict[str, Decimal],
+    bookings_by_ref: dict[str, Booking],
+    active_payment_rules: list[PaymentMethodRule],
     sync_batch_id: int,
 ) -> tuple[str, bool, bool, bool]:
     transaction_id = object_id(transaction.get("id"))
@@ -349,7 +352,7 @@ def upsert_felloh_transaction(
     card_type = object_id(metadata.get("card_type")) or object_id(metadata.get("bin_type"))
     card_brand = object_id(metadata.get("payment_brand"))
 
-    booking, match_confidence = find_booking_by_reference(db, booking_ref, None)
+    booking, match_confidence = find_booking_by_reference(bookings_by_ref, booking_ref, None)
     if booking is None:
         booking = find_lower_confidence_booking(db, customer_name, gross_amount, payment_date)
         if booking is not None:
@@ -359,7 +362,7 @@ def upsert_felloh_transaction(
     fee_is_estimated = False
     used_actual_fee = fee_amount is not None
     if fee_amount is None:
-        rule = find_payment_method_rule(db, payment_method, card_type, card_brand, payment_date)
+        rule = find_payment_method_rule(active_payment_rules, payment_method, card_type, card_brand, payment_date)
         fee_amount = calculate_estimated_fee(gross_amount, rule)
         fee_is_estimated = fee_amount is not None
 
@@ -439,9 +442,22 @@ def sync_felloh_customer_payments(
         charge_totals_by_transaction = {}
         result.warnings.append(f"Felloh charges could not be fetched, so fee rules were used where available: {exc}")
 
+    booking_refs_to_match = {
+        object_id(transaction.get("booking", {}).get("booking_reference"))
+        for transaction in importable_transactions
+        if isinstance(transaction.get("booking"), dict)
+    }
+    bookings_by_ref = fetch_bookings_by_ref(db, {booking_ref for booking_ref in booking_refs_to_match if booking_ref})
+    active_payment_rules = db.scalars(select(PaymentMethodRule).where(PaymentMethodRule.is_active.is_(True))).all()
+
     for transaction in importable_transactions:
         action, used_actual_fee, used_estimated_fee, is_unmatched = upsert_felloh_transaction(
-            db, transaction, charge_totals_by_transaction, sync_batch.id
+            db,
+            transaction,
+            charge_totals_by_transaction,
+            bookings_by_ref,
+            active_payment_rules,
+            sync_batch.id,
         )
         if action == "created":
             result.created_rows += 1
