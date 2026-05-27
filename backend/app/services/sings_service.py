@@ -432,6 +432,10 @@ def iter_date_chunks(start_date: date, end_date: date, chunk_days: int):
         current_start = current_end + timedelta(days=1)
 
 
+def get_upload_batch(db: Session, batch_id: int) -> UploadBatch | None:
+    return db.scalar(select(UploadBatch).where(UploadBatch.id == batch_id).limit(1))
+
+
 def run_felloh_customer_payment_backfill(
     start_date: date,
     end_date: date,
@@ -449,7 +453,7 @@ def run_felloh_customer_payment_backfill(
     )
 
     with session_factory() as db:
-        parent_batch = db.get(UploadBatch, parent_batch_id)
+        parent_batch = get_upload_batch(db, parent_batch_id)
         if parent_batch is None:
             return
         parent_batch.status = "importing"
@@ -476,7 +480,7 @@ def run_felloh_customer_payment_backfill(
                 result.unmatched_rows += chunk_result.unmatched_rows
                 result.warnings.extend(chunk_result.warnings)
 
-            parent_batch = db.get(UploadBatch, parent_batch_id)
+            parent_batch = get_upload_batch(db, parent_batch_id)
             if parent_batch:
                 parent_batch.row_count = result.fetched_transactions
                 parent_batch.accepted_rows = result.created_rows + result.updated_rows + result.checked_rows
@@ -508,7 +512,7 @@ def run_felloh_customer_payment_backfill(
                 db.commit()
         except Exception as exc:
             db.rollback()
-            parent_batch = db.get(UploadBatch, parent_batch_id)
+            parent_batch = get_upload_batch(db, parent_batch_id)
             if parent_batch:
                 parent_batch.status = "failed"
                 parent_batch.error_summary = str(exc)
