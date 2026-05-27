@@ -100,6 +100,7 @@ const navItems = [
 const FELLOH_CATCH_UP_START_DATE = "2023-01-01";
 const FELLOH_LIVE_SYNC_MAX_DAYS = 1;
 const FELLOH_BACKGROUND_CHUNK_DAYS = 7;
+const FELLOH_RECENT_LOOKBACK_DAYS = 28;
 const TRAVELTEK_FULL_CATCH_UP_START_DATE = "2023-01-30";
 const TRAVELTEK_ACTIVE_WINDOW_DAYS = 60;
 
@@ -3049,6 +3050,32 @@ function CustomerPaymentsPage({ token }) {
     }
   }
 
+  async function handleFellohRecentSync() {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - (FELLOH_RECENT_LOOKBACK_DAYS - 1));
+
+    setError("");
+    setSyncMessage("");
+    setSyncWarnings([]);
+    setIsBackfilling(true);
+    try {
+      const result = await startFellohCustomerPaymentBackfill({
+        token,
+        startDate: toDateInputValue(startDate),
+        endDate: toDateInputValue(endDate),
+        chunkDays: FELLOH_BACKGROUND_CHUNK_DAYS,
+      });
+      setSyncStartDate(toDateInputValue(startDate));
+      setSyncEndDate(toDateInputValue(endDate));
+      setSyncMessage(`${result.message} This is the same 4-week update that runs overnight.`);
+    } catch (recentSyncError) {
+      setError(recentSyncError.message || "Felloh 4-week sync failed to start.");
+    } finally {
+      setIsBackfilling(false);
+    }
+  }
+
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -3092,10 +3119,14 @@ function CustomerPaymentsPage({ token }) {
           <RefreshCw size={18} aria-hidden="true" />
           {isBackfilling ? "Starting" : "Start 2023 Catch-up"}
         </button>
+        <button className="secondary-button" disabled={isSyncing || isBackfilling} onClick={handleFellohRecentSync} type="button">
+          <RefreshCw size={18} aria-hidden="true" />
+          Run 4-week SINGs update now
+        </button>
       </form>
       <p className="muted-note">
-        Felloh live sync runs one day at a time. Date ranges over one day now start in the background and can be
-        checked in Upload Centre.
+        SINGs is set to run overnight and look back 4 weeks. Use the 4-week button to force the same update now.
+        Felloh live sync runs one day at a time; bigger ranges run in the background and can be checked in Upload Centre.
       </p>
 
       <div className="summary-strip">

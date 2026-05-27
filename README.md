@@ -470,6 +470,8 @@ It uses the official Felloh flow:
 The Customer Payments page has a manual **Sync Felloh** button with a date range.
 One-day ranges run live. Any date range over one day is automatically started as a background catch-up in smaller blocks so the browser does not time out or show a broken fetch message.
 
+Render also has a nightly **head-office-nightly-sings-sync** cron job. It runs at 02:00 UTC, looks back 28 days, and imports/cross-checks recent SINGs/Felloh transactions in 7-day blocks.
+
 The sync:
 
 - creates new customer payment rows for new Felloh transaction IDs
@@ -481,6 +483,8 @@ The sync:
 - matches payments to bookings by booking reference where possible
 - uses Felloh charges as actual fees where available
 - falls back to payment method fee rules where Felloh charges are unavailable
+
+The Customer Payments page also has a **Run 4-week SINGs update now** button. This forces the same 28-day update as the nightly job.
 
 The Customer Payments page also has a **Start 2023 Catch-up** button. It starts a background Felloh sync from `2023-01-01` to the selected end date in 7-day blocks, then records the overall catch-up and each block in upload batch history.
 Customer payment summary totals are calculated in the database, which keeps the page responsive as the number of payment rows grows.

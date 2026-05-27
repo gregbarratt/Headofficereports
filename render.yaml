@@ -107,6 +107,30 @@ services:
       - key: SMTP_USE_TLS
         value: "true"
 
+  - type: cron
+    name: head-office-nightly-sings-sync
+    runtime: python
+    plan: starter
+    region: frankfurt
+    schedule: "0 2 * * *"
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && python -m app.jobs.sync_felloh_recent_payments
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: head-office-reporting-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: FELLOH_API_BASE_URL
+        value: https://api.felloh.com
+      - key: FELLOH_PUBLIC_KEY
+        sync: false
+      - key: FELLOH_PRIVATE_KEY
+        sync: false
+      - key: FELLOH_ORGANISATION_ID
+        sync: false
+
 databases:
   - name: head-office-reporting-db
     databaseName: head_office_reporting
