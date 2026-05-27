@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import func, select
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
@@ -56,13 +56,38 @@ def row_count(db: Session, *conditions) -> int:
 
 @router.get("", response_model=CustomerPaymentListResponse)
 def list_customer_payments(
+    source: str = Query(default="all", pattern="^(all|sings|tt)$"),
+    search: str = "",
+    limit: int = Query(default=1000, ge=1, le=10000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin),
 ) -> CustomerPaymentListResponse:
+    conditions = []
+    if source != "all":
+        conditions.append(CustomerPayment.payment_source == source)
+
+    search_text = search.strip()
+    if search_text:
+        like_value = f"%{search_text}%"
+        conditions.append(
+            or_(
+                CustomerPayment.booking_ref.ilike(like_value),
+                CustomerPayment.invoice_reference.ilike(like_value),
+                CustomerPayment.customer_name.ilike(like_value),
+                CustomerPayment.transaction_id.ilike(like_value),
+                CustomerPayment.payment_method.ilike(like_value),
+            )
+        )
+
     payment_statement = (
         select(CustomerPayment)
-        .order_by(CustomerPayment.created_at.desc(), CustomerPayment.id.desc())
-        .limit(200)
+        .where(*conditions)
+        .order_by(
+            CustomerPayment.payment_date.desc().nullslast(),
+            CustomerPayment.created_at.desc(),
+            CustomerPayment.id.desc(),
+        )
+        .limit(limit)
     )
     payments = list(db.scalars(payment_statement))
     gross_total = decimal_total(db, CustomerPayment.gross_amount)

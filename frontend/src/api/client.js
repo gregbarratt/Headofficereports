@@ -263,8 +263,15 @@ export async function refreshTraveltekBooking({ token, bookingRef }) {
   });
 }
 
-export async function getCustomerPayments(token) {
-  return apiRequest("/api/customer-payments", { token });
+export async function getCustomerPayments(token, filters = {}) {
+  const query = new URLSearchParams({ limit: String(filters.limit || 1000) });
+  if (filters.source && filters.source !== "all") {
+    query.set("source", filters.source);
+  }
+  if (filters.search?.trim()) {
+    query.set("search", filters.search.trim());
+  }
+  return apiRequest(`/api/customer-payments?${query.toString()}`, { token });
 }
 
 export async function syncFellohCustomerPayments({ token, startDate, endDate }) {

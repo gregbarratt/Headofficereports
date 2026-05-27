@@ -98,7 +98,8 @@ const navItems = [
 ];
 
 const FELLOH_CATCH_UP_START_DATE = "2023-01-01";
-const FELLOH_LIVE_SYNC_MAX_DAYS = 14;
+const FELLOH_LIVE_SYNC_MAX_DAYS = 1;
+const FELLOH_BACKGROUND_CHUNK_DAYS = 7;
 const TRAVELTEK_FULL_CATCH_UP_START_DATE = "2023-01-30";
 const TRAVELTEK_ACTIVE_WINDOW_DAYS = 60;
 
@@ -2933,6 +2934,8 @@ function CustomerPaymentsPage({ token }) {
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
   const [paymentSortOrder, setPaymentSortOrder] = useState("payment_date_desc");
+  const [paymentSourceFilter, setPaymentSourceFilter] = useState("all");
+  const [paymentSearch, setPaymentSearch] = useState("");
   const [syncStartDate, setSyncStartDate] = useState(defaultSyncStartDate());
   const [syncEndDate, setSyncEndDate] = useState(toDateInputValue(new Date()));
   const [syncMessage, setSyncMessage] = useState("");
@@ -2941,7 +2944,11 @@ function CustomerPaymentsPage({ token }) {
   const [isBackfilling, setIsBackfilling] = useState(false);
 
   function loadCustomerPayments() {
-    return getCustomerPayments(token)
+    return getCustomerPayments(token, {
+      source: paymentSourceFilter,
+      search: paymentSearch,
+      limit: 1000,
+    })
       .then((data) => {
         setPayments(data.payments);
         setSummary(data.summary);
@@ -2951,7 +2958,7 @@ function CustomerPaymentsPage({ token }) {
 
   useEffect(() => {
     loadCustomerPayments();
-  }, [token]);
+  }, [token, paymentSourceFilter, paymentSearch]);
 
   const sortedPayments = [...payments].sort((left, right) => {
     if (paymentSortOrder === "booking_ref_asc" || paymentSortOrder === "booking_ref_desc") {
@@ -2996,7 +3003,7 @@ function CustomerPaymentsPage({ token }) {
           token,
           startDate: syncStartDate,
           endDate: syncEndDate,
-          chunkDays: FELLOH_LIVE_SYNC_MAX_DAYS,
+          chunkDays: FELLOH_BACKGROUND_CHUNK_DAYS,
         });
         setSyncMessage(
           `${result.message} This ${rangeDays}-day range is running in the background so the page does not time out.`
@@ -3032,7 +3039,7 @@ function CustomerPaymentsPage({ token }) {
         token,
         startDate: FELLOH_CATCH_UP_START_DATE,
         endDate: syncEndDate,
-        chunkDays: 14,
+        chunkDays: FELLOH_BACKGROUND_CHUNK_DAYS,
       });
       setSyncMessage(result.message);
     } catch (backfillError) {
@@ -3087,8 +3094,8 @@ function CustomerPaymentsPage({ token }) {
         </button>
       </form>
       <p className="muted-note">
-        Felloh live sync runs up to {FELLOH_LIVE_SYNC_MAX_DAYS} days at a time. Bigger ranges start in the background
-        and can be checked in Upload Centre.
+        Felloh live sync runs one day at a time. Date ranges over one day now start in the background and can be
+        checked in Upload Centre.
       </p>
 
       <div className="summary-strip">
@@ -3131,6 +3138,23 @@ function CustomerPaymentsPage({ token }) {
       </div>
 
       <div className="booking-page-actions">
+        <label>
+          Source
+          <select value={paymentSourceFilter} onChange={(event) => setPaymentSourceFilter(event.target.value)}>
+            <option value="all">All sources</option>
+            <option value="sings">SINGs only</option>
+            <option value="tt">TT human input only</option>
+          </select>
+        </label>
+        <label>
+          Search
+          <input
+            onChange={(event) => setPaymentSearch(event.target.value)}
+            placeholder="Booking ref, customer, transaction or method"
+            type="search"
+            value={paymentSearch}
+          />
+        </label>
         <label>
           Row order
           <select value={paymentSortOrder} onChange={(event) => setPaymentSortOrder(event.target.value)}>

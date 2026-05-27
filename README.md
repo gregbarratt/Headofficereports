@@ -468,7 +468,7 @@ It uses the official Felloh flow:
 - `POST /agent/charges` to fetch actual processing charges where available
 
 The Customer Payments page has a manual **Sync Felloh** button with a date range.
-Short ranges of up to 14 days run live. Longer ranges are automatically started as a background catch-up so the browser does not time out or show a broken fetch message.
+One-day ranges run live. Any date range over one day is automatically started as a background catch-up in smaller blocks so the browser does not time out or show a broken fetch message.
 
 The sync:
 
@@ -480,8 +480,9 @@ The sync:
 - uses Felloh charges as actual fees where available
 - falls back to payment method fee rules where Felloh charges are unavailable
 
-The Customer Payments page also has a **Start 2023 Catch-up** button. It starts a background Felloh sync from `2023-01-01` to the selected end date in 14-day blocks, then records the overall catch-up and each block in upload batch history.
+The Customer Payments page also has a **Start 2023 Catch-up** button. It starts a background Felloh sync from `2023-01-01` to the selected end date in 7-day blocks, then records the overall catch-up and each block in upload batch history.
 Customer payment summary totals are calculated in the database, which keeps the page responsive as the number of payment rows grows.
+The Customer Payments table can also be filtered by source, including **SINGs only** and **TT human input only**, so Head Office can confirm whether API payments are present without scrolling through TT rows.
 
 The required private Render environment variables are:
 
