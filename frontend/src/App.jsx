@@ -1848,6 +1848,7 @@ function BookingChecksPage({ token }) {
   const [draft, setDraft] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [refreshingTraveltekRef, setRefreshingTraveltekRef] = useState("");
   const [lastTraveltekDiagnostics, setLastTraveltekDiagnostics] = useState(null);
   const [visibleLimit, setVisibleLimit] = useState(250);
@@ -2122,7 +2123,10 @@ function BookingChecksPage({ token }) {
     }
   }
 
-  function exportBookingChecksCsv() {
+  async function exportBookingChecksCsv() {
+    setIsExporting(true);
+    setError("");
+    setMessage("");
     const headers = [
       "Booking Ref",
       "Company",
@@ -2160,44 +2164,70 @@ function BookingChecksPage({ token }) {
       "Agent Commission Review",
       "Agent Commission Review Note",
     ];
-    const csvRows = filteredRows.map((row) => [
-      row.booking_ref,
-      formatSourceLabel(row.booking_company),
-      row.customer_last_name || "",
-      row.agent_in_charge || "",
-      row.normalised_status || "",
-      row.destination || "",
-      row.travel_elements_raw || "",
-      row.departure_date || "",
-      row.return_date || "",
-      row.passenger_count ?? "",
-      formatDateTime(row.updated_at),
-      row.gross_booking_value ?? "",
-      row.customer_tt_total ?? "",
-      row.traveltek_customer_outstanding ?? "",
-      row.customer_sings_total ?? "",
-      checkLabel(row.customer_tt_check),
-      row.customer_tt_variance ?? "",
-      row.traveltek_total_due ?? "",
-      row.traveltek_due_to_suppliers ?? "",
-      row.expected_supplier_total ?? "",
-      row.supplier_taps_total ?? "",
-      row.supplier_tt_total ?? "",
-      checkLabel(row.supplier_tt_check),
-      row.supplier_tt_variance ?? "",
-      supplierBalanceDue(row) ?? "",
-      row.traveltek_projected_profit ?? "",
-      checkLabel(row.review_status),
-      row.review_note || "",
-      row.has_manual_adjustment ? "Yes" : "No",
-      row.manual_adjustment_note || "",
-      row.is_archived ? "Yes" : "No",
-      row.archived_at || "",
-      row.archive_note || "",
-      row.agent_commission_review_required ? "Yes" : "No",
-      row.agent_commission_review_note || "",
-    ]);
-    downloadCsv("booking-checks.csv", headers, csvRows);
+
+    try {
+      const exportLimit = Math.max(totalMatching || filteredRows.length || visibleLimit, filteredRows.length, 1);
+      const exportData =
+        totalMatching > filteredRows.length
+          ? await getBookingChecks(token, {
+              limit: exportLimit,
+              search,
+              review: reviewFilter,
+              company: companyFilter,
+              supplier: supplierFilter,
+              customer: customerFilter,
+              archive: archiveFilter,
+              commissionReview: commissionReviewFilter,
+              departureFrom,
+              departureTo,
+            })
+          : { bookings: filteredRows, total_matching: totalMatching };
+      const rowsToExport = exportData.bookings || [];
+      const csvRows = rowsToExport.map((row) => [
+        row.booking_ref,
+        formatSourceLabel(row.booking_company),
+        row.customer_last_name || "",
+        row.agent_in_charge || "",
+        row.normalised_status || "",
+        row.destination || "",
+        row.travel_elements_raw || "",
+        row.departure_date || "",
+        row.return_date || "",
+        row.passenger_count ?? "",
+        formatDateTime(row.updated_at),
+        row.gross_booking_value ?? "",
+        row.customer_tt_total ?? "",
+        row.traveltek_customer_outstanding ?? "",
+        row.customer_sings_total ?? "",
+        checkLabel(row.customer_tt_check),
+        row.customer_tt_variance ?? "",
+        row.traveltek_total_due ?? "",
+        row.traveltek_due_to_suppliers ?? "",
+        row.expected_supplier_total ?? "",
+        row.supplier_taps_total ?? "",
+        row.supplier_tt_total ?? "",
+        checkLabel(row.supplier_tt_check),
+        row.supplier_tt_variance ?? "",
+        supplierBalanceDue(row) ?? "",
+        row.traveltek_projected_profit ?? "",
+        checkLabel(row.review_status),
+        row.review_note || "",
+        row.has_manual_adjustment ? "Yes" : "No",
+        row.manual_adjustment_note || "",
+        row.is_archived ? "Yes" : "No",
+        row.archived_at || "",
+        row.archive_note || "",
+        row.agent_commission_review_required ? "Yes" : "No",
+        row.agent_commission_review_note || "",
+      ]);
+      downloadCsv("booking-checks.csv", headers, csvRows);
+      const expectedCount = exportData.total_matching ?? totalMatching ?? rowsToExport.length;
+      setMessage(`Downloaded ${rowsToExport.length} of ${expectedCount} matching booking check row(s).`);
+    } catch (exportError) {
+      setError(exportError.message || "Booking checks CSV could not be created.");
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   function renderTraveltekDiagnosticList(title, items) {
@@ -2401,9 +2431,9 @@ function BookingChecksPage({ token }) {
         >
           Archive visible full matches
         </button>
-        <button className="secondary-button" disabled={!filteredRows.length} onClick={exportBookingChecksCsv} type="button">
+        <button className="secondary-button" disabled={isExporting || !totalMatching} onClick={exportBookingChecksCsv} type="button">
           <FileSpreadsheet size={18} aria-hidden="true" />
-          Download CSV
+          {isExporting ? "Preparing CSV" : "Download full CSV"}
         </button>
       </div>
 

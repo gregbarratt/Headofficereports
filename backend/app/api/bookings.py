@@ -30,7 +30,7 @@ def list_bookings(
 
 @router.get("/checks", response_model=BookingChecksResponse)
 def list_booking_checks(
-    limit: int = Query(default=250, ge=1, le=10000),
+    limit: int = Query(default=250, ge=1, le=50000),
     search: str = Query(default=""),
     review: str = Query(default="all"),
     company: str = Query(default="all"),

@@ -19,7 +19,7 @@ from app.services.master_booking_import import parse_date, parse_int, parse_mone
 
 
 ZERO = Decimal("0.00")
-BOOKING_CHECK_ROW_LIMIT = 10000
+BOOKING_CHECK_ROW_LIMIT = 50000
 BOOKING_CHECK_FAST_PAGE_LIMIT = 250
 TRAVELTEK_AUTO_BOOKING_FIELDS = {
     "return_date",
