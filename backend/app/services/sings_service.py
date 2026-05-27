@@ -23,6 +23,26 @@ from app.services.customer_payment_import import (
 
 
 MAX_TAKE = 25
+FELLOH_ACCEPTED_TRANSACTION_STATUSES = {
+    "",
+    "CAPTURED",
+    "COMPLETE",
+    "COMPLETED",
+    "PAID",
+    "SETTLED",
+    "SUCCESS",
+    "SUCCESSFUL",
+    "SUCCEEDED",
+}
+FELLOH_REJECTED_TRANSACTION_STATUSES = {
+    "CANCELLED",
+    "CANCELED",
+    "DECLINED",
+    "FAILED",
+    "PENDING",
+    "REFUNDED",
+    "VOID",
+}
 
 
 @dataclass(frozen=True)
@@ -186,12 +206,19 @@ class SingsService:
         return records
 
     def fetch_transactions(self, start_date: date | None = None, end_date: date | None = None) -> list[dict[str, Any]]:
-        return self._fetch_paginated(
+        transactions = self._fetch_paginated(
             "/agent/transactions",
             start_date=start_date,
             end_date=end_date,
             extra_payload={"statuses": ["COMPLETE"]},
         )
+        if transactions:
+            return transactions
+
+        # Some Felloh accounts expose completed transactions under different
+        # status wording. If the strict filter returns nothing, retry without
+        # the filter and let the importer reject failed/pending statuses safely.
+        return self._fetch_paginated("/agent/transactions", start_date=start_date, end_date=end_date)
 
     def fetch_charges(self, start_date: date | None = None, end_date: date | None = None) -> list[dict[str, Any]]:
         return self._fetch_paginated("/agent/charges", start_date=start_date, end_date=end_date)
@@ -244,6 +271,43 @@ def money_from_felloh_amount(amount: Any, currency: str | None) -> Decimal | Non
     if (currency or "").upper().endswith("X"):
         value = value / Decimal("100")
     return value.quantize(Decimal("0.01"))
+
+
+def normalised_felloh_status(value: Any) -> str:
+    return str(object_id(value) or "").strip().upper()
+
+
+def transaction_can_be_imported(transaction: dict[str, Any]) -> bool:
+    status = normalised_felloh_status(transaction.get("status"))
+    if status in FELLOH_REJECTED_TRANSACTION_STATUSES:
+        return False
+    if status in FELLOH_ACCEPTED_TRANSACTION_STATUSES:
+        return True
+    return False
+
+
+def felloh_status_counts(transactions: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for transaction in transactions:
+        status = normalised_felloh_status(transaction.get("status")) or "NO_STATUS"
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def format_felloh_sync_note(
+    start_date: date,
+    end_date: date,
+    fetched_count: int,
+    imported_count: int,
+    skipped_count: int,
+    status_counts: dict[str, int],
+) -> str:
+    statuses = ", ".join(f"{status}: {count}" for status, count in sorted(status_counts.items())) or "none"
+    return (
+        f"{start_date.isoformat()} to {end_date.isoformat()}: "
+        f"Felloh returned {fetched_count}, importable {imported_count}, skipped {skipped_count}. "
+        f"Statuses: {statuses}."
+    )
 
 
 def build_charge_totals_by_transaction(charges: list[dict[str, Any]]) -> dict[str, Decimal]:
@@ -364,6 +428,8 @@ def sync_felloh_customer_payments(
 
     transactions = service.fetch_transactions(start_date=start_date, end_date=end_date)
     result.fetched_transactions = len(transactions)
+    status_counts = felloh_status_counts(transactions)
+    importable_transactions = [transaction for transaction in transactions if transaction_can_be_imported(transaction)]
 
     try:
         charge_totals_by_transaction = build_charge_totals_by_transaction(
@@ -373,7 +439,7 @@ def sync_felloh_customer_payments(
         charge_totals_by_transaction = {}
         result.warnings.append(f"Felloh charges could not be fetched, so fee rules were used where available: {exc}")
 
-    for transaction in transactions:
+    for transaction in importable_transactions:
         action, used_actual_fee, used_estimated_fee, is_unmatched = upsert_felloh_transaction(
             db, transaction, charge_totals_by_transaction, sync_batch.id
         )
@@ -392,10 +458,22 @@ def sync_felloh_customer_payments(
         if is_unmatched:
             result.unmatched_rows += 1
 
+    skipped_by_status = len(transactions) - len(importable_transactions)
+    if skipped_by_status:
+        result.skipped_rows += skipped_by_status
+
     sync_batch.row_count = result.fetched_transactions
     sync_batch.accepted_rows = result.created_rows + result.updated_rows + result.checked_rows
     sync_batch.rejected_rows = result.skipped_rows
-    sync_batch.error_summary = " ".join(result.warnings) if result.warnings else None
+    sync_note = format_felloh_sync_note(
+        start_date,
+        end_date,
+        result.fetched_transactions,
+        len(importable_transactions),
+        skipped_by_status,
+        status_counts,
+    )
+    sync_batch.error_summary = " ".join([sync_note, *result.warnings]).strip()
     sync_batch.status = "imported_with_errors" if result.warnings or result.skipped_rows else "imported"
     sync_batch.completed_at = datetime.now(UTC)
 

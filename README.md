@@ -476,6 +476,8 @@ The sync:
 - cross-checks existing rows when the same Felloh transaction ID is synced again
 - updates existing rows only when Felloh has changed the transaction data
 - records every Felloh sync in upload batch history
+- retries without the strict `COMPLETE` status filter if Felloh returns no rows for that filter
+- records Felloh status counts in the Upload Centre notes so Head Office can see what the API returned
 - matches payments to bookings by booking reference where possible
 - uses Felloh charges as actual fees where available
 - falls back to payment method fee rules where Felloh charges are unavailable
