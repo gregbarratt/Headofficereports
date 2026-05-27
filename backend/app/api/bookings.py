@@ -7,10 +7,17 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_super_admin
 from app.db.session import get_db
-from app.models.reporting import AuditLog, Booking, BookingCheckAdjustment
+from app.models.reporting import AuditLog, Booking, BookingCheckAdjustment, InsuranceCost
 from app.models.user import User
-from app.schemas.booking import BookingArchiveUpdate, BookingCheckAdjustmentUpdate, BookingChecksResponse, BookingListResponse
+from app.schemas.booking import (
+    BookingArchiveUpdate,
+    BookingCheckAdjustmentUpdate,
+    BookingChecksResponse,
+    BookingListResponse,
+    BookingRead,
+)
 from app.services.booking_checks import ADJUSTABLE_FIELDS, build_booking_checks, money
+from app.services.insurance_import import ACTIVE_INSURANCE_STATUSES
 
 
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
@@ -25,7 +32,35 @@ def list_bookings(
     total = db.scalar(select(func.count()).select_from(Booking)) or 0
     statement = select(Booking).order_by(Booking.booking_ref.asc()).limit(limit)
     bookings = list(db.scalars(statement))
-    return BookingListResponse(bookings=bookings, total=total)
+    booking_refs = {booking.booking_ref for booking in bookings}
+    insurance_by_booking: dict[str, tuple] = {}
+    if booking_refs:
+        insurance_rows = db.execute(
+            select(
+                InsuranceCost.booking_ref,
+                func.coalesce(func.sum(InsuranceCost.insurance_cost_amount), 0),
+                func.count(InsuranceCost.id),
+            )
+            .where(InsuranceCost.booking_ref.in_(booking_refs))
+            .where(InsuranceCost.match_status == "matched")
+            .where(InsuranceCost.is_duplicate.is_(False))
+            .where(InsuranceCost.insurance_status.in_(ACTIVE_INSURANCE_STATUSES))
+            .group_by(InsuranceCost.booking_ref)
+        ).all()
+        insurance_by_booking = {booking_ref: (insurance_total, insurance_count) for booking_ref, insurance_total, insurance_count in insurance_rows}
+
+    booking_reads = []
+    for booking in bookings:
+        insurance_total, insurance_count = insurance_by_booking.get(booking.booking_ref, (0, 0))
+        booking_reads.append(
+            BookingRead.model_validate(booking).model_copy(
+                update={
+                    "insurance_cost_total": money(insurance_total),
+                    "insurance_cost_count": insurance_count,
+                }
+            )
+        )
+    return BookingListResponse(bookings=booking_reads, total=total)
 
 
 @router.get("/checks", response_model=BookingChecksResponse)

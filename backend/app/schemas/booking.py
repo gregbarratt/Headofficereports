@@ -29,6 +29,8 @@ class BookingRead(BaseModel):
     non_trusted_total_received: Decimal | None = None
     non_trusted_paid_supplier: Decimal | None = None
     non_trusted_projected_profit: Decimal | None = None
+    insurance_cost_total: Decimal = Decimal("0.00")
+    insurance_cost_count: int = 0
     flight_included: bool
     accommodation_included: bool
     cruise_included: bool

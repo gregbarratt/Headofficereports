@@ -537,6 +537,8 @@ function BookingsPage({ token }) {
       "Traveltek Customer Paid",
       "Supplier Nett",
       "Traveltek Supplier Paid",
+      "Matched Insurance Cost",
+      "Matched Insurance Rows",
       "ATOL",
       "Last Updated",
     ];
@@ -556,6 +558,8 @@ function BookingsPage({ token }) {
       booking.non_trusted_total_received ?? "",
       booking.expected_supplier_nett ?? "",
       booking.non_trusted_paid_supplier ?? "",
+      booking.insurance_cost_total ?? "",
+      booking.insurance_cost_count ?? 0,
       booking.atol_review_status || "",
       booking.updated_at || "",
     ]);
@@ -607,6 +611,8 @@ function BookingsPage({ token }) {
                 <th>TT Customer Paid</th>
                 <th>Supplier Nett</th>
                 <th>TT Supplier Paid</th>
+                <th>Insurance Cost</th>
+                <th>Insurance Rows</th>
               <th>ATOL</th>
             </tr>
           </thead>
@@ -629,12 +635,14 @@ function BookingsPage({ token }) {
                     <td>{formatMoney(booking.non_trusted_total_received)}</td>
                   <td>{formatMoney(booking.expected_supplier_nett)}</td>
                   <td>{formatMoney(booking.non_trusted_paid_supplier)}</td>
+                  <td>{formatMoney(booking.insurance_cost_total)}</td>
+                  <td>{booking.insurance_cost_count ?? 0}</td>
                   <td>{booking.atol_review_status || "-"}</td>
                 </tr>
               ))
             ) : (
               <tr>
-                  <td colSpan="16">No bookings imported yet.</td>
+                  <td colSpan="18">No bookings imported yet.</td>
               </tr>
             )}
           </tbody>
