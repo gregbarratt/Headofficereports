@@ -2156,6 +2156,7 @@ function BookingChecksPage({ token }) {
       "Traveltek Total Due",
       "Traveltek Due To Suppliers",
       "Insurance Cost",
+      "Insurance Rows",
       "Expected Supplier Cost",
       "TAPs Paid",
       "Traveltek Paid To Supplier",
@@ -2213,6 +2214,7 @@ function BookingChecksPage({ token }) {
         row.traveltek_total_due ?? "",
         row.traveltek_due_to_suppliers ?? "",
         row.insurance_cost_total ?? "",
+        row.insurance_cost_count ?? 0,
         row.expected_supplier_total ?? "",
         row.supplier_taps_total ?? "",
         row.supplier_tt_total ?? "",
@@ -2346,7 +2348,7 @@ function BookingChecksPage({ token }) {
       </div>
 
       <p className="muted-note">
-          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. Supplier payment matching compares TAPs Paid against Traveltek Paid To Supplier. Matched insurance is shown separately and is included in Expected Supplier Cost.
+          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. Supplier payment matching compares TAPs Paid against Traveltek Paid To Supplier. Matched insurance cost and row count are shown separately and included in Expected Supplier Cost.
       </p>
 
       <div className="booking-check-filters">
@@ -2522,6 +2524,7 @@ function BookingChecksPage({ token }) {
               <th>Traveltek Total Due</th>
               <th>Traveltek Due To Suppliers</th>
               <th>Insurance Cost</th>
+              <th>Insurance Rows</th>
               <th>Expected Supplier Cost</th>
               <th>TAPs Paid</th>
               <th>Traveltek Paid To Supplier</th>
@@ -2564,6 +2567,7 @@ function BookingChecksPage({ token }) {
                   <td>{formatMoney(row.traveltek_total_due)}</td>
                   <td>{formatMoney(row.traveltek_due_to_suppliers)}</td>
                   <td>{formatMoney(row.insurance_cost_total)}</td>
+                  <td>{row.insurance_cost_count ?? 0}</td>
                   <td>{formatMoney(row.expected_supplier_total)}</td>
                   <td>{formatMoney(row.supplier_taps_total)}</td>
                   <td>
@@ -2630,7 +2634,7 @@ function BookingChecksPage({ token }) {
               ))
             ) : (
               <tr>
-                  <td colSpan="28">No booking checks match the current filters.</td>
+                  <td colSpan="29">No booking checks match the current filters.</td>
               </tr>
             )}
           </tbody>

@@ -69,6 +69,7 @@ class BookingCheckRow(BaseModel):
     gross_booking_value: Decimal | None
     expected_supplier_nett: Decimal | None
     insurance_cost_total: Decimal
+    insurance_cost_count: int = 0
     expected_supplier_total: Decimal | None
     supplier_taps_total: Decimal
     supplier_tt_total: Decimal

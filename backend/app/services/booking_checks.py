@@ -204,13 +204,19 @@ def grouped_customer_totals(db: Session) -> dict[tuple[str, str], Decimal]:
     }
 
 
-def grouped_insurance_totals(db: Session) -> dict[str, Decimal]:
+def grouped_insurance_totals(db: Session) -> dict[str, tuple[Decimal, int]]:
     active_statuses = ("booking", "booked", "confirmed", "live")
     return {
-        booking_ref: money(total)
-        for booking_ref, total in db.execute(
-            select(InsuranceCost.booking_ref, func.sum(InsuranceCost.insurance_cost_amount))
+        booking_ref: (money(total), count)
+        for booking_ref, total, count in db.execute(
+            select(
+                InsuranceCost.booking_ref,
+                func.sum(InsuranceCost.insurance_cost_amount),
+                func.count(InsuranceCost.id),
+            )
             .where(InsuranceCost.booking_ref.is_not(None))
+            .where(InsuranceCost.match_status == "matched")
+            .where(InsuranceCost.is_duplicate.is_(False))
             .where(InsuranceCost.insurance_status.in_(active_statuses))
             .group_by(InsuranceCost.booking_ref)
         )
@@ -266,7 +272,7 @@ def build_booking_check_row(
     booking: Booking,
     supplier_totals: dict[tuple[str, str], Decimal],
     customer_totals: dict[tuple[str, str], Decimal],
-    insurance_totals: dict[str, Decimal],
+    insurance_totals: dict[str, tuple[Decimal, int]],
     adjustments_by_booking: dict[str, dict[str, BookingCheckAdjustment]],
 ) -> BookingCheckRow:
     raw_supplier_taps_total = supplier_totals.get((booking.booking_ref, "taps"), ZERO)
@@ -281,7 +287,7 @@ def build_booking_check_row(
         if booking.non_trusted_total_received is not None
         else customer_totals.get((booking.booking_ref, "tt"), ZERO)
     )
-    insurance_cost_total = insurance_totals.get(booking.booking_ref, ZERO)
+    insurance_cost_total, insurance_cost_count = insurance_totals.get(booking.booking_ref, (ZERO, 0))
 
     raw_expected_supplier_total = None
     if booking.expected_supplier_nett is not None:
@@ -328,6 +334,7 @@ def build_booking_check_row(
         gross_booking_value=gross_booking_value,
         expected_supplier_nett=booking.expected_supplier_nett,
         insurance_cost_total=money(insurance_cost_total),
+        insurance_cost_count=insurance_cost_count,
         expected_supplier_total=expected_supplier_total,
         supplier_taps_total=supplier_taps_total,
         supplier_tt_total=supplier_tt_total,
