@@ -2155,6 +2155,7 @@ function BookingChecksPage({ token }) {
       "SINGs vs Traveltek Paid Variance",
       "Traveltek Total Due",
       "Traveltek Due To Suppliers",
+      "Insurance Cost",
       "Expected Supplier Cost",
       "TAPs Paid",
       "Traveltek Paid To Supplier",
@@ -2211,6 +2212,7 @@ function BookingChecksPage({ token }) {
         row.customer_tt_variance ?? "",
         row.traveltek_total_due ?? "",
         row.traveltek_due_to_suppliers ?? "",
+        row.insurance_cost_total ?? "",
         row.expected_supplier_total ?? "",
         row.supplier_taps_total ?? "",
         row.supplier_tt_total ?? "",
@@ -2344,7 +2346,7 @@ function BookingChecksPage({ token }) {
       </div>
 
       <p className="muted-note">
-          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. Supplier payment matching compares TAPs Paid against Traveltek Paid To Supplier.
+          Traveltek provides the booking framework. TAPs and SINGs are treated as actual payment sources. Supplier payment matching compares TAPs Paid against Traveltek Paid To Supplier. Matched insurance is shown separately and is included in Expected Supplier Cost.
       </p>
 
       <div className="booking-check-filters">
@@ -2519,6 +2521,7 @@ function BookingChecksPage({ token }) {
               <th>SINGs vs Traveltek Paid</th>
               <th>Traveltek Total Due</th>
               <th>Traveltek Due To Suppliers</th>
+              <th>Insurance Cost</th>
               <th>Expected Supplier Cost</th>
               <th>TAPs Paid</th>
               <th>Traveltek Paid To Supplier</th>
@@ -2560,6 +2563,7 @@ function BookingChecksPage({ token }) {
                   </td>
                   <td>{formatMoney(row.traveltek_total_due)}</td>
                   <td>{formatMoney(row.traveltek_due_to_suppliers)}</td>
+                  <td>{formatMoney(row.insurance_cost_total)}</td>
                   <td>{formatMoney(row.expected_supplier_total)}</td>
                   <td>{formatMoney(row.supplier_taps_total)}</td>
                   <td>
@@ -2626,7 +2630,7 @@ function BookingChecksPage({ token }) {
               ))
             ) : (
               <tr>
-                  <td colSpan="27">No booking checks match the current filters.</td>
+                  <td colSpan="28">No booking checks match the current filters.</td>
               </tr>
             )}
           </tbody>
