@@ -426,6 +426,23 @@ nav button:disabled {
   min-height: 38px;
 }
 
+.otc-crm-toolbar {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(280px, 1fr) minmax(150px, 210px) minmax(150px, 190px) auto auto;
+  margin: 14px 0 10px;
+}
+
+.otc-crm-toolbar label {
+  min-width: 0;
+}
+
+.otc-crm-toolbar input,
+.otc-crm-toolbar select {
+  min-height: 38px;
+}
+
 .customer-sync {
   align-items: end;
   display: grid;
@@ -1148,6 +1165,7 @@ th {
   .traveltek-toolbar,
   .booking-page-actions,
   .booking-check-filters,
+  .otc-crm-toolbar,
   .field-filter-grid,
   .adjustment-grid,
   .manual-trust-form {

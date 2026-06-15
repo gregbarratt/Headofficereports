@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,6 +18,7 @@ router = APIRouter(prefix="/api/otc-crm", tags=["OTC CRM"])
 def list_otc_crm_comparisons(
     status: str = Query(default="all"),
     search: str = Query(default=""),
+    departure_from: date | None = Query(default=None),
     limit: int = Query(default=2500, ge=1, le=10000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin),
@@ -48,6 +51,10 @@ def list_otc_crm_comparisons(
         )
         base_statement = base_statement.where(search_filter)
         count_statement = count_statement.where(search_filter)
+
+    if departure_from is not None:
+        departure_value = func.coalesce(Booking.departure_date, OtcCrmBookingRow.departure_date)
+        base_statement = base_statement.where(departure_value >= departure_from)
 
     rows = db.execute(
         base_statement.order_by(OtcCrmBookingRow.created_at.desc(), OtcCrmBookingRow.id.desc()).limit(limit)

@@ -177,6 +177,9 @@ export async function getOtcCrmComparisons(token, filters = {}) {
   if (filters.search?.trim()) {
     query.set("search", filters.search.trim());
   }
+  if (filters.departureFrom) {
+    query.set("departure_from", filters.departureFrom);
+  }
   return apiRequest(`/api/otc-crm?${query.toString()}`, { token });
 }
 

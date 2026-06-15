@@ -673,13 +673,22 @@ function OtcCrmPage({ token }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
+  const [departureFrom, setDepartureFrom] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [tableWidth, setTableWidth] = useState(1700);
+  const topScrollRef = useRef(null);
+  const tableScrollRef = useRef(null);
 
   function loadRows(nextStatus = statusFilter, nextSearch = activeSearch) {
     setIsLoading(true);
     setError("");
-    getOtcCrmComparisons(token, { status: nextStatus, search: nextSearch, limit: 2500 })
+    getOtcCrmComparisons(token, {
+      status: nextStatus,
+      search: nextSearch,
+      departureFrom,
+      limit: 10000,
+    })
       .then((data) => {
         setRows(data.rows || []);
         setSummary(data.summary || null);
@@ -690,11 +699,90 @@ function OtcCrmPage({ token }) {
 
   useEffect(() => {
     loadRows(statusFilter, activeSearch);
-  }, [token, statusFilter, activeSearch]);
+  }, [token, statusFilter, activeSearch, departureFrom]);
 
   function handleSearchSubmit(event) {
     event.preventDefault();
     setActiveSearch(searchText.trim());
+  }
+
+  useEffect(() => {
+    function updateScrollWidth() {
+      if (tableScrollRef.current) {
+        setTableWidth(tableScrollRef.current.scrollWidth);
+      }
+    }
+
+    updateScrollWidth();
+    window.addEventListener("resize", updateScrollWidth);
+    return () => window.removeEventListener("resize", updateScrollWidth);
+  }, [rows.length]);
+
+  function syncOtcCrmScroll(source) {
+    const topScroller = topScrollRef.current;
+    const tableScroller = tableScrollRef.current;
+    if (!topScroller || !tableScroller) {
+      return;
+    }
+
+    if (source === "top" && tableScroller.scrollLeft !== topScroller.scrollLeft) {
+      tableScroller.scrollLeft = topScroller.scrollLeft;
+    }
+    if (source === "table" && topScroller.scrollLeft !== tableScroller.scrollLeft) {
+      topScroller.scrollLeft = tableScroller.scrollLeft;
+    }
+  }
+
+  function exportOtcCrmCsv() {
+    const headers = [
+      "OTC Ref",
+      "CRM Ref",
+      "Match",
+      "CRM Customer",
+      "Traveltek Customer",
+      "CRM Agent",
+      "Previous Agent",
+      "Agent Update",
+      "CRM Destination",
+      "Traveltek Destination",
+      "CRM Gross",
+      "Traveltek Gross",
+      "CRM Net",
+      "Traveltek Net",
+      "CRM Pax",
+      "Traveltek Pax",
+      "CRM Depart",
+      "Traveltek Depart",
+      "CRM Return",
+      "Traveltek Return",
+      "QC Status",
+      "Notes",
+    ];
+    const exportRows = rows.map((row) => [
+      row.booking_ref || "",
+      row.crm_booking_ref || "",
+      row.match_status === "unmatched" ? "Unmatched" : formatStatusLabel(row.comparison_status),
+      row.customer_name || "",
+      row.traveltek_customer_name || "",
+      row.agent_name || "",
+      row.previous_agent_name || "",
+      row.agent_updated ? "Updated" : "No change",
+      row.destination || "",
+      row.traveltek_destination || "",
+      row.gross_amount ?? "",
+      row.traveltek_gross_amount ?? "",
+      row.net_amount ?? "",
+      row.traveltek_net_amount ?? "",
+      row.passenger_count ?? "",
+      row.traveltek_passenger_count ?? "",
+      row.departure_date || "",
+      row.traveltek_departure_date || "",
+      row.return_date || "",
+      row.traveltek_return_date || "",
+      row.qc_status || "",
+      row.comparison_notes || "",
+    ]);
+    downloadCsv("otc-crm-comparison.csv", headers, exportRows);
   }
 
   return (
@@ -732,7 +820,7 @@ function OtcCrmPage({ token }) {
         </div>
       </div>
 
-      <form className="filter-grid" onSubmit={handleSearchSubmit}>
+      <form className="otc-crm-toolbar" onSubmit={handleSearchSubmit}>
         <label>
           Search
           <input
@@ -743,7 +831,7 @@ function OtcCrmPage({ token }) {
           />
         </label>
         <label>
-          View
+          Match
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
             <option value="all">All</option>
             <option value="matched">Matched</option>
@@ -752,9 +840,17 @@ function OtcCrmPage({ token }) {
             <option value="agent_updated">Agents updated</option>
           </select>
         </label>
+        <label>
+          Departure from
+          <input type="date" value={departureFrom} onChange={(event) => setDepartureFrom(event.target.value)} />
+        </label>
         <button className="secondary-button" type="submit">
           <Search size={18} aria-hidden="true" />
           Search
+        </button>
+        <button className="secondary-button" disabled={!rows.length} onClick={exportOtcCrmCsv} type="button">
+          <FileSpreadsheet size={18} aria-hidden="true" />
+          Download CSV
         </button>
       </form>
 
@@ -763,7 +859,18 @@ function OtcCrmPage({ token }) {
         Ref column, such as AB2953, is kept for audit only.
       </p>
 
-      <div className="table-wrap">
+      <p className="muted-note">{isLoading ? "Loading OTC CRM rows..." : `Showing ${rows.length} OTC CRM row(s).`}</p>
+
+      <div
+        aria-label="Scroll OTC CRM table left and right"
+        className="table-top-scroll"
+        onScroll={() => syncOtcCrmScroll("top")}
+        ref={topScrollRef}
+      >
+        <div className="table-top-scroll-spacer" style={{ width: tableWidth }} />
+      </div>
+
+      <div className="table-wrap" onScroll={() => syncOtcCrmScroll("table")} ref={tableScrollRef}>
         <table>
           <thead>
             <tr>
