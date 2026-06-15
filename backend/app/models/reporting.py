@@ -253,6 +253,47 @@ class TraveltekBookingUpdate(Base):
         }
 
 
+class OtcCrmBookingRow(Base):
+    __tablename__ = "otc_crm_booking_rows"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    upload_batch_id: Mapped[int | None] = mapped_column(ForeignKey("upload_batches.id"), nullable=True)
+    booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), nullable=True)
+    crm_booking_ref: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
+    booking_ref: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
+    customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    destination: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    agent_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    qc_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    gross_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    net_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    profit_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    commission_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    passenger_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    departure_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    return_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    previous_agent_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    agent_updated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    match_status: Mapped[str] = mapped_column(
+        String(80),
+        default="unmatched",
+        server_default="unmatched",
+        index=True,
+        nullable=False,
+    )
+    comparison_status: Mapped[str] = mapped_column(
+        String(80),
+        default="not_checked",
+        server_default="not_checked",
+        index=True,
+        nullable=False,
+    )
+    comparison_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class Refund(Base):
     __tablename__ = "refunds"
 

@@ -178,10 +178,19 @@ Before sending weekly emails, set:
 
 - `SMTP_HOST`
 - `SMTP_PORT`
-- `SMTP_USERNAME`, if your mail provider requires it
-- `SMTP_PASSWORD`, if your mail provider requires it
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
 - `SMTP_FROM_EMAIL`
 - `SMTP_USE_TLS`
+
+For Outlook / Microsoft 365, use:
+
+- `SMTP_HOST=smtp.office365.com`
+- `SMTP_PORT=587`
+- `SMTP_USE_TLS=true`
+- `SMTP_USERNAME` set to the sending mailbox
+- `SMTP_PASSWORD` set to the mailbox password or app password
+- `SMTP_FROM_EMAIL` set to the same sending mailbox
 
 Future SINGs/Singhs API settings:
 
@@ -241,6 +250,7 @@ Available upload types:
 - Bank / Trust Statement
 - Insurance Costs
 - Agent Allocation Import
+- OTC CRM
 - Agent Commission Import
 - Refund Import
 
@@ -585,6 +595,16 @@ The importer expects:
 The system matches each row to an existing booking by booking reference, updates the booking's `Agent in charge` when the spreadsheet is different, and fills a blank customer surname if one is provided. It does not create a new booking from this file because the file is only an allocation list, not a booking master record.
 
 The Upload Centre notes show how many rows matched, how many booking agents were updated, how many were unchanged, and which rows could not be matched.
+
+## OTC CRM Import
+
+Use **Upload Centre > OTC CRM** for the exported OTC CRM bookings spreadsheet.
+
+The importer uses `Otc Reference Number` as the Head Office booking reference. The CRM `Booking Ref` value, for example `AB2953`, is stored for audit only and is not used to match bookings.
+
+When a row matches an existing booking, the system updates the booking agent name from the CRM `Agent` column. The new **OTC CRM** page then compares CRM values against the current Traveltek/system booking values for customer, destination, gross, net, passenger count, departure date and return date.
+
+Rows are shown as matched, unmatched or different, so Head Office can quickly see which CRM rows updated agents and which rows need review.
 
 The Bookings page loads up to 10,000 booking rows, can sort by booking reference from lowest to highest or highest to lowest, and can export the visible booking list to CSV.
 

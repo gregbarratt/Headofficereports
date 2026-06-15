@@ -169,6 +169,17 @@ export async function getInsuranceCosts(token) {
   return apiRequest("/api/insurance-costs", { token });
 }
 
+export async function getOtcCrmComparisons(token, filters = {}) {
+  const query = new URLSearchParams({ limit: String(filters.limit || 2500) });
+  if (filters.status && filters.status !== "all") {
+    query.set("status", filters.status);
+  }
+  if (filters.search?.trim()) {
+    query.set("search", filters.search.trim());
+  }
+  return apiRequest(`/api/otc-crm?${query.toString()}`, { token });
+}
+
 export async function createEmailRecipient({ token, email, name }) {
   return apiRequest("/api/email-recipients", {
     method: "POST",

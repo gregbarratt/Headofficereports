@@ -11,6 +11,7 @@ UPLOAD_TYPES = {
     "bank_statement": "Bank / Trust Statement",
     "insurance": "Insurance Costs",
     "agent_allocation": "Agent Allocation Import",
+    "otc_crm": "OTC CRM",
     "agent_commission": "Agent Commission Import",
     "refund": "Refund Import",
 }

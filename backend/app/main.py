@@ -11,6 +11,7 @@ from app.api.email import router as email_router
 from app.api.exceptions import router as exceptions_router
 from app.api.insurance import router as insurance_router
 from app.api.health import router as health_router
+from app.api.otc_crm import router as otc_crm_router
 from app.api.refunds import router as refunds_router
 from app.api.reports import router as reports_router
 from app.api.settings import router as settings_router
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(email_router)
     app.include_router(exceptions_router)
     app.include_router(insurance_router)
+    app.include_router(otc_crm_router)
     app.include_router(refunds_router)
     app.include_router(reports_router)
     app.include_router(settings_router)

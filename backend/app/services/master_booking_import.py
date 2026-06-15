@@ -220,6 +220,8 @@ def parse_money(value: Any) -> Decimal | None:
     is_negative = text.startswith("(") and text.endswith(")")
     cleaned = (
         text.replace("£", "")
+        .replace("Ł", "")
+        .replace("GBP", "")
         .replace("?", "")
         .replace(",", "")
         .replace("(", "")

@@ -17,6 +17,7 @@ from app.services.customer_payment_import import import_customer_payment_report
 from app.services.insurance_import import import_insurance_report
 from app.services.master_booking_import import import_master_booking_report
 from app.services.old_booking_import import import_old_booking_report
+from app.services.otc_crm_import import import_otc_crm_report
 from app.services.refund_import import import_refund_report
 from app.services.supplier_payment_import import import_supplier_payment_report
 from app.services.uploads import (
@@ -186,6 +187,14 @@ async def create_upload_batch(
             )
         elif upload_type == "agent_allocation":
             import_result = import_agent_allocation_report(
+                db=db,
+                upload_batch=batch,
+                filename=original_filename,
+                content=content,
+                actor_user_id=current_user.id,
+            )
+        elif upload_type == "otc_crm":
+            import_result = import_otc_crm_report(
                 db=db,
                 upload_batch=batch,
                 filename=original_filename,

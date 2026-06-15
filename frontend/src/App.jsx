@@ -41,6 +41,7 @@ import {
   getExceptions,
   getHeadOfficeCosts,
   getInsuranceCosts,
+  getOtcCrmComparisons,
   getRefunds,
   getReportRuns,
   getReportTypes,
@@ -82,6 +83,7 @@ const navItems = [
   { label: "Booking Checks", enabled: true },
   { label: "Upload Centre", enabled: true },
   { label: "Bookings", enabled: true },
+  { label: "OTC CRM", enabled: true },
   { label: "Traveltek Updates", enabled: true },
   { label: "Supplier Payments TAPs", enabled: true },
   { label: "Supplier Payments TT", enabled: true },
@@ -643,6 +645,187 @@ function BookingsPage({ token }) {
             ) : (
               <tr>
                   <td colSpan="18">No bookings imported yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function otcCrmComparisonClass(status) {
+  if (status === "matched") {
+    return "status-resolved";
+  }
+  if (status === "different") {
+    return "status-mismatch";
+  }
+  if (status === "unmatched") {
+    return "status-open";
+  }
+  return "status-reviewing";
+}
+
+function OtcCrmPage({ token }) {
+  const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchText, setSearchText] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  function loadRows(nextStatus = statusFilter, nextSearch = activeSearch) {
+    setIsLoading(true);
+    setError("");
+    getOtcCrmComparisons(token, { status: nextStatus, search: nextSearch, limit: 2500 })
+      .then((data) => {
+        setRows(data.rows || []);
+        setSummary(data.summary || null);
+      })
+      .catch((loadError) => setError(loadError.message || "OTC CRM comparisons could not load."))
+      .finally(() => setIsLoading(false));
+  }
+
+  useEffect(() => {
+    loadRows(statusFilter, activeSearch);
+  }, [token, statusFilter, activeSearch]);
+
+  function handleSearchSubmit(event) {
+    event.preventDefault();
+    setActiveSearch(searchText.trim());
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>OTC CRM</h2>
+          <p>CRM rows update booking agents by OTC reference and compare CRM values with Traveltek/system values.</p>
+        </div>
+        <FileSpreadsheet size={24} aria-hidden="true" />
+      </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+
+      <div className="summary-strip">
+        <div>
+          <span>Rows</span>
+          <strong>{summary?.total_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Matched to bookings</span>
+          <strong>{summary?.matched_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Unmatched</span>
+          <strong>{summary?.unmatched_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Different values</span>
+          <strong>{summary?.different_rows ?? 0}</strong>
+        </div>
+        <div>
+          <span>Agents updated</span>
+          <strong>{summary?.agent_updated_rows ?? 0}</strong>
+        </div>
+      </div>
+
+      <form className="filter-grid" onSubmit={handleSearchSubmit}>
+        <label>
+          Search
+          <input
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="OTC ref, CRM ref, customer, agent or destination"
+            type="search"
+            value={searchText}
+          />
+        </label>
+        <label>
+          View
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">All</option>
+            <option value="matched">Matched</option>
+            <option value="unmatched">Unmatched</option>
+            <option value="different">Different</option>
+            <option value="agent_updated">Agents updated</option>
+          </select>
+        </label>
+        <button className="secondary-button" type="submit">
+          <Search size={18} aria-hidden="true" />
+          Search
+        </button>
+      </form>
+
+      <p className="helper-text">
+        Upload Centre uses the CRM column named Otc Reference Number to find the Head Office booking. The CRM Booking
+        Ref column, such as AB2953, is kept for audit only.
+      </p>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>OTC Ref</th>
+              <th>CRM Ref</th>
+              <th>Match</th>
+              <th>CRM Customer</th>
+              <th>Traveltek Customer</th>
+              <th>CRM Agent</th>
+              <th>Previous Agent</th>
+              <th>Agent Update</th>
+              <th>CRM Destination</th>
+              <th>Traveltek Destination</th>
+              <th>CRM Gross</th>
+              <th>Traveltek Gross</th>
+              <th>CRM Net</th>
+              <th>Traveltek Net</th>
+              <th>CRM Pax</th>
+              <th>Traveltek Pax</th>
+              <th>CRM Depart</th>
+              <th>Traveltek Depart</th>
+              <th>CRM Return</th>
+              <th>Traveltek Return</th>
+              <th>QC Status</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length ? (
+              rows.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.booking_ref || "-"}</td>
+                  <td>{row.crm_booking_ref || "-"}</td>
+                  <td>
+                    <span className={`status-pill ${otcCrmComparisonClass(row.comparison_status)}`}>
+                      {row.match_status === "unmatched" ? "Unmatched" : formatStatusLabel(row.comparison_status)}
+                    </span>
+                  </td>
+                  <td>{row.customer_name || "-"}</td>
+                  <td>{row.traveltek_customer_name || "-"}</td>
+                  <td>{row.agent_name || "-"}</td>
+                  <td>{row.previous_agent_name || "-"}</td>
+                  <td>{row.agent_updated ? "Updated" : "No change"}</td>
+                  <td>{row.destination || "-"}</td>
+                  <td>{row.traveltek_destination || "-"}</td>
+                  <td>{formatMoney(row.gross_amount)}</td>
+                  <td>{formatMoney(row.traveltek_gross_amount)}</td>
+                  <td>{formatMoney(row.net_amount)}</td>
+                  <td>{formatMoney(row.traveltek_net_amount)}</td>
+                  <td>{row.passenger_count ?? "-"}</td>
+                  <td>{row.traveltek_passenger_count ?? "-"}</td>
+                  <td>{formatDate(row.departure_date)}</td>
+                  <td>{formatDate(row.traveltek_departure_date)}</td>
+                  <td>{formatDate(row.return_date)}</td>
+                  <td>{formatDate(row.traveltek_return_date)}</td>
+                  <td>{row.qc_status || "-"}</td>
+                  <td>{row.comparison_notes || "-"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="22">{isLoading ? "Loading OTC CRM rows..." : "No OTC CRM rows imported yet."}</td>
               </tr>
             )}
           </tbody>
@@ -5737,6 +5920,8 @@ export default function App() {
           <UploadCentre token={token} />
         ) : activeView === "Bookings" ? (
           <BookingsPage token={token} />
+        ) : activeView === "OTC CRM" ? (
+          <OtcCrmPage token={token} />
         ) : activeView === "Traveltek Updates" ? (
           <TraveltekUpdatesPage token={token} />
         ) : activeView === "Supplier Payments TAPs" ? (
